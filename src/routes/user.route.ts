@@ -1,0 +1,18 @@
+import { Router } from "express";
+import { UserTeamController } from "../controllers/user.controller";
+import { verifyToken } from "../middleware/auth.middleware";
+
+const userTeamController = new UserTeamController();
+const router = Router();
+
+router.post("/", verifyToken, userTeamController.addTeamMember);
+
+router.get("/", verifyToken, userTeamController.getAllTeamMember);
+
+router.get("/:id", verifyToken, userTeamController.getTeamMemberById);
+
+router.patch("/:id", verifyToken, userTeamController.editTeamMember);
+
+router.post("/status", verifyToken, userTeamController.activeDeactive);
+
+export default router;

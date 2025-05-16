@@ -1,0 +1,639 @@
+import {
+  IloginResponse,
+  ILoginUser,
+  ISaveOtp,
+  ISignupParams,
+  IverifyOTPParams,
+} from "../interfaces/user.interface";
+import httpStatusCodes from "http-status-codes";
+import { UserQuery } from "../query/user.query";
+import { passwordCompare, passwordHash } from "../config/bcrypt";
+import { jwtSign, jwtVerify } from "../config/jwt";
+import { OtpService } from "./otp.service";
+import { UserTokenQuery } from "../query/usertoken.query";
+import { OAuth2Client } from "google-auth-library";
+import dataSource from "../config/data-source";
+import { OrganizationQuery } from "../query/organization.query";
+import { OtpMedium } from "../enum/otpMedium";
+import { OtpType } from "../enum/otpType";
+import { User } from "../models/index";
+import { RoleQuery } from "../query/role.query";
+import { sendEmail } from "./email.service";
+import { P } from "pino";
+
+const userQuery = new UserQuery();
+const otpService = new OtpService();
+const userTokenQuery = new UserTokenQuery();
+const organizationQuery = new OrganizationQuery();
+const roleQuery = new RoleQuery();
+const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+export class AuthService {
+  ttl: number;
+  constructor() {
+    this.ttl = 2 * 24 * 60 * 60; // 2 days in seconds
+  }
+
+  async sendPasswordResetNotification(email: string, resetLink: string) {
+    await sendEmail({
+      to: email,
+      subject: "Password Reset Request",
+      body: `<p>Click <a href="${resetLink}">here</a> to reset your password. This link will expire in 1 hour.</p>`,
+    });
+  }
+
+  async login({ email, password }: ILoginUser): Promise<{
+    status: number;
+    data?: IloginResponse;
+    message: string;
+  }> {
+    const queryRunner = dataSource.createQueryRunner(); // Create a query runner
+    await queryRunner.startTransaction(); // Start the transaction
+
+    try {
+      if (!email || !password) {
+        await queryRunner.rollbackTransaction(); // Rollback transaction in case of error
+        return {
+          status: httpStatusCodes.BAD_REQUEST,
+          message: "Email and password are required",
+        };
+      }
+
+      const user = await userQuery.findUserByEmail(queryRunner.manager, email); // Use queryRunner.manager for transaction context
+      if (!user) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.NOT_FOUND,
+          message: "User not found",
+        };
+      }
+
+      if (!user.is_active) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.UNAUTHORIZED,
+          message: "user inactive",
+        };
+      }
+
+      const isPasswordValid = await passwordCompare(
+        password,
+        user.password_hash
+      );
+      if (!isPasswordValid) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.UNAUTHORIZED,
+          message: "Invalid credentials",
+        };
+      }
+
+      const token = jwtSign(
+        user.user_id,
+        user?.org_id,
+        user.email,
+        user.role_id,
+        user.is_super_admin,
+        user.is_admin
+      );
+      const existingToken = await userTokenQuery.findTokenById(
+        queryRunner.manager,
+        user.user_id
+      );
+      if(existingToken){
+        userTokenQuery.deleteUserTokens(queryRunner.manager,user.user_id);
+      }
+      await userQuery.saveToken(queryRunner.manager, {
+        id: token,
+        userId: user.user_id,
+        ttl: this.ttl,
+        scopes: "user",
+        status: 1,
+        active: 1,
+      });
+
+      const getUserByIdWithOrganization =
+        await organizationQuery.getUserByIdWithOrganization(
+          queryRunner.manager,
+          user.user_id
+        );
+      const { password_hash, ...safeUser } = getUserByIdWithOrganization;
+
+      if (user.is_active && user.is_email_verified !== 1) {
+        // Commit the transaction if everything is successful
+        await queryRunner.commitTransaction();
+
+        // Generate and send OTP
+        otpService.generateSaveAndSendOtp(user.user_id, {
+          email: user.email,
+          medium: OtpMedium.EMAIL,
+          otp_type: OtpType.EMAIL_VERIFICATION,
+        });
+
+        return {
+          status: httpStatusCodes.OK,
+          data: {
+            token,
+            user: safeUser,
+            organization: getUserByIdWithOrganization.organization,
+          },
+          message: "Email not verified",
+        };
+      }
+
+      // Commit the transaction if everything is successful
+      await queryRunner.commitTransaction();
+
+      return {
+        status: httpStatusCodes.OK,
+        data: {
+          token,
+          user: safeUser,
+          organization: getUserByIdWithOrganization.organization,
+        },
+        message: "Login successful",
+      };
+    } catch (error: any) {
+      // Rollback the transaction if an error occurs
+      await queryRunner.rollbackTransaction();
+      return {
+        status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+        message: error?.message ? error?.message : "Internal server error",
+      };
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  async google(idToken: string): Promise<{
+    status: number;
+    data?: IloginResponse;
+    message: string;
+  }> {
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.startTransaction();
+
+    try {
+      const ticket = await client.verifyIdToken({
+        idToken,
+        audience: process.env.GOOGLE_CLIENT_ID,
+      });
+      const payload = ticket.getPayload();
+
+      if (!payload) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.BAD_REQUEST,
+          message: "Invalid token payload",
+        };
+      }
+
+      const {
+        email,
+        name,
+        sub: googleId,
+        picture: avatar,
+        email_verified,
+      } = payload;
+
+      let user = await userQuery.findUserByGoogleId(
+        queryRunner.manager,
+        googleId
+      );
+
+      if (!user) {
+        const existingUserByEmail = await userQuery.findUserByEmail(
+          queryRunner.manager,
+          email ? email : ""
+        );
+
+        if (existingUserByEmail) {
+          // If the email is already taken, throw an error
+          return {
+            status: httpStatusCodes.BAD_REQUEST,
+            message: "Email is already register.",
+          };
+        }
+
+        const newOrganization = await organizationQuery.saveOrganization(
+          queryRunner.manager,
+          null
+        );
+
+        user = queryRunner.manager.getRepository(User).create({
+          google_oauth_id: googleId,
+          email,
+          full_name: name,
+          is_email_verified: email_verified ? 1 : 0,
+          org_id: newOrganization.org_id,
+          is_admin: 1,
+        });
+        await queryRunner.manager.save(user);
+
+        // Save the new organization
+        const updateOrganization = await organizationQuery.updateOrganization(
+          queryRunner.manager,
+          newOrganization.org_id,
+          { owner_id: user.user_id }
+        );
+
+        if (!email_verified) {
+          // Assuming otpService generates and sends OTP
+          otpService.generateSaveAndSendOtp(user.user_id, {
+            email: user.email,
+            medium: OtpMedium.EMAIL,
+            otp_type: OtpType.EMAIL_VERIFICATION,
+          });
+        }
+      }
+
+      const token = jwtSign(
+        user.user_id,
+        user.org_id,
+        user.email,
+        undefined,
+        user.is_super_admin,
+        user.is_admin
+      );
+
+      await userQuery.saveToken(queryRunner.manager, {
+        id: token,
+        userId: user.user_id,
+        ttl: this.ttl,
+        scopes: "user",
+        status: 1,
+        active: 1,
+      });
+
+      const getUserByIdWithOrganization =
+        await organizationQuery.getUserByIdWithOrganization(
+          queryRunner.manager,
+          user.user_id
+        );
+
+      const { password_hash, ...safeUser } = getUserByIdWithOrganization;
+
+      // Commit the transaction if everything is successful
+
+      await queryRunner.commitTransaction();
+
+      return {
+        status: httpStatusCodes.OK,
+        data: {
+          token,
+          user: safeUser,
+          organization: getUserByIdWithOrganization.organization,
+        },
+        message: "Login successful",
+      };
+    } catch (err) {
+      // Rollback transaction if an error
+      await queryRunner.rollbackTransaction();
+      return {
+        status: httpStatusCodes.BAD_REQUEST,
+        message: "Google authentication failed",
+      };
+    } finally {
+      // Release the query runner to avoid memory leaks
+      console.log("Finished");
+      await queryRunner.release();
+    }
+  }
+
+  async signup(param: ISignupParams): Promise<{
+    status: number;
+    data?: IloginResponse;
+    message: string;
+  }> {
+    const queryRunner = dataSource.createQueryRunner(); // Create a query runner
+    await queryRunner.startTransaction(); // Start the transaction
+
+    try {
+      if (
+        !param.email ||
+        !param.password ||
+        !param.first_name ||
+        !param.last_name ||
+        !param.phone_no ||
+        !param.org_name
+      ) {
+        await queryRunner.rollbackTransaction(); // Rollback transaction in case of missing parameters
+        return {
+          status: httpStatusCodes.BAD_REQUEST,
+          message: "Missing required fields",
+        };
+      }
+
+      const existingUser = await userQuery.findUserByEmail(
+        queryRunner.manager,
+        param.email
+      ); // Use queryRunner.manager for transaction context
+      if (existingUser) {
+        await queryRunner.rollbackTransaction(); // Rollback if the user already exists
+        return {
+          status: httpStatusCodes.BAD_REQUEST,
+          message: "Email is already registered",
+        };
+      }
+
+      const passwordhash: string = await passwordHash(param.password);
+
+      // Save the new organization
+      const newOrganization = await organizationQuery.saveOrganization(
+        queryRunner.manager,
+        param.org_name
+      );
+      let role_id;
+      const role = await roleQuery.getRoleByNameAndOrgId(
+        queryRunner.manager,
+        "admin",
+        null
+      );
+      if (role) {
+        role_id = role.role_id;
+      } else {
+        const newRole = await roleQuery.saveRole(queryRunner.manager, {
+          role_name: "admin",
+          created_by: "system",
+          org_id: undefined,
+        });
+        role_id = newRole.role_id;
+      }
+      // Save the new user within the transaction context
+      const newUser = await userQuery.addUser(queryRunner.manager, {
+        ...param,
+        password_hash: passwordhash,
+        org_id: newOrganization.org_id,
+        is_admin: 1,
+        phone: param.phone_no,
+        full_name: "",
+        role_id: role_id,
+      });
+      // Save the new organization
+      const updateOrganization = await organizationQuery.updateOrganization(
+        queryRunner.manager,
+        newOrganization.org_id,
+        { owner_id: newUser.user_id }
+      );
+      // Generate and send OTP
+      otpService.generateSaveAndSendOtp(newUser.user_id, {
+        email: newUser.email,
+        medium: OtpMedium.EMAIL,
+        otp_type: OtpType.EMAIL_VERIFICATION,
+      });
+
+      const token = jwtSign(
+        newUser.user_id,
+        newOrganization.org_id,
+        newUser.email,
+        role_id,
+        newUser.is_super_admin,
+        newUser.is_admin
+      );
+
+      // Save the token within the transaction context
+      await userQuery.saveToken(queryRunner.manager, {
+        id: token,
+        userId: newUser.user_id,
+        ttl: this.ttl,
+        scopes: "user",
+        status: 1,
+        active: 1,
+      });
+
+      const getUserByIdWithOrganization =
+        await organizationQuery.getUserByIdWithOrganization(
+          queryRunner.manager,
+          newUser.user_id
+        );
+
+      const { password_hash, ...safeUser } = getUserByIdWithOrganization;
+
+      // Commit the transaction if everything is successful
+      await queryRunner.commitTransaction();
+
+      return {
+        status: httpStatusCodes.CREATED,
+        data: {
+          token,
+          user: safeUser,
+          organization: getUserByIdWithOrganization.organization,
+        },
+        message: "User created, OTP sent successfully!!",
+      };
+    } catch (error) {
+      // Rollback the transaction if an error occurs
+      await queryRunner.rollbackTransaction();
+      return {
+        status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      };
+    } finally {
+      // Release the query runner to avoid memory leaks
+      console.log("Finished");
+      await queryRunner.release();
+    }
+  }
+
+  async verifyOTP(params: IverifyOTPParams) {
+    try {
+      const isVerified = await otpService.verifyOtp(
+        params.id,
+        params.otp,
+        params.otp_type
+      );
+      if (!isVerified) {
+        return {
+          status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+          message: "Invalid or expired OTP",
+        };
+      }
+
+      return {
+        status: httpStatusCodes.OK,
+        data: null,
+        message: "Verify successful",
+      };
+    } catch (error) {
+      return {
+        status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+        message: "Internal server error",
+      };
+    }
+  }
+
+  async logout(token: string) {
+    try {
+      await userTokenQuery.deleteTokenFromDatabase(token);
+
+      return {
+        status: 200,
+        message: "Logout successful",
+        data: null,
+      };
+    } catch (error) {
+      console.error("Error during logout:", error);
+      return {
+        status: 500,
+        message: "Internal server error during logout",
+        data: null,
+      };
+    }
+  }
+  async forgotPassword(email: string): Promise<{
+    status: number;
+    data?: ISaveOtp | null;
+    message: string;
+  }> {
+    const queryRunner = dataSource.createQueryRunner();
+
+    try {
+      await queryRunner.startTransaction();
+      const user = await userQuery.findByEmail(email);
+      if (!user) {
+        await queryRunner.rollbackTransaction();
+        return { status: 404, message: "User not found", data: null };
+      }
+      if (!user.is_email_verified) {
+        await queryRunner.rollbackTransaction();
+        return { status: 404, message: "Email not verified", data: null };
+      }
+      const token = await jwtSign(
+        user.user_id,
+        user.org_id,
+        email,
+        user.role_id,
+        user.is_super_admin,
+        user.is_admin
+      );
+      const params = {
+        otp: token,
+        email: email,
+        otp_type: OtpType.PASSWORD_RESET,
+        medium: OtpMedium.EMAIL,
+        user_id: user.user_id,
+      };
+      const userTokenData = otpService.saveOtpOrLink(
+        queryRunner.manager,
+        params
+      );
+      if (!userTokenData) {
+        await queryRunner.rollbackTransaction();
+        return { status: 404, message: "User token not found", data: null };
+      }
+      const resetLink = `${
+        process.env.FORNTEND_URL || "http://localhost:5700/"
+      }?token=${token}`;
+      await this.sendPasswordResetNotification(email, resetLink);
+      await queryRunner.commitTransaction();
+      return { status: 200, message: "Reset link sent to email", data: null };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      return { status: 500, message: "Internal server error", data: null };
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  async resetPassword(
+    {
+      token,
+      oldPassword,
+      newPassword,
+      org_id,
+    }: {
+      token?: string;
+      oldPassword?: string;
+      newPassword: string;
+      org_id: number;
+    },
+    userFromSession?: any
+  ) {
+    const queryRunner = dataSource.createQueryRunner();
+
+    try {
+      await queryRunner.connect();
+      await queryRunner.startTransaction();
+
+      let user;
+
+      // Case 1: Reset via token link
+      if (token) {
+        try {
+          const payload = await jwtVerify(token);
+          const tokenData = await otpService.verifyOtp(
+            payload.user_id,
+            token,
+            OtpType.PASSWORD_RESET
+          );
+
+          if (!tokenData) {
+            throw new Error("Invalid token or user not found");
+          }
+
+          user = await userQuery.findById(payload.user_id);
+          if (!user) {
+            await queryRunner.rollbackTransaction();
+            return { status: 404, message: "User not found", data: null };
+          }
+          if (!user.is_email_verified) {
+            await queryRunner.rollbackTransaction();
+            return { status: 404, message: "Email not verified", data: null };
+          }
+        } catch (err) {
+          await queryRunner.rollbackTransaction();
+          return {
+            status: 400,
+            message: "Invalid or expired token",
+            data: null,
+          };
+        }
+      } else {
+        // Case 2: Change password from profile using old password
+        user = await userQuery.findById(userFromSession._id);
+
+        if (!user) {
+          await queryRunner.rollbackTransaction();
+          return { status: 401, message: "Unauthorized", data: null };
+        }
+
+        const isMatch = await passwordCompare(oldPassword!, user.password_hash);
+        if (!isMatch) {
+          await queryRunner.rollbackTransaction();
+          return { status: 400, message: "Incorrect old password", data: null };
+        }
+      }
+
+      const hashedPassword = await passwordHash(newPassword);
+      const updatedUser = await userQuery.updateUser(
+        queryRunner.manager,
+        org_id,
+        user.user_id,
+        {
+          password_hash: hashedPassword,
+        }
+      );
+
+      if (!updatedUser) {
+        await queryRunner.rollbackTransaction();
+        return { status: 400, message: "User update failed", data: null };
+      }
+
+      await queryRunner.commitTransaction();
+      return {
+        status: 200,
+        message: "Password updated successfully",
+        data: null,
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      return {
+        status: 500,
+        message: "Internal server error",
+        data: null,
+      };
+    } finally {
+      await queryRunner.release();
+    }
+  }
+}
