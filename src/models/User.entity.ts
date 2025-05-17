@@ -6,11 +6,15 @@ import {
   Index,
   JoinColumn,
   ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from "typeorm";
 import { Role } from "./Role.entity";
 import { Address } from "./Address.entity";
+import { Visit } from "./Visits.entity";
+import { Customer } from "./Customer.entity";
+import { Message } from "./Message.entity";
 
 @Entity("user")
 @Index("idx_users_organization_id", ["org_id"])
@@ -78,4 +82,16 @@ export class User {
   @ManyToOne(() => Role, { onDelete: "RESTRICT" })
   @JoinColumn({ name: "role_id" })
   role: Role;
+
+  @OneToMany(() => Customer, (customer) => customer.assigned_rep)
+  customers: Customer[];
+
+  @OneToMany(() => Visit, (visit) => visit.rep)
+  visits: Visit[];
+
+  @OneToMany(() => Message, (message) => message.sender)
+  sent_messages: Message[];
+
+  @OneToMany(() => Message, (message) => message.receiver)
+  received_messages: Message[];
 }
