@@ -1,10 +1,17 @@
-import { verifyToken } from "../middleware/auth.middleware";
 import authRoute from "./auth.route";
 import userRoute from "./user.route";
-
+import customerRoute from "./customer.route";
+import visitRoute from "./visits.route";
+import dashboardRoute from "./dashboard.route";
+import messageRoute from "./message.route";
+import mapRoute from "./mapNRoute.route";
 import express from "express";
 const router = express.Router();
 router.use("/auth", authRoute);
 router.use("/user", userRoute);
-
+router.use("/customers", customerRoute);
+router.use("/visit", visitRoute);
+router.use("/map", mapRoute);
+router.use("/dashboard", dashboardRoute);
+router.use("/message", messageRoute);
 export default router;

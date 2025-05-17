@@ -10,7 +10,7 @@ import { Response } from "express";
 
 const userTeamService = new UserTeamService();
 export class UserTeamController {
-     async getUserById(req: any, res: Response): Promise<void> {
+  async getUserById(req: any, res: Response): Promise<void> {
     let { user_id } = req.user as IJwtVerify;
     const response = await userTeamService.getUserById(user_id);
     if (response.status >= 400) {
@@ -26,9 +26,9 @@ export class UserTeamController {
   }
 
   async addTeamMember(req: any, res: Response): Promise<void> {
-    const { org_id , user_id} = req.user;
+    const { org_id, user_id } = req.user;
     const params: ITeamMemberBody = req.body;
-    const response = await userTeamService.addTeamMember(org_id, user_id,{
+    const response = await userTeamService.addTeamMember(org_id, user_id, {
       ...params,
       full_name: params.first_name + " " + params.last_name,
     });
@@ -54,7 +54,7 @@ export class UserTeamController {
       page,
       limit,
       skip,
-      search
+      search,
     });
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
@@ -117,10 +117,10 @@ export class UserTeamController {
   }
 
   async activeDeactive(req: any, res: Response): Promise<void> {
-    const { org_id,user_id  } = req.user as IJwtVerify;
+    const { org_id, user_id } = req.user as IJwtVerify;
     const { status, id }: activeDeactiveI = req.body;
 
-    const response = await userTeamService.activeDeactive(org_id,user_id, {
+    const response = await userTeamService.activeDeactive(org_id, user_id, {
       status,
       id,
     });

@@ -23,13 +23,7 @@ export class Permission {
   @Column({ type: "char", length: 36, nullable: true })
   updated_by: string;
 
-  @CreateDateColumn({ type: "datetime", default: () => "CURRENT_TIMESTAMP" })
-  created_at: Date;
+  @CreateDateColumn() created_at: Date;
 
-  @UpdateDateColumn({
-    type: "datetime",
-    default: () => "CURRENT_TIMESTAMP",
-    onUpdate: "CURRENT_TIMESTAMP",
-  })
-  updated_at: Date;
+  @UpdateDateColumn() updated_at: Date;
 }

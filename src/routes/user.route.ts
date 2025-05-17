@@ -14,5 +14,5 @@ router.get("/:id", verifyToken, userTeamController.getTeamMemberById);
 router.patch("/:id", verifyToken, userTeamController.editTeamMember);
 
 router.post("/status", verifyToken, userTeamController.activeDeactive);
-
+// router.get("/managers", verifyToken, verifyAdmin, userTeamController.getAllManagers);
 export default router;
