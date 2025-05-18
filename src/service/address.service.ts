@@ -119,8 +119,6 @@ export class AddressService {
           country: data.country || "Finland",
         });
       }
-      console.log("coords:", coords);
-
       const address = new Address();
       address.street_address = data.street_address;
       address.building_unit = data.building_unit ?? "";
@@ -139,7 +137,6 @@ export class AddressService {
       address.state = data.region;
 
       const savedAddress = await queryRunner.manager.save(Address, address);
-      console.log("savedAddress:", savedAddress);
       if (!savedAddress.address_id) {
         await queryRunner.rollbackTransaction();
         return {
@@ -157,8 +154,6 @@ export class AddressService {
         savedAddress.address_id,
         data.org_id
       );
-      console.log("autoAssignResult:", autoAssignResult);
-
       // Commit territory assignment
       await queryRunner.commitTransaction();
 

@@ -227,7 +227,6 @@ export class CustomerService {
             addressData,
             userId
           );
-          console.log("addressResponse ", addressResponse);
           if (addressResponse.status >= 400 || !addressResponse.data) {
             await queryRunner.rollbackTransaction();
             return {
@@ -264,14 +263,12 @@ export class CustomerService {
           }
         );
       }
-      console.log("customer_id ", customerId);
       const updatedCustomer = await queryRunner.manager.findOne(Customer, {
         where: { customer_id: customerId },
         relations: ["address"],
       });
 
       // Auto-assign territory if address changed
-      console.log("updatedCustomer ", updatedCustomer);
       if (data.street_address || data.postal_code || data.subregion) {
         const autoAssignResult = await territoryService.autoAssignTerritory(
           updatedCustomer!.address_id,
@@ -575,7 +572,6 @@ export class CustomerService {
         // Validate input
         const customerData = new CustomerImportDto();
         Object.assign(customerData, row);
-        console.log(customerData);
         const validationErrors = await validate(customerData);
         if (validationErrors.length) {
           const errorMsg = validationErrors
@@ -647,7 +643,6 @@ export class CustomerService {
           adminId
         );
 
-        console.log("addressResult ", addressResult);
         if (addressResult.status >= 400) {
           errors.push(
             `Failed to create address for ${row.name}: ${addressResult.message}`
@@ -677,8 +672,6 @@ export class CustomerService {
         );
         customers.push(savedCustomer);
       }
-      console.log(customers);
-
       if (errors.length && !customers.length) {
         await queryRunner.rollbackTransaction();
         return {

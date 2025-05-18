@@ -148,7 +148,6 @@ async autoAssignTerritory(
   await queryRunner.connect();
   await queryRunner.startTransaction();
   try {
-    console.log("autoAssignTerritory:", { address_id, org_id });
     const address = await queryRunner.manager.findOne(Address, {
       where: { address_id, org_id, is_active: true },
     });
