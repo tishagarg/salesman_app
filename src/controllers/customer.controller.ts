@@ -280,8 +280,6 @@ export class CustomerController {
         }
       }
       if (errors.length) {
-      console.log(errors)
-
         return ApiResponse.error(
           res,
           httpStatusCodes.BAD_REQUEST,
@@ -303,7 +301,6 @@ export class CustomerController {
         response.message
       );
     } catch (error: any) {
-      console.log(error)
       return ApiResponse.error(
         res,
         httpStatusCodes.INTERNAL_SERVER_ERROR,
