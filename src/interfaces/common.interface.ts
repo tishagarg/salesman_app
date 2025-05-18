@@ -1,11 +1,17 @@
 import {
+  IS_OPTIONAL,
   IsArray,
+  IsBoolean,
   IsEmail,
+  IsEnum,
+  IsInt,
   IsNotEmpty,
+  IsNumber,
   IsOptional,
   IsPhoneNumber,
   IsString,
 } from "class-validator";
+import { CustomerStatus } from "../enum/customerStatus";
 
 export interface IDeleteById {
   id: string;
@@ -68,47 +74,111 @@ export interface ICustomerImport {
 }
 
 export class CustomerImportDto {
-  @IsNotEmpty()
   name: string;
-
-  @IsOptional()
   contact_name?: string;
-
-  @IsOptional()
-  @IsEmail()
-  contact_email?: string;
-
-  @IsOptional()
+  contact_email: string;
   contact_phone?: string;
-
-  @IsNotEmpty()
   street_address: string;
-
-  @IsNotEmpty()
   postal_code: string;
-
-  @IsNotEmpty()
-  city: string;
-
-  @IsNotEmpty()
-  state: string;
-
-  @IsNotEmpty()
-  country: string;
+  area_name?: string;
+  subregion: string;
+  region: string;
+  country?: string;
+  org_id: number;
+  @IsOptional()
+  @IsEnum(CustomerStatus)
+  status?: CustomerStatus;
 }
 
 export class TerritoryDto {
-  @IsNotEmpty()
   @IsString()
   name: string;
 
-  @IsArray()
-  @IsString({ each: true })
   @IsOptional()
-  postal_codes: string[];
+  @IsArray()
+  postal_codes?: string[];
 
-  @IsArray()
-  @IsString({ each: true })
   @IsOptional()
-  subregions: string[];
+  @IsArray()
+  subregions?: string[];
+
+  @IsOptional()
+  @IsString()
+  polygon_id?: number;
+
+  @IsOptional()
+  @IsInt()
+  manager_id?: number;
+
+  @IsOptional()
+  @IsInt()
+  sales_rep_id?: number;
+
+  @IsInt()
+  org_id: number;
+
+  @IsOptional()
+  @IsBoolean()
+  is_active?: boolean;
+}
+
+export class AddressDto {
+  @IsString()
+  street_address: string;
+
+  @IsOptional()
+  @IsString()
+  building_unit?: string;
+
+  @IsOptional()
+  @IsString()
+  landmark?: string;
+
+  @IsString()
+  postal_code: string;
+
+  @IsString()
+  area_name: string;
+
+  @IsString()
+  subregion: string;
+
+  @IsString()
+  region: string;
+
+  @IsOptional()
+  @IsString()
+  country?: string;
+  @IsOptional()
+  @IsNumber()
+  latitude?: number;
+
+  @IsOptional()
+  @IsNumber()
+  longitude?: number;
+
+  @IsOptional()
+  @IsInt()
+  territory_id?: number;
+
+  @IsOptional()
+  @IsString()
+  polygon_id?: number;
+
+  @IsInt()
+  org_id: number;
+}
+
+export class PolygonDto {
+  @IsString()
+  name: string;
+
+  geometry: { type: string; coordinates: number[][][] };
+
+  @IsInt()
+  org_id: number;
+
+  @IsOptional()
+  @IsInt()
+  territory_id?: number;
 }

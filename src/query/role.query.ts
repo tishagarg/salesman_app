@@ -3,11 +3,12 @@ import { EntityManager, In } from "typeorm";
 import { RolePermission } from "../models/RolePermission.entity";
 import { Permission } from "../models/Permission.entity";
 import dataSource from "../config/data-source";
+import { Roles } from "../enum/roles";
 
 export class RoleQuery {
   async getRoleByNameAndOrgId(
     manager: EntityManager,
-    role_name: string,
+    role_name: Roles,
     org_id: number | null
   ): Promise<Role | null> {
     return await manager.getRepository(Role).findOne({
@@ -32,7 +33,7 @@ export class RoleQuery {
   }
   async getRole(manager: EntityManager, org_id: number): Promise<Role[]> {
     return await manager.getRepository(Role).find({
-      where: [{ role_name: "admin" }, { org_id }],
+      where: [{ role_name: Roles.ADMIN }, { org_id }],
     });
   }
 

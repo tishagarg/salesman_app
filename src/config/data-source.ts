@@ -15,6 +15,9 @@ import { Message } from "../models/Message.entity";
 import { AuditLog } from "../models/AuditLog.entity";
 import { Permission } from "../models/Permission.entity";
 import { RolePermission } from "../models/RolePermission.entity";
+import { Polygon } from "../models/Polygon.entity";
+import { Region } from "../models/Region.entity";
+import { Subregion } from "../models/Subregion.entity";
 
 dotenv.config();
 
@@ -25,11 +28,13 @@ export const AppDataSource: DataSourceOptions = {
   username: process.env.POSTGRES_USER,
   password: process.env.POSTGRES_PASSWORD,
   database: process.env.POSTGRES_DB_DEVELOPMENT,
-  ssl: true,
+  ssl: {
+    rejectUnauthorized: false,
+  },
   // process.env.NODE_ENV === "production"
   //   ? { rejectUnauthorized: false }
   //   : false,
-  synchronize: true,
+synchronize: false,
   logging: ["error"],
   entities: [
     User,
@@ -44,7 +49,8 @@ export const AppDataSource: DataSourceOptions = {
     Message,
     AuditLog,
     Permission,
-    RolePermission,
+    Polygon,
+    RolePermission,Region,Subregion
   ],
   migrations: [],
   subscribers: [],

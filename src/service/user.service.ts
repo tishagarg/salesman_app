@@ -10,6 +10,7 @@ import { activeDeactiveI, ITeamMember } from "../interfaces/user.interface";
 import { UserTokenQuery } from "../query/usertoken.query";
 import { sendEmail } from "./email.service";
 import { OrganizationQuery } from "../query/organization.query";
+import { Roles } from "../enum/roles";
 
 const userQuery = new UserQuery();
 const roleQuery = new RoleQuery();
@@ -76,14 +77,14 @@ export class UserTeamService {
       if (params.role_name) {
         const existingRole = await roleQuery.getRoleByNameAndOrgId(
           queryRunner.manager,
-          params.role_name,
+          params.role_name as Roles,
           org_id
         );
         if (existingRole) {
           role_id = existingRole.role_id;
         } else {
           const newRole = await roleQuery.saveRole(queryRunner.manager, {
-            role_name: params.role_name,
+            role_name: params.role_name ,
             org_id,
           });
           role_id = newRole.role_id;
@@ -111,7 +112,7 @@ export class UserTeamService {
         last_name: params.last_name,
         is_email_verified: 1,
         is_active: true,
-        is_admin: findRole.role_name === "admin" ? 1 : 0,
+        is_admin: findRole.role_name === Roles.ADMIN ? 1 : 0,
         password_hash: passwordhash,
         created_by: String(user_id).trim(),
       });
@@ -300,7 +301,7 @@ export class UserTeamService {
         queryRunner.manager,
         org_id,
         user_id,
-        { ...updatedFields, is_admin: findRole.role_name === "admin" ? 1 : 0 }
+        { ...updatedFields, is_admin: findRole.role_name ===Roles.ADMIN ? 1 : 0 }
       );
 
       if (!updatedUser) {

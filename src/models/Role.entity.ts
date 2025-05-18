@@ -1,3 +1,4 @@
+import { Roles } from "../enum/roles";
 import { Organization } from "./Organisation.entity";
 import {
   Column,
@@ -15,8 +16,8 @@ export class Role {
 
   @Column({ type: "number", nullable: true })
   org_id: number;
-  @Column({ type: "varchar", length: 50, nullable: false })
-  role_name: string;
+  @Column({ type: "enum", default: Roles.CUSTOMER , enumName: 'role_name_enum',})
+  role_name: Roles;
 
   @Column({ type: "char", length: 36, nullable: true })
   created_by: string;
@@ -24,7 +25,7 @@ export class Role {
   @Column({ type: "char", length: 36, nullable: true })
   updated_by: string;
 
- @CreateDateColumn() created_at: Date;
+  @CreateDateColumn() created_at: Date;
 
   @UpdateDateColumn() updated_at: Date;
 

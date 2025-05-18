@@ -10,6 +10,7 @@ import {
 import { CustomerStatus } from "../enum/customerStatus";
 import { User } from "./User.entity";
 import { Address } from "./Address.entity";
+import { Organization } from "./Organisation.entity";
 
 // Entities
 @Entity("customer")
@@ -36,14 +37,18 @@ export class Customer {
   contact_phone: string;
 
   @Column({
-    type: "enum",
+    type: 'enum',
     enum: CustomerStatus,
+    enumName: "customer_status_enum",
     default: CustomerStatus.Prospect,
   })
   status: CustomerStatus;
 
   @Column({ type: "int", nullable: true })
   territory_id: number;
+
+  @Column({ type: "int", nullable: true })
+  org_id: number;
 
   @Column({ type: "boolean", default: true })
   is_active: boolean;
@@ -69,4 +74,7 @@ export class Customer {
   @ManyToOne(() => Address, { onDelete: "SET NULL" })
   @JoinColumn({ name: "address_id" })
   address: Address;
+  @ManyToOne(() => Organization, { onDelete: "SET NULL" })
+  @JoinColumn({ name: "org_id" })
+  organization: Organization;
 }

@@ -1,5 +1,6 @@
 import { OtpMedium } from "../enum/otpMedium";
 import { OtpType } from "../enum/otpType";
+import { Roles } from "../enum/roles";
 import { Organization } from "../models";
 
 export interface ILoginUser {
@@ -243,7 +244,7 @@ export interface IRegion {
 }
 
 export interface ITeamMember {
-  role_name: string;
+  role_name: Roles;
   first_name: string;
   full_name: string;
   last_name: string;
@@ -254,7 +255,7 @@ export interface ITeamMember {
 }
 
 export interface ITeamMemberBody {
-  role_name: string;
+  role_name: Roles;
   first_name: string;
   last_name: string;
   email: string;

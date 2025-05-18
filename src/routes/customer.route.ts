@@ -1,57 +1,58 @@
 import { upload } from "../config/multer";
 import { CustomerController } from "../controllers/customer.controller";
-import { roleMiddleware } from "../middleware/role.middleware";
-const customerController = new CustomerController();
+import { permissionMiddleware } from "../middleware/permission.middleware";
 import express from "express";
+
+const customerController = new CustomerController();
 const router = express.Router();
 
 router.post(
   "/import",
-  roleMiddleware(["admin"]),
+  permissionMiddleware("customer_import"),
   upload.single("file"),
   customerController.importCustomers
 );
+
 router.post(
   "/:id/assign",
-  roleMiddleware(["admin"]),
+  permissionMiddleware("customer_assign"),
   customerController.assignCustomer
 );
+
+router.post(
+  "/",
+  permissionMiddleware("customer_create"),
+  customerController.createCustomer
+);
+
 router.put(
   "/:id",
-  roleMiddleware(["sales rep","manager", "admin"]),
+  permissionMiddleware("customer_update"),
   customerController.updateCustomer
 );
 
-// Routes
-router.post(
-  "/",
-  roleMiddleware(["manager", "admin"]),
-  customerController.createCustomer
-); // POST /customers
-router.put(
-  "/:id",
-  roleMiddleware(["sales rep", "admin"]),
-  customerController.updateCustomer
-); // PUT /customers/:id
 router.delete(
   "/:id",
-  roleMiddleware(["admin"]),
+  permissionMiddleware("customer_delete"),
   customerController.deleteCustomer
-); // DELETE /customers/:id
+);
+
 router.get(
   "/:id",
-  roleMiddleware(["sales rep", "admin"]),
+  permissionMiddleware("customer_view"),
   customerController.getCustomerById
-); // GET /customers/:id
+);
+
 router.get(
   "/",
-  roleMiddleware(["sales rep", "admin"]),
+  permissionMiddleware("customer_view"),
   customerController.getAllCustomers
-); // GET /customers
+);
+
 router.post(
   "/bulk-assign",
-  roleMiddleware(["admin"]),
+  permissionMiddleware("customer_bulk_assign"),
   customerController.bulkAssignCustomers
-); // POST /customers/bulk-assign
+);
 
 export default router;

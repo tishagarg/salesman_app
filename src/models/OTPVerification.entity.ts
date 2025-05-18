@@ -8,7 +8,7 @@ import {
   JoinColumn,
   Index,
 } from "typeorm";
-import { User } from "./User.entity"; 
+import { User } from "./User.entity";
 import { OtpType } from "../enum/otpType";
 import { OtpMedium } from "../enum/otpMedium";
 
@@ -28,10 +28,19 @@ export class OtpVerification {
   @Column({ type: "varchar", length: 500 })
   otp: string;
 
-  @Column({ type: "enum", enum: OtpType })
+  @Column({
+    type: "enum",
+    enum: OtpType,
+    default:OtpType.NULL,
+    enumName: "otp_verification_otp_type_enum",
+  })
   otp_type: OtpType;
-
-  @Column({ type: "enum", enum: OtpMedium })
+  @Column({
+    type: "enum",
+    enum: OtpMedium,
+    enumName: "otp_verification_medium_enum",
+    default: OtpMedium.EMAIL,
+  })
   medium: OtpMedium;
 
   @Column({ type: "boolean", default: false })
