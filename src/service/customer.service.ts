@@ -1,15 +1,19 @@
 import dataSource from "../config/data-source";
 import { CustomerStatus } from "../enum/customerStatus";
-import {
-  CustomerImportDto,
-  ICustomerImport,
-} from "../interfaces/common.interface";
-import { User } from "../models";
+import { CustomerImportDto, AddressDto } from "../interfaces/common.interface";
+import { Role, User } from "../models";
 import { Customer } from "../models/Customer.entity";
+import { Address } from "../models/Address.entity";
 import httpStatusCodes from "http-status-codes";
 import { AddressService } from "./address.service";
-import { Address } from "../models/Address.entity";
+import { TerritoryService } from "./territory.service";
+import { Roles } from "../enum/roles";
+import { validate } from "class-validator";
+import { Region } from "../models/Region.entity";
+import { Subregion } from "../models/Subregion.entity";
+
 const addressService = new AddressService();
+const territoryService = new TerritoryService();
 
 export class CustomerService {
   async createCustomer(
@@ -23,32 +27,69 @@ export class CustomerService {
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
-      // Deduplication check
-      const existing = await queryRunner.manager.findOne(Customer, {
-        where: [
-          { name: data.name, address: { postal_code: data.postal_code } },
-          { contact_email: data.contact_email },
-        ],
-        relations: ["address"],
-      });
-      if (existing) {
+      // Validate input
+      const customerData = new CustomerImportDto();
+      Object.assign(customerData, data);
+      const validationErrors = await validate(customerData);
+      if (validationErrors.length) {
+        const errorMsg = validationErrors
+          .map((e) => Object.values(e.constraints || {}).join(", "))
+          .join("; ");
         await queryRunner.rollbackTransaction();
         return {
-          status: httpStatusCodes.CONFLICT,
-          message: `Customer with name ${data.name} at ${data.postal_code} or email ${data.contact_email} already exists`,
+          status: httpStatusCodes.BAD_REQUEST,
+          message: `Validation failed: ${errorMsg}`,
         };
       }
 
-      // Create address with geolocation
-      const addressData = {
+      // Deduplication check using Address entity's unique constraint
+      const existingAddress = await queryRunner.manager.findOne(Address, {
+        where: {
+          postal_code: data.postal_code,
+          street_address: data.street_address,
+          subregion: data.subregion,
+          org_id: data.org_id,
+        },
+      });
+      if (existingAddress) {
+        const existingCustomer = await queryRunner.manager.findOne(Customer, {
+          where: { address_id: existingAddress.address_id, is_active: true },
+        });
+        if (existingCustomer) {
+          await queryRunner.rollbackTransaction();
+          return {
+            status: httpStatusCodes.CONFLICT,
+            message: `Customer with address ${data.street_address}, ${data.postal_code}, ${data.subregion} already exists`,
+          };
+        }
+      }
+
+      // Check for duplicate email
+      const existingEmail = await queryRunner.manager.findOne(Customer, {
+        where: { contact_email: data.contact_email, is_active: true },
+      });
+      if (existingEmail) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.CONFLICT,
+          message: `Customer with email ${data.contact_email} already exists`,
+        };
+      }
+
+      // Create address
+      const addressData: AddressDto = {
         street_address: data.street_address,
         postal_code: data.postal_code,
-        city: data.city,
-        state: data.state,
-        country: data.country,
-        created_by: adminId.toString(),
+        area_name: data.area_name || "",
+        subregion: data.subregion,
+        region: data.region,
+        country: data.country || "Finland",
+        org_id: data.org_id,
       };
-      const addressResponse = await addressService.createAddress(addressData);
+      const addressResponse = await addressService.createAddress(
+        addressData,
+        adminId
+      );
       if (addressResponse.status >= 400) {
         await queryRunner.rollbackTransaction();
         return {
@@ -59,30 +100,30 @@ export class CustomerService {
       const address = addressResponse.data as Address;
 
       // Create customer
-      const customer = await queryRunner.manager.save(Customer, {
-        name: data.name,
-        contact_name: data.contact_name,
-        contact_email: data.contact_email,
-        contact_phone: data.contact_phone,
-        address_id: address.address_id,
-        status: CustomerStatus.Prospect,
-        pending_assignment: true,
-        is_active: true,
-        created_by: adminId.toString(),
-        created_at: new Date(),
-        updated_by: adminId.toString(),
-        updated_at: new Date(),
-      });
+      const customer = new Customer();
+      customer.name = data.name;
+      customer.contact_name = data.contact_name ?? "";
+      customer.contact_email = data.contact_email ?? "";
+      customer.contact_phone = data.contact_phone ?? "";
+      customer.address_id = address.address_id;
+      customer.status = CustomerStatus.Prospect;
+      customer.pending_assignment = true;
+      customer.is_active = true;
+      customer.created_by = adminId.toString();
+      customer.updated_by = adminId.toString();
+      customer.org_id = data.org_id;
+
+      const savedCustomer = await queryRunner.manager.save(Customer, customer);
 
       await queryRunner.commitTransaction();
       return {
         status: httpStatusCodes.CREATED,
-        data: customer,
+        data: savedCustomer,
         message: "Customer created successfully",
       };
     } catch (error: any) {
       await queryRunner.rollbackTransaction();
-      console.error("createCustomer - Error:", error.message);
+      console.error("createCustomer - Error:", error.message, error.stack);
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: `Failed to create customer: ${error.message}`,
@@ -92,11 +133,11 @@ export class CustomerService {
     }
   }
 
-  // Update a customer
   async updateCustomer(
-    customerId: string,
+    customerId: number,
     data: Partial<CustomerImportDto>,
-    adminId: number
+    userId: number,
+    role: string
   ): Promise<{
     status: number;
     data?: any;
@@ -106,7 +147,11 @@ export class CustomerService {
     await queryRunner.startTransaction();
     try {
       const customer = await queryRunner.manager.findOne(Customer, {
-        where: { customer_id: parseInt(customerId), is_active: true },
+        where: {
+          customer_id: customerId,
+          is_active: true,
+          org_id: data.org_id,
+        },
         relations: ["address"],
       });
       if (!customer) {
@@ -117,75 +162,129 @@ export class CustomerService {
         };
       }
 
-      // Update address if provided
-      let addressId = customer.address_id;
-      if (
-        data.street_address ||
-        data.postal_code ||
-        data.city ||
-        data.state ||
-        data.country
-      ) {
-        const addressData = {
-          street_address:
-            data.street_address || customer.address.street_address,
-          postal_code: data.postal_code || customer.address.postal_code,
-          city: data.city || customer.address.city,
-          state: data.state || customer.address.state,
-          country: data.country || customer.address.country,
-          created_by: adminId.toString(),
+      // Role-based access: Sales reps can only update their assigned customers
+      if (role === Roles.SALES_REP && customer.assigned_rep_id !== userId) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.FORBIDDEN,
+          message: "Access denied: You are not assigned to this customer",
         };
-        const addressResponse = await addressService.createAddress(
-          addressData,
-        );
-        if (!addressResponse) {
+      }
+
+      // Sales reps can only update specific fields and set status to Active (Workflow 3.4)
+      if (role === Roles.SALES_REP) {
+        const allowedFields: (keyof Customer)[] = [
+          "name",
+          "contact_name",
+          "contact_email",
+          "contact_phone",
+          "status",
+        ];
+        const updates: Partial<Customer> = {};
+        for (const key of allowedFields) {
+          if (data[key as keyof CustomerImportDto] !== undefined) {
+            updates[key] = data[key as keyof CustomerImportDto] as any;
+          }
+        }
+        if (updates.status && updates.status !== CustomerStatus.Active) {
           await queryRunner.rollbackTransaction();
           return {
-            status: 400,
-            message: `Failed to update address`,
+            status: httpStatusCodes.FORBIDDEN,
+            message: "Sales reps can only change status to Active",
           };
         }
-        if (addressResponse && addressResponse.data && addressResponse.data.address_id) {
-          addressId = addressResponse.data.address_id;
-        } else {
-          await queryRunner.rollbackTransaction();
-          return {
-            status: 400,
-            message: `Failed to update address: Invalid address response`,
+        await queryRunner.manager.update(
+          Customer,
+          { customer_id: customerId },
+          {
+            ...updates,
+            updated_by: userId.toString(),
+            updated_at: new Date(),
+          }
+        );
+      } else {
+        // Admins/Managers can update all fields
+        let addressId = customer.address_id;
+        if (
+          data.street_address ||
+          data.postal_code ||
+          data.subregion ||
+          data.region ||
+          data.country ||
+          data.area_name
+        ) {
+          const addressData: AddressDto = {
+            street_address:
+              data.street_address || customer.address.street_address,
+            postal_code: data.postal_code || customer.address.postal_code,
+            area_name: data.area_name || customer.address.area_name,
+            subregion: data.subregion || customer.address.subregion,
+            region: data.region || customer.address.region,
+            country: data.country || customer.address.country,
+            org_id: data.org_id || customer.org_id,
           };
+          const addressResponse = await addressService.createAddress(
+            addressData,
+            userId
+          );
+          console.log("addressResponse ", addressResponse);
+          if (addressResponse.status >= 400 || !addressResponse.data) {
+            await queryRunner.rollbackTransaction();
+            return {
+              status: addressResponse.status,
+              message: `Failed to create address: ${addressResponse.message}`,
+            };
+          }
+          addressId = addressResponse.data.address_id;
+
+          // Soft-delete old address
+          await queryRunner.manager.update(
+            Address,
+            { address_id: customer.address_id },
+            {
+              is_active: false,
+              updated_by: userId.toString(),
+              updated_at: new Date(),
+            }
+          );
         }
 
-        // Soft-delete old address
         await queryRunner.manager.update(
-          Address,
-          { address_id: customer.address_id },
+          Customer,
+          { customer_id: customerId },
           {
-            is_active: false,
-            updated_by: adminId.toString(),
+            name: data.name || customer.name,
+            contact_name: data.contact_name || customer.contact_name,
+            contact_email: data.contact_email || customer.contact_email,
+            contact_phone: data.contact_phone || customer.contact_phone,
+            address_id: addressId,
+            status: data.status || customer.status,
+            updated_by: userId.toString(),
             updated_at: new Date(),
           }
         );
       }
-
-      // Update customer
-      await queryRunner.manager.update(
-        Customer,
-        { customer_id: parseInt(customerId) },
-        {
-          name: data.name || customer.name,
-          contact_name: data.contact_name || customer.contact_name,
-          contact_email: data.contact_email || customer.contact_email,
-          contact_phone: data.contact_phone || customer.contact_phone,
-          address_id: addressId,
-          updated_by: adminId.toString(),
-          updated_at: new Date(),
-        }
-      );
-
+      console.log("customer_id ", customerId);
       const updatedCustomer = await queryRunner.manager.findOne(Customer, {
-        where: { customer_id: parseInt(customerId) },
+        where: { customer_id: customerId },
         relations: ["address"],
       });
+
+      // Auto-assign territory if address changed
+      console.log("updatedCustomer ", updatedCustomer);
+      if (data.street_address || data.postal_code || data.subregion) {
+        const autoAssignResult = await territoryService.autoAssignTerritory(
+          updatedCustomer!.address_id,
+          data.org_id || customer.org_id
+        );
+        if (autoAssignResult.status >= 400) {
+          await queryRunner.rollbackTransaction();
+          return {
+            status: autoAssignResult.status,
+            message: `Failed to auto-assign territory: ${autoAssignResult.message}`,
+          };
+        }
+      }
 
       await queryRunner.commitTransaction();
       return {
@@ -195,7 +294,7 @@ export class CustomerService {
       };
     } catch (error: any) {
       await queryRunner.rollbackTransaction();
-      console.error("updateCustomer - Error:", error.message);
+      console.error("updateCustomer - Error:", error.message, error.stack);
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: `Failed to update customer: ${error.message}`,
@@ -205,9 +304,8 @@ export class CustomerService {
     }
   }
 
-  // Delete a customer (soft delete)
   async deleteCustomer(
-    customerId: string,
+    customerId: number,
     adminId: number
   ): Promise<{
     status: number;
@@ -217,7 +315,7 @@ export class CustomerService {
     await queryRunner.startTransaction();
     try {
       const customer = await queryRunner.manager.findOne(Customer, {
-        where: { customer_id: parseInt(customerId), is_active: true },
+        where: { customer_id: customerId, is_active: true },
       });
       if (!customer) {
         await queryRunner.rollbackTransaction();
@@ -229,7 +327,7 @@ export class CustomerService {
 
       await queryRunner.manager.update(
         Customer,
-        { customer_id: parseInt(customerId) },
+        { customer_id: customerId },
         {
           is_active: false,
           updated_by: adminId.toString(),
@@ -254,7 +352,7 @@ export class CustomerService {
       };
     } catch (error: any) {
       await queryRunner.rollbackTransaction();
-      console.error("deleteCustomer - Error:", error.message);
+      console.error("deleteCustomer - Error:", error.message, error.stack);
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: `Failed to delete customer: ${error.message}`,
@@ -264,9 +362,8 @@ export class CustomerService {
     }
   }
 
-  // Get a customer by ID
   async getCustomerById(
-    customerId: string,
+    customerId: number,
     userId: number,
     role: string
   ): Promise<{
@@ -276,7 +373,7 @@ export class CustomerService {
   }> {
     try {
       const customer = await dataSource.manager.findOne(Customer, {
-        where: { customer_id: parseInt(customerId), is_active: true },
+        where: { customer_id: customerId, is_active: true },
         relations: ["address"],
       });
 
@@ -287,8 +384,7 @@ export class CustomerService {
         };
       }
 
-      // Role-based access: Sales reps can only see their assigned customers
-      if (role === "SalesRep" && customer.assigned_rep_id !== userId) {
+      if (role === Roles.SALES_REP && customer.assigned_rep_id !== userId) {
         return {
           status: httpStatusCodes.FORBIDDEN,
           message: "Access denied: You are not assigned to this customer",
@@ -301,7 +397,7 @@ export class CustomerService {
         message: "Customer retrieved successfully",
       };
     } catch (error: any) {
-      console.error("getCustomerById - Error:", error.message);
+      console.error("getCustomerById - Error:", error.message, error.stack);
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: `Failed to retrieve customer: ${error.message}`,
@@ -309,13 +405,13 @@ export class CustomerService {
     }
   }
 
-  // Get all customers with filters
   async getAllCustomers(
     filters: {
       territory_id?: number;
       rep_id?: number;
       status?: string;
       pending_assignment?: boolean;
+      org_id?: number;
     },
     userId: number,
     role: string
@@ -331,7 +427,7 @@ export class CustomerService {
         where.address = { territory_id: filters.territory_id };
       }
       if (filters.rep_id) {
-        where.rep_id = filters.rep_id;
+        where.assigned_rep_id = filters.rep_id;
       }
       if (filters.status) {
         where.status = filters.status;
@@ -339,10 +435,12 @@ export class CustomerService {
       if (filters.pending_assignment !== undefined) {
         where.pending_assignment = filters.pending_assignment;
       }
+      if (filters.org_id) {
+        where.org_id = filters.org_id;
+      }
 
-      // Role-based access: Sales reps only see their assigned customers
-      if (role === "SalesRep") {
-        where.rep_id = userId;
+      if (role === Roles.SALES_REP) {
+        where.assigned_rep_id = userId;
       }
 
       const customers = await dataSource.manager.find(Customer, {
@@ -356,14 +454,15 @@ export class CustomerService {
         message: "Customers retrieved successfully",
       };
     } catch (error: any) {
-      console.error("getAllCustomers - Error:", error.message);
+      console.error("getAllCustomers - Error:", error.message, error.stack);
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: `Failed to retrieve customers: ${error.message}`,
-        data:null
+        data: null,
       };
     }
   }
+
   async bulkAssignCustomers(
     customerIds: number[],
     repId: number,
@@ -377,6 +476,17 @@ export class CustomerService {
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
+      const rep = await queryRunner.manager.findOne(User, {
+        where: { user_id: repId, role: { role_name: Roles.SALES_REP } },
+      });
+      if (!rep) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.BAD_REQUEST,
+          message: "Invalid sales rep",
+        };
+      }
+
       const updatedCustomers: Customer[] = [];
       const errors: string[] = [];
 
@@ -432,7 +542,7 @@ export class CustomerService {
       };
     } catch (error: any) {
       await queryRunner.rollbackTransaction();
-      console.error("bulkAssignCustomers - Error:", error.message);
+      console.error("bulkAssignCustomers - Error:", error.message, error.stack);
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: `Failed to assign customers: ${error.message}`,
@@ -441,85 +551,156 @@ export class CustomerService {
       await queryRunner.release();
     }
   }
+
   async importCustomers(
     fileData: CustomerImportDto[],
     adminId: number
-  ): Promise<{ status: number; message: string; data: any }> {
+  ): Promise<{
+    status: number;
+    message: string;
+    data?: any[] | null;
+    errors?: string[];
+  }> {
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
-      const addressService = new AddressService();
       const customers: Customer[] = [];
       const errors: string[] = [];
-
+      const regions = await queryRunner.manager.find(Region, {
+        where: { is_active: true },
+        select: ["name"],
+      });
+      const finnishRegions = regions.map((region) => region.name);
       for (const row of fileData) {
-        console.log(row);
-        // Deduplication check by name + postal_code or contact_email
-        const existing = await queryRunner.manager.findOne(Customer, {
-          where: [
-            { name: row.name, address: { postal_code: row.postal_code } },
-            { contact_email: row.contact_email },
-          ],
+        // Validate input
+        const customerData = new CustomerImportDto();
+        Object.assign(customerData, row);
+        console.log(customerData);
+        const validationErrors = await validate(customerData);
+        if (validationErrors.length) {
+          const errorMsg = validationErrors
+            .map((e) => Object.values(e.constraints || {}).join(", "))
+            .join("; ");
+          errors.push(`Validation failed for ${row.name}: ${errorMsg}`);
+          continue;
+        }
+        if (!finnishRegions.includes(row.region)) {
+          errors.push(`Invalid region for ${row.name}: ${row.region}`);
+          continue;
+        }
+
+        // Validate subregion
+        const subregions = await queryRunner.manager.find(Subregion, {
+          where: { region_name: row.region, is_active: true },
+          select: ["name"],
         });
-        console.log("existing ", existing);
-        if (existing) {
+        const finnishSubregions = subregions.map((subregion) => subregion.name);
+        if (!finnishSubregions.includes(row.subregion)) {
+          errors.push(`Invalid subregion for ${row.name}: ${row.subregion}`);
+          continue;
+        }
+
+        // Deduplication check
+        const existingAddress = await queryRunner.manager.findOne(Address, {
+          where: {
+            postal_code: row.postal_code,
+            street_address: row.street_address,
+            subregion: row.subregion,
+            org_id: row.org_id,
+          },
+        });
+        if (existingAddress) {
+          const existingCustomer = await queryRunner.manager.findOne(Customer, {
+            where: { address_id: existingAddress.address_id, is_active: true },
+          });
+          if (existingCustomer) {
+            errors.push(
+              `Duplicate customer: ${row.name} at ${row.street_address}, ${row.postal_code}, ${row.subregion}`
+            );
+            continue;
+          }
+        }
+
+        // Check for duplicate email
+        const existingEmail = await queryRunner.manager.findOne(Customer, {
+          where: { contact_email: row.contact_email, is_active: true },
+        });
+        if (existingEmail) {
           errors.push(
-            `Duplicate customer: ${row.name} at ${row.postal_code} or ${row.contact_email}`
+            `Duplicate customer email: ${row.contact_email} for ${row.name}`
           );
           continue;
         }
 
         // Create address
-        const addressResult = await addressService.createAddress({
+        const addressData: AddressDto = {
           street_address: row.street_address,
           postal_code: row.postal_code,
-          city: row.city,
-          state: row.state,
-          country: row.country,
-          created_by: adminId.toString(),
-        });
-        console.log(addressResult);
+          area_name: row.area_name || "",
+          subregion: row.subregion,
+          region: row.region,
+          country: row.country || "Finland",
+          org_id: row.org_id,
+        };
+        const addressResult = await addressService.createAddress(
+          addressData,
+          adminId
+        );
 
-        // Check if address creation failed
-        if ("status" in addressResult && "message" in addressResult) {
+        console.log("addressResult ", addressResult);
+        if (addressResult.status >= 400) {
           errors.push(
             `Failed to create address for ${row.name}: ${addressResult.message}`
           );
           continue;
         }
 
-        const address = addressResult as Address;
+        const address = addressResult.data as Address;
 
-        // Create customer with pending_assignment
-        const customer = await queryRunner.manager.save(Customer, {
-          name: row.name,
-          contact_name: row.contact_name,
-          contact_email: row.contact_email,
-          contact_phone: row.contact_phone,
-          address_id: address.address_id,
-          status: CustomerStatus.Prospect,
-          pending_assignment: true,
-          is_active: true,
-          created_by: adminId.toString(),
-        });
+        // Create customer
+        const customer = new Customer();
+        customer.name = row.name;
+        customer.contact_name = row.contact_name ?? "";
+        customer.contact_email = row.contact_email ?? "";
+        customer.contact_phone = row.contact_phone ?? "";
+        customer.address_id = address.address_id;
+        customer.status = CustomerStatus.Prospect;
+        customer.pending_assignment = true;
+        customer.is_active = true;
+        customer.created_by = adminId.toString();
+        customer.updated_by = adminId.toString();
+        customer.org_id = row.org_id;
 
-        customers.push(customer);
+        const savedCustomer = await queryRunner.manager.save(
+          Customer,
+          customer
+        );
+        customers.push(savedCustomer);
+      }
+      console.log(customers);
+
+      if (errors.length && !customers.length) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.BAD_REQUEST,
+          message: "No customers imported",
+          errors,
+        };
       }
 
       await queryRunner.commitTransaction();
       return {
         status: httpStatusCodes.OK,
         data: customers,
-        message:
-          customers.length > 0
-            ? "Customers imported successfully"
-            : "No customers imported",
+        message: "Customers imported successfully",
+        errors: errors.length ? errors : undefined,
       };
     } catch (error: any) {
       await queryRunner.rollbackTransaction();
+      console.error("importCustomers - Error:", error.message, error.stack);
       return {
-        status: httpStatusCodes.BAD_REQUEST,
-        message: error.message,
+        status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+        message: `Failed to import customers: ${error.message}`,
         data: null,
       };
     } finally {
@@ -527,92 +708,60 @@ export class CustomerService {
     }
   }
 
-  // async updateCustomer(
-  //   customerId: string,
-  //   data: Partial<Customer>,
-  //   repId: number
-  // ): Promise<{ status: number; message: string; data: any }> {
-  //   const queryRunner = dataSource.createQueryRunner();
-  //   await queryRunner.startTransaction();
-  //   try {
-  //     const customer = await queryRunner.manager.findOne(Customer, {
-  //       where: { customer_id: parseInt(customerId), assigned_rep_id: repId },
-  //     });
-  //     if (!customer) {
-  //       throw new Error("Customer not found or not assigned to rep");
-  //     }
-  //     // Define allowed fields as keyof Customer
-  //     const allowedFields: (keyof Customer)[] = [
-  //       "name",
-  //       "contact_name",
-  //       "contact_email",
-  //       "contact_phone",
-  //       "status",
-  //       "address_id",
-  //     ];
-  //     const updates: Partial<Customer> = {};
-  //     for (const key of allowedFields) {
-  //       if (data[key] !== undefined) {
-  //         updates[key] = data[key] as any;
-  //       }
-  //     }
-  //     // Reps can only change status to Active (Workflow 3.4)
-  //     if (updates.status && updates.status !== CustomerStatus.Active) {
-  //       throw new Error("Reps can only change status to Active");
-  //     }
-  //     await queryRunner.manager.update(Customer, customerId, {
-  //       ...updates,
-  //       updated_by: repId.toString(),
-  //     });
-  //     const updatedCustomer = await queryRunner.manager.findOne(Customer, {
-  //       where: { customer_id: parseInt(customerId) },
-  //     });
-  //     await queryRunner.commitTransaction();
-  //     return {
-  //       status: httpStatusCodes.OK,
-  //       data: updatedCustomer,
-  //       message: "Customer updated successfully",
-  //     };
-  //   } catch (error: any) {
-  //     await queryRunner.rollbackTransaction();
-  //     return {
-  //       status: httpStatusCodes.BAD_REQUEST,
-  //       message: error.message,
-  //       data: null,
-  //     };
-  //   } finally {
-  //     await queryRunner.release();
-  //   }
-  // }
-
   async assignCustomer(
-    customerId: string,
+    customerId: number,
     repId: number,
     managerId: number
-  ): Promise<{ status: number; message: string; data: any }> {
+  ): Promise<{
+    status: number;
+    message: string;
+    data?: any;
+  }> {
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
       const customer = await queryRunner.manager.findOne(Customer, {
-        where: { customer_id: parseInt(customerId), pending_assignment: true },
+        where: {
+          customer_id: customerId,
+          pending_assignment: true,
+          is_active: true,
+        },
       });
       if (!customer) {
-        throw new Error("Customer not found or not pending assignment");
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.NOT_FOUND,
+          message: "Customer not found or not pending assignment",
+        };
       }
+
       const rep = await queryRunner.manager.findOne(User, {
-        where: { user_id: repId, role: { role_name: "sales rep" } },
+        where: { user_id: repId, role: { role_name: Roles.SALES_REP } },
       });
       if (!rep) {
-        throw new Error("Invalid sales rep");
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.BAD_REQUEST,
+          message: "Invalid sales rep",
+        };
       }
-      await queryRunner.manager.update(Customer, customerId, {
-        assigned_rep_id: repId,
-        pending_assignment: false,
-        updated_by: managerId.toString(),
-      });
+
+      await queryRunner.manager.update(
+        Customer,
+        { customer_id: customerId },
+        {
+          assigned_rep_id: repId,
+          pending_assignment: false,
+          updated_by: managerId.toString(),
+          updated_at: new Date(),
+        }
+      );
+
       const updatedCustomer = await queryRunner.manager.findOne(Customer, {
-        where: { customer_id: parseInt(customerId) },
+        where: { customer_id: customerId },
+        relations: ["address"],
       });
+
       await queryRunner.commitTransaction();
       return {
         status: httpStatusCodes.OK,
@@ -621,10 +770,10 @@ export class CustomerService {
       };
     } catch (error: any) {
       await queryRunner.rollbackTransaction();
+      console.error("assignCustomer - Error:", error.message, error.stack);
       return {
-        status: httpStatusCodes.BAD_REQUEST,
-        message: error.message,
-        data: null,
+        status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+        message: `Failed to assign customer: ${error.message}`,
       };
     } finally {
       await queryRunner.release();

@@ -1,79 +1,178 @@
-import dataSource from "../config/data-source";
 import httpStatusCodes from "http-status-codes";
-import { TerritoryService } from "./territory.service";
+import dataSource from "../config/data-source";
 import { Address } from "../models/Address.entity";
+import { GeocodingService } from "../utils/geoCode.service";
+import { TerritoryService } from "./territory.service";
 import { validate } from "class-validator";
-import {
-  Client as GoogleMapsClient,
-  GeocodeRequest,
-} from "@googlemaps/google-maps-services-js";
-import { AddressValidation } from "../constants/AddressValidation";
-
-const territoryService = new TerritoryService();
-const googleMapsClient = new GoogleMapsClient();
+import { AddressDto } from "../interfaces/common.interface";
+import { Region } from "../models/Region.entity";
+import { Subregion } from "../models/Subregion.entity";
 
 export class AddressService {
-  async createAddress(data: {
-    street_address: string;
-    postal_code: string;
-    city: string;
-    state: string;
-    country: string;
-    created_by: string;
-  }): Promise<{ data: Address | null; message: string; status: number }> {
+  private geocodingService = new GeocodingService();
+  private territoryService = new TerritoryService();
+  async getFinnishRegions(): Promise<string[]> {
+    const regions = await dataSource.manager.find(Region, {
+      where: { is_active: true },
+      select: ["name"],
+    });
+    return regions.map((region) => region.name);
+  }
+  async getFinnishSubregions(region: string): Promise<string[]> {
+    const subregions = await dataSource.manager.find(Subregion, {
+      where: { region_name: region, is_active: true },
+      select: ["name"],
+    });
+    return subregions.map((subregion) => subregion.name);
+  }
+  async createAddress(
+    data: AddressDto,
+    userId: number
+  ): Promise<{
+    status: number;
+    data?: Address;
+    message: string;
+  }> {
     const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.connect();
     await queryRunner.startTransaction();
     try {
-      // Validate input data
-      const validation = new AddressValidation();
-      Object.assign(validation, data);
-      const errors = await validate(validation);
-      if (errors.length) {
-        throw new Error("Invalid address data");
+      const addressData = new AddressDto();
+      Object.assign(addressData, data);
+      const validationErrors = await validate(addressData);
+      if (validationErrors.length) {
+        const errorMsg = validationErrors
+          .map((e) => Object.values(e.constraints || {}).join(", "))
+          .join("; ");
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.BAD_REQUEST,
+          message: `Validation failed: ${errorMsg}`,
+        };
       }
-      const fullAddress = `${data.street_address}, ${data.city}, ${data.state}, ${data.postal_code}, ${data.country}`;
-      const geocodeRequest: GeocodeRequest = {
-        params: {
-          address: fullAddress,
-          key: process.env.GOOGLE_MAPS_API_KEY!,
+
+      if (!/^\d{5}$/.test(data.postal_code)) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.BAD_REQUEST,
+          message: "Postal code must be 5 numeric characters",
+        };
+      }
+
+      const finnishRegions = await this.getFinnishRegions();
+      if (!finnishRegions.includes(data.region)) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.BAD_REQUEST,
+          message: `Invalid region: ${data.region}`,
+        };
+      }
+
+      const finnishSubregions = await this.getFinnishSubregions(data.region);
+      if (!finnishSubregions.includes(data.subregion)) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.BAD_REQUEST,
+          message: `Invalid subregion: ${data.subregion}`,
+        };
+      }
+
+      if (data.latitude && (data.latitude < 59.5 || data.latitude > 70.1)) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.BAD_REQUEST,
+          message: "Latitude must be between 59.5 and 70.1",
+        };
+      }
+
+      if (data.longitude && (data.longitude < 19.0 || data.longitude > 31.6)) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.BAD_REQUEST,
+          message: "Longitude must be between 19.0 and 31.6",
+        };
+      }
+
+      const existing = await queryRunner.manager.findOne(Address, {
+        where: {
+          postal_code: data.postal_code,
+          street_address: data.street_address,
+          subregion: data.subregion,
+          org_id: data.org_id,
         },
-      };
-      const geolocation = await googleMapsClient.geocode(geocodeRequest);
-      console.log(geolocation);
-      if (!geolocation.data.results.length) {
-        throw new Error(
-          "Geocoding failed: No results found for the provided address"
-        );
+      });
+      if (existing) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.CONFLICT,
+          message: "Address already exists",
+        };
       }
 
-      const { lat, lng } = geolocation.data.results[0].geometry.location;
-      const territory = await territoryService.assignTerritory({
-        postal_code: data.postal_code,
-        city: data.city,
-        lat,
-        lng,
-      });
-      const address = await queryRunner.manager.save(Address, {
-        ...data,
-        latitude: lat,
-        longitude: lng,
-        territory_id: territory?.territory_id,
-        is_active: true,
-      });
+      let coords = { latitude: data.latitude, longitude: data.longitude };
+      if (!data.latitude || !data.longitude) {
+        coords = await this.geocodingService.getCoordinates({
+          street_address: data.street_address,
+          postal_code: data.postal_code,
+          subregion: data.subregion,
+          region: data.region,
+          country: data.country || "Finland",
+        });
+      }
+      console.log("coords:", coords);
 
+      const address = new Address();
+      address.street_address = data.street_address;
+      address.building_unit = data.building_unit ?? "";
+      address.landmark = data.landmark ?? "";
+      address.postal_code = data.postal_code;
+      address.area_name = data.area_name;
+      address.subregion = data.subregion;
+      address.region = data.region;
+      address.country = data.country || "Finland";
+      address.latitude = coords.latitude !== undefined ? coords.latitude : 0;
+      address.longitude = coords.longitude !== undefined ? coords.longitude : 0;
+      address.org_id = data.org_id;
+      address.created_by = String(userId);
+      address.updated_by = String(userId);
+      address.city = data.subregion;
+      address.state = data.region;
+
+      const savedAddress = await queryRunner.manager.save(Address, address);
+      console.log("savedAddress:", savedAddress);
+      if (!savedAddress.address_id) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+          message: "Failed to generate address_id",
+        };
+      }
+
+      // Commit address creation
       await queryRunner.commitTransaction();
+
+      // Start a new transaction for territory assignment
+      await queryRunner.startTransaction();
+      const autoAssignResult = await this.territoryService.autoAssignTerritory(
+        savedAddress.address_id,
+        data.org_id
+      );
+      console.log("autoAssignResult:", autoAssignResult);
+
+      // Commit territory assignment
+      await queryRunner.commitTransaction();
+
       return {
-        data: address,
-        status: 200,
+        status: httpStatusCodes.CREATED,
+        data: autoAssignResult.data || savedAddress,
         message: "Address created successfully",
       };
     } catch (error: any) {
-      console.log(error);
       await queryRunner.rollbackTransaction();
+      console.error("createAddress - Error:", error.message, error.stack);
       return {
-        status: httpStatusCodes.BAD_REQUEST,
-        message: error.message,
-        data: null,
+        status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+        message: `Failed to create address: ${error.message}`,
       };
     } finally {
       await queryRunner.release();

@@ -1,0 +1,7 @@
+name,contact_name,contact_email,contact_phone,street_address,postal_code,area_name,subregion,region,country,org_id,status
+Acme Corp,John Doe,john@acme.com,+358123456789,Mannerheimintie 5,00100,Keskusta,Helsinki,Uusimaa,Finland,1,Prospect
+Beta Ltd,Jane Smith,jane@beta.fi,+358987654321,Aleksanterinkatu 10,00170,Kallio,Helsinki,Uusimaa,Finland,1,Active
+Gamma Oy,,gamma@gamma.com,,Fredrikinkatu 20,00240,Töölö,Helsinki,Uusimaa,Finland,1,Prospect
+Delta Solutions,Pekka Niemi,pekka@delta.fi,+358555123456,Tampereentie 1,33100,Keskusta,Tampere,Pirkanmaa,Finland,1,Prospect
+Epsilon Industries,,epsilon@epsilon.com,,Kauppakatu 15,70100,Kuopio,Kuopio,Pohjois-Savo,Finland,1,
+Acme Corp Duplicate,John Doe,john@acme.com,+358123456789,Mannerheimintie 5,00100,Keskusta,Helsinki,Uusimaa,Finland,1,Prospect

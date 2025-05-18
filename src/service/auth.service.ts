@@ -20,6 +20,7 @@ import { User } from "../models/index";
 import { RoleQuery } from "../query/role.query";
 import { sendEmail } from "./email.service";
 import { P } from "pino";
+import { Roles } from "../enum/roles";
 
 const userQuery = new UserQuery();
 const otpService = new OtpService();
@@ -346,14 +347,14 @@ export class AuthService {
       let role_id;
       const role = await roleQuery.getRoleByNameAndOrgId(
         queryRunner.manager,
-        "admin",
+       Roles.ADMIN,
         null
       );
       if (role) {
         role_id = role.role_id;
       } else {
         const newRole = await roleQuery.saveRole(queryRunner.manager, {
-          role_name: "admin",
+          role_name: Roles.ADMIN,
           created_by: "system",
           org_id: undefined,
         });

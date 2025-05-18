@@ -1,7 +1,8 @@
 import dataSource from "../config/data-source";
-import { User } from "../models";
+import { Role, User } from "../models";
 import httpStatusCodes from "http-status-codes";
 import { Message } from "../models/Message.entity";
+import { Roles } from "../enum/roles";
 
 export class MessageService {
   async sendMessage(data: {
@@ -22,7 +23,7 @@ export class MessageService {
         throw new Error("Invalid sender or receiver");
       }
       if (
-        sender.role.role_name === "sales rep" &&
+        sender.role.role_name === Roles.SALES_REP &&
         receiver.role.role_name !== "manager"
       ) {
         throw new Error("Reps can only message managers");

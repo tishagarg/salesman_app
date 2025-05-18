@@ -1,16 +1,16 @@
 import { VisitController } from "../controllers/visits.controller";
-import { roleMiddleware } from "../middleware/role.middleware";
+import { permissionMiddleware } from "../middleware/permission.middleware";
 const visitController = new VisitController();
 import express from "express";
 const router = express.Router();
 router.post(
   "/plan",
-  roleMiddleware(["manager"]),
+  permissionMiddleware("customer_import"),
   visitController.planVisit
 );
 router.post(
   "/log",
-  roleMiddleware(["sales rep"]),
+  permissionMiddleware("customer_import"),
   visitController.logVisit
 );
 

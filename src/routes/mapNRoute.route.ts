@@ -1,11 +1,11 @@
 import { MapAndRouteController } from "../controllers/mapNRoute.controller";
-import { roleMiddleware } from "../middleware/role.middleware";
+import { permissionMiddleware } from "../middleware/permission.middleware";
 const mapRouteController = new MapAndRouteController();
 import express from "express";
 const router = express.Router();
 router.post(
   "/customers",
-  roleMiddleware(["sales rep", "manager", "admin"]),
+  permissionMiddleware(""),
   mapRouteController.getCustomerMap
 );
 
