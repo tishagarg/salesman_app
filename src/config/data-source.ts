@@ -18,6 +18,7 @@ import { RolePermission } from "../models/RolePermission.entity";
 import { Polygon } from "../models/Polygon.entity";
 import { Region } from "../models/Region.entity";
 import { Subregion } from "../models/Subregion.entity";
+import { RefreshToken } from "../models/RefreshToken.entity";
 
 dotenv.config();
 
@@ -34,7 +35,7 @@ export const AppDataSource: DataSourceOptions = {
   // process.env.NODE_ENV === "production"
   //   ? { rejectUnauthorized: false }
   //   : false,
-synchronize: false,
+  synchronize: false,
   logging: ["error"],
   entities: [
     User,
@@ -50,7 +51,10 @@ synchronize: false,
     AuditLog,
     Permission,
     Polygon,
-    RolePermission,Region,Subregion
+    RolePermission,
+    Region,
+    Subregion,
+    RefreshToken,
   ],
   migrations: [],
   subscribers: [],
