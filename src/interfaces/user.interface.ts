@@ -39,6 +39,7 @@ export interface IgoogleLoginBody {
 
 export interface IloginResponse {
   token: string;
+  refreshToken: string;
   user: any;
 }
 
@@ -114,9 +115,9 @@ export interface ISignupParams {
   email: string;
   password: string;
   first_name: string;
-  last_name:string;
-  phone_no:string;
-  org_name:string;
+  last_name: string;
+  phone_no: string;
+  org_name: string;
 }
 
 export interface ISaveUserParams {

@@ -50,10 +50,10 @@ export class AuthController {
     const params: ISignupParams = {
       email: req.body.email,
       password: req.body.password,
-      first_name:req.body.first_name,
-      last_name:req.body.last_name,
-      org_name:req.body.org_name,
-      phone_no:req.body.phone_no,
+      first_name: req.body.first_name,
+      last_name: req.body.last_name,
+      org_name: req.body.org_name,
+      phone_no: req.body.phone_no,
     };
     const response = await authService.signup(params);
     if (response.status >= 400) {
@@ -153,6 +153,23 @@ export class AuthController {
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
     }
+    return ApiResponse.result(
+      res,
+      response.data ?? null,
+      response.status,
+      null,
+      response.message
+    );
+  }
+
+  async refreshToken(req: any, res: Response): Promise<void> {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return ApiResponse.error(res, 400, "Refresh token is requirede");
+    }
+
+    const response = await authService.refreshToken(refreshToken);
     return ApiResponse.result(
       res,
       response.data ?? null,
