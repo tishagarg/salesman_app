@@ -157,7 +157,7 @@ export class AuthService {
         );
       const { password_hash, ...safeUser } = getUserByIdWithOrganization;
 
-      if (user.is_active && !user.is_email_verified ) {
+      if (user.is_active && !user.is_email_verified) {
         await queryRunner.commitTransaction();
         otpService.generateSaveAndSendOtp(user.user_id, {
           email: user.email,
@@ -619,6 +619,7 @@ export class AuthService {
     userFromSession?: any
   ) {
     const queryRunner = dataSource.createQueryRunner();
+    let orgId;
 
     try {
       await queryRunner.connect();
@@ -635,10 +636,11 @@ export class AuthService {
             token,
             OtpType.PASSWORD_RESET
           );
-
+          orgId = payload.org_id;
           if (!tokenData) {
             throw new Error("Invalid token or user not found");
           }
+
 
           user = await userQuery.findById(payload.user_id);
           if (!user) {
@@ -660,7 +662,7 @@ export class AuthService {
       } else {
         // Case 2: Change password from profile using old password
         user = await userQuery.findById(userFromSession._id);
-
+        orgId = org_id;
         if (!user) {
           await queryRunner.rollbackTransaction();
           return { status: 401, message: "Unauthorized", data: null };
@@ -676,7 +678,7 @@ export class AuthService {
       const hashedPassword = await passwordHash(newPassword);
       const updatedUser = await userQuery.updateUser(
         queryRunner.manager,
-        org_id,
+        orgId,
         user.user_id,
         {
           password_hash: hashedPassword,

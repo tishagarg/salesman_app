@@ -142,7 +142,10 @@ export class AuthController {
 
   async resetPassword(req: any, res: Response) {
     const { token, oldPassword, newPassword } = req.body;
-    const { org_id } = req.user;
+    let org_id;
+    if (req.user) {
+      org_id = req.user.org_id;
+    }
     const response = await authService.resetPassword({
       token,
       oldPassword,
