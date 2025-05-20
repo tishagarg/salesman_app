@@ -136,7 +136,7 @@ export class OtpService {
 
     try {
       const otpData = await queryRunner.manager.findOne(OtpVerification, {
-        where: { user_id: userId, otp_type: otp_type },
+        where: { user_id: userId, otp_type: otp_type, otp },
       });
 
       if (!otpData) {
