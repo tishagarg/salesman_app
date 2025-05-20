@@ -11,12 +11,14 @@ import { UserTokenQuery } from "../query/usertoken.query";
 import { sendEmail } from "./email.service";
 import { OrganizationQuery } from "../query/organization.query";
 import { Roles } from "../enum/roles";
+import { Address } from "../models/Address.entity";
+import { AddressQuery } from "../query/address.query";
 
 const userQuery = new UserQuery();
 const roleQuery = new RoleQuery();
 const userTokenQuery = new UserTokenQuery();
 const organizationQuery = new OrganizationQuery();
-
+const addressQuery = new AddressQuery();
 export class UserTeamService {
   async SendEmailNotification(email: string, password: string) {
     await sendEmail({
@@ -84,7 +86,7 @@ export class UserTeamService {
           role_id = existingRole.role_id;
         } else {
           const newRole = await roleQuery.saveRole(queryRunner.manager, {
-            role_name: params.role_name ,
+            role_name: params.role_name,
             org_id,
           });
           role_id = newRole.role_id;
@@ -301,7 +303,10 @@ export class UserTeamService {
         queryRunner.manager,
         org_id,
         user_id,
-        { ...updatedFields, is_admin: findRole.role_name ===Roles.ADMIN ? 1 : 0 }
+        {
+          ...updatedFields,
+          is_admin: findRole.role_name === Roles.ADMIN ? 1 : 0,
+        }
       );
 
       if (!updatedUser) {
@@ -382,6 +387,94 @@ export class UserTeamService {
           typeof error === "object" && error !== null && "message" in error
             ? (error as { message: string }).message
             : "Error creating user profile",
+      };
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  async updateProfile(
+    org_id: number,
+    user_id: number,
+    updateData: any
+  ): Promise<{
+    status: number;
+    data?: any;
+    message: string;
+  }> {
+    const queryRunner = dataSource.createQueryRunner();
+    try {
+      await queryRunner.startTransaction();
+      const addressData = updateData.address; 
+      const existingUser = await userQuery.getUserById(
+        queryRunner.manager,
+        org_id,
+        user_id
+      );
+      if (!existingUser) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: 404,
+          message: "User not found",
+        };
+      }
+      let updatedAddress;
+      if (addressData) {
+        if (existingUser.address_id) {
+          // Update existing address
+          await addressQuery.updateAddress(
+            queryRunner.manager,
+            existingUser.address_id,
+            addressData,
+            org_id
+          );
+          updatedAddress = await addressQuery.getAddressById(
+            queryRunner.manager,
+            existingUser.address_id
+          );
+        } else {
+          updatedAddress = await addressQuery.createAddress(
+            queryRunner.manager,
+            addressData,
+            org_id
+          );
+          updateData.address_id = updatedAddress.address_id;
+        }
+        delete updateData.address;
+      }
+
+      updateData.full_name = `${updateData.first_name} ${updateData.last_name}`;
+      const { role_name, ...updatedFields } = updateData;
+
+      const updatedUser = await userQuery.updateUser(
+        queryRunner.manager,
+        org_id,
+        user_id,
+        {
+          ...updatedFields,
+        }
+      );
+
+      if (!updatedUser) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: 404,
+          message: "User not found",
+        };
+      }
+      const { password_hash, ...safeUser } = updatedUser;
+      await queryRunner.commitTransaction();
+      return {
+        status: 200,
+        data: safeUser,
+        message: "User updated successfully",
+      };
+    } catch (error) {
+      console.error(error);
+      await queryRunner.rollbackTransaction();
+      return {
+        status: 500,
+        message: "Error updating user profile",
       };
     } finally {
       await queryRunner.release();

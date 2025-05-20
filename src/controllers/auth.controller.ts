@@ -90,10 +90,10 @@ export class AuthController {
   }
 
   async resendOTP(req: any, res: Response) {
-    let { id, email } = req.user;
+    let { user_id, email } = req.user;
     const params: IOtpBody = {
       email: email,
-      id,
+      id:user_id,
       otp_type: OtpType.EMAIL_VERIFICATION,
       medium: OtpMedium.EMAIL,
     };

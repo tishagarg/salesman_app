@@ -2,6 +2,7 @@ import { OtpMedium } from "../enum/otpMedium";
 import { OtpType } from "../enum/otpType";
 import { Roles } from "../enum/roles";
 import { Organization } from "../models";
+import { Address } from "../models/Address.entity";
 
 export interface ILoginUser {
   email: string;
@@ -11,14 +12,10 @@ export interface ILoginUser {
 export interface IUpdateUser {
   id: number;
   email?: string;
-  password?: string;
   full_name?: string;
   company_name?: string;
   role_id?: number;
   industry_id?: number;
-  organisation_size_id?: number;
-  areas_of_interest_id?: number;
-  t_and_c_accepted?: number;
   is_email_verified?: number;
   is_active?: number;
   google_oauth_id?: string;
@@ -70,7 +67,6 @@ export interface IUser {
   full_name: string;
   org_id: number;
   role_id: number;
-  job_title_id: number;
   is_admin: number;
   is_active: boolean;
   created_by: string;
@@ -212,8 +208,6 @@ export interface IProfileData {
   company_name?: string;
   role_id?: number;
   industry_id?: number;
-  organisation_size_id?: number;
-  area_of_interest_id?: number;
 }
 
 export interface IJwtVerify {
@@ -225,13 +219,13 @@ export interface IJwtVerify {
 
 export interface IUserProfile {
   fullName: string;
-  companyName: string;
-  jobTitleId: number;
-  industryId: number;
-  orgSizeId: number;
-  areaOfInterestIds: number[];
+  first_name: string;
+  last_name: string;
+  phone_no: string;
   org_id: number;
   user_id: number;
+  email: string;
+  address?: Address;
 }
 
 export interface IRegion {
@@ -252,7 +246,6 @@ export interface ITeamMember {
   email: string;
   phone: string;
   role_id: number;
-  area_of_interest_id: number[];
 }
 
 export interface ITeamMemberBody {
@@ -262,7 +255,6 @@ export interface ITeamMemberBody {
   email: string;
   phone: string;
   role_id: number;
-  area_of_interest_id: number[];
 }
 
 export interface activeDeactiveI {
