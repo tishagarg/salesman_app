@@ -5,6 +5,7 @@ import {
   IJwtVerify,
   ITeamMember,
   ITeamMemberBody,
+  IUserProfile,
 } from "../interfaces/user.interface";
 import { Response } from "express";
 
@@ -124,6 +125,27 @@ export class UserTeamController {
       status,
       id,
     });
+    if (response.status >= 400) {
+      return ApiResponse.error(res, response.status, response.message);
+    }
+
+    return ApiResponse.result(
+      res,
+      response.data,
+      response.status,
+      null,
+      response.message
+    );
+  }
+
+  async updateProfile(req: any, res: Response): Promise<void> {
+    const { org_id, user_id } = req.user;
+
+    const updateData: Partial<IUserProfile> = req.body;
+    const response = await userTeamService.updateProfile(
+      org_id,
+      user_id,
+      updateData    );
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
     }

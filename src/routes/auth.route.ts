@@ -18,10 +18,10 @@ router.post("/resend-otp", verifyToken, authController.resendOTP);
 
 router.post("/google", authController.google);
 
-router.post("/forget-password",verifyToken, authController.forgotPassword);
+router.post("/forget-password", authController.forgotPassword);
 
-router.post("/reset-password",verifyToken, authController.resetPassword);
+router.post("/reset-password", authController.resetPassword);
 
-router.post("/refresh-token",verifyToken, authController.refreshToken )
+router.post("/refresh-token", verifyToken, authController.refreshToken);
 
 export default router;
