@@ -157,7 +157,7 @@ export class AuthService {
         );
       const { password_hash, ...safeUser } = getUserByIdWithOrganization;
 
-      if (user.is_active && user.is_email_verified !== 1) {
+      if (user.is_active && !user.is_email_verified ) {
         await queryRunner.commitTransaction();
         otpService.generateSaveAndSendOtp(user.user_id, {
           email: user.email,
