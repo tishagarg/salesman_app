@@ -5,7 +5,10 @@ import { parse } from "csv-parse";
 import httpStatusCodes from "http-status-codes";
 import * as XLSX from "xlsx";
 import { readFileSync, unlinkSync, createReadStream } from "fs";
-import { CustomerImportDto } from "../interfaces/common.interface";
+import {
+  CustomerImportDto,
+  UpdateCustomerDto,
+} from "../interfaces/common.interface";
 import { validate } from "class-validator";
 
 const customerService = new CustomerService();
@@ -14,8 +17,7 @@ export class CustomerController {
   async createCustomer(req: any, res: Response): Promise<void> {
     const data: CustomerImportDto = req.body;
     const userId = parseInt(req.user.user_id);
-
-    // Validate input
+    const org_id = parseInt(req.user.org_id)    // Validate input
     const validation = new CustomerImportDto();
     Object.assign(validation, data);
     const validationErrors = await validate(validation);
@@ -30,7 +32,7 @@ export class CustomerController {
       );
     }
 
-    const response = await customerService.createCustomer(data, userId);
+    const response = await customerService.createCustomer(data, userId,org_id);
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
     }
@@ -46,7 +48,31 @@ export class CustomerController {
 
   async updateCustomer(req: any, res: Response): Promise<void> {
     const customerId = parseInt(req.params.id);
-    const data: Partial<CustomerImportDto> = req.body;
+    const data: Partial<UpdateCustomerDto> = req.body;
+    const userId = parseInt(req.user.user_id);
+    const role = req.user.role;
+
+    const response = await customerService.updateCustomer(
+      customerId,
+      data,
+      userId,
+      role
+    );
+    if (response.status >= 400) {
+      return ApiResponse.error(res, response.status, response.message);
+    }
+
+    return ApiResponse.result(
+      res,
+      response.data,
+      response.status,
+      null,
+      response.message
+    );
+  }
+  async updateStatus(req: any, res: Response): Promise<void> {
+    const customerId = parseInt(req.params.id);
+    const data: Partial<UpdateCustomerDto> = req.body;
     const userId = parseInt(req.user.user_id);
     const role = req.user.role;
 
@@ -157,16 +183,12 @@ export class CustomerController {
       userId
     );
     if (response.status >= 400) {
-      return ApiResponse.error(
-        res,
-        response.status,
-        response.message
-      );
+      return ApiResponse.error(res, response.status, response.message);
     }
 
     return ApiResponse.result(
       res,
-      response.data??null,
+      response.data ?? null,
       response.status,
       null,
       response.message

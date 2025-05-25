@@ -138,6 +138,30 @@ export class UserTeamController {
     );
   }
 
+  async getSalesRep(req: any, res: Response): Promise<void> {
+    const { org_id } = req.user as IJwtVerify;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+    const search = req.query.search as string;
+    const response = await userTeamService.getSalesRepresentative(org_id, {
+      limit,
+      skip,
+      search,
+    });
+    if (response.status >= 400) {
+      return ApiResponse.error(res, response.status, response.message);
+    }
+
+    return ApiResponse.result(
+      res,
+      response.data,
+      response.status,
+      null,
+      response.message
+    );
+  }
+
   async updateProfile(req: any, res: Response): Promise<void> {
     const { org_id, user_id } = req.user;
 
@@ -145,7 +169,8 @@ export class UserTeamController {
     const response = await userTeamService.updateProfile(
       org_id,
       user_id,
-      updateData    );
+      updateData
+    );
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
     }

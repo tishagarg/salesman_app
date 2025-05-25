@@ -25,10 +25,15 @@ router.post(
   customerController.createCustomer
 );
 
-router.put(
+router.patch(
   "/:id",
   permissionMiddleware("customer_update"),
   customerController.updateCustomer
+);
+router.post(
+  "/:id/status",
+  permissionMiddleware("customer_status_update"),
+  customerController.updateStatus
 );
 
 router.delete(

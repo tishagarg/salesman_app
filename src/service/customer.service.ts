@@ -1,6 +1,10 @@
 import dataSource from "../config/data-source";
 import { CustomerStatus } from "../enum/customerStatus";
-import { CustomerImportDto, AddressDto } from "../interfaces/common.interface";
+import {
+  CustomerImportDto,
+  AddressDto,
+  UpdateCustomerDto,
+} from "../interfaces/common.interface";
 import { Role, User } from "../models";
 import { Customer } from "../models/Customer.entity";
 import { Address } from "../models/Address.entity";
@@ -18,7 +22,8 @@ const territoryService = new TerritoryService();
 export class CustomerService {
   async createCustomer(
     data: CustomerImportDto,
-    adminId: number
+    userId: number,
+    org_id:number
   ): Promise<{
     status: number;
     data?: any;
@@ -48,12 +53,16 @@ export class CustomerService {
           postal_code: data.postal_code,
           street_address: data.street_address,
           subregion: data.subregion,
-          org_id: data.org_id,
+          org_id: org_id,
         },
       });
       if (existingAddress) {
         const existingCustomer = await queryRunner.manager.findOne(Customer, {
-          where: { address_id: existingAddress.address_id, is_active: true },
+          where: {
+            address_id: existingAddress.address_id,
+            is_active: true,
+            org_id: data.org_id,
+          },
         });
         if (existingCustomer) {
           await queryRunner.rollbackTransaction();
@@ -84,34 +93,45 @@ export class CustomerService {
         subregion: data.subregion,
         region: data.region,
         country: data.country || "Finland",
-        org_id: data.org_id,
+        org_id: org_id,
       };
       const addressResponse = await addressService.createAddress(
         addressData,
-        adminId
+        userId
       );
       if (addressResponse.status >= 400) {
         await queryRunner.rollbackTransaction();
         return {
           status: addressResponse.status,
-          message: `Failed to create address: ${addressResponse.message}`,
+          message: `Failed to create address`,
         };
       }
       const address = addressResponse.data as Address;
-
-      // Create customer
+      const territory = await territoryService.assignTerritory({
+        postal_code: addressResponse.data?.postal_code,
+        subregion: addressResponse.data?.subregion,
+        lat: addressResponse.data?.latitude,
+        lng: addressResponse.data?.longitude,
+        org_id: org_id,
+      });
+      if (territory) {
+        address.territory_id = territory.territory_id;
+        address.polygon_id = territory.polygon_id;
+        const updatedAddress = await queryRunner.manager.save(Address, address);
+      }
       const customer = new Customer();
       customer.name = data.name;
       customer.contact_name = data.contact_name ?? "";
       customer.contact_email = data.contact_email ?? "";
       customer.contact_phone = data.contact_phone ?? "";
       customer.address_id = address.address_id;
+      customer.assigned_rep_id = userId;
       customer.status = CustomerStatus.Prospect;
       customer.pending_assignment = true;
       customer.is_active = true;
-      customer.created_by = adminId.toString();
-      customer.updated_by = adminId.toString();
-      customer.org_id = data.org_id;
+      customer.created_by = userId.toString();
+      customer.updated_by = userId.toString();
+      customer.org_id = org_id;
 
       const savedCustomer = await queryRunner.manager.save(Customer, customer);
 
@@ -135,7 +155,7 @@ export class CustomerService {
 
   async updateCustomer(
     customerId: number,
-    data: Partial<CustomerImportDto>,
+    data: Partial<UpdateCustomerDto>,
     userId: number,
     role: string
   ): Promise<{
@@ -161,8 +181,6 @@ export class CustomerService {
           message: "Customer not found",
         };
       }
-
-      // Role-based access: Sales reps can only update their assigned customers
       if (role === Roles.SALES_REP && customer.assigned_rep_id !== userId) {
         await queryRunner.rollbackTransaction();
         return {
@@ -170,11 +188,8 @@ export class CustomerService {
           message: "Access denied: You are not assigned to this customer",
         };
       }
-
-      // Sales reps can only update specific fields and set status to Active (Workflow 3.4)
       if (role === Roles.SALES_REP) {
         const allowedFields: (keyof Customer)[] = [
-          "name",
           "contact_name",
           "contact_email",
           "contact_phone",
@@ -182,8 +197,8 @@ export class CustomerService {
         ];
         const updates: Partial<Customer> = {};
         for (const key of allowedFields) {
-          if (data[key as keyof CustomerImportDto] !== undefined) {
-            updates[key] = data[key as keyof CustomerImportDto] as any;
+          if (data[key as keyof UpdateCustomerDto] !== undefined) {
+            updates[key] = data[key as keyof UpdateCustomerDto] as any;
           }
         }
         if (updates.status && updates.status !== CustomerStatus.Active) {
@@ -203,7 +218,6 @@ export class CustomerService {
           }
         );
       } else {
-        // Admins/Managers can update all fields
         let addressId = customer.address_id;
         if (
           data.street_address ||
@@ -231,7 +245,7 @@ export class CustomerService {
             await queryRunner.rollbackTransaction();
             return {
               status: addressResponse.status,
-              message: `Failed to create address: ${addressResponse.message}`,
+              message: `Failed to create address`,
             };
           }
           addressId = addressResponse.data.address_id;
@@ -252,7 +266,6 @@ export class CustomerService {
           Customer,
           { customer_id: customerId },
           {
-            name: data.name || customer.name,
             contact_name: data.contact_name || customer.contact_name,
             contact_email: data.contact_email || customer.contact_email,
             contact_phone: data.contact_phone || customer.contact_phone,
@@ -645,7 +658,7 @@ export class CustomerService {
 
         if (addressResult.status >= 400) {
           errors.push(
-            `Failed to create address for ${row.name}: ${addressResult.message}`
+            `Failed to create address`
           );
           continue;
         }
