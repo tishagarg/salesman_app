@@ -473,7 +473,6 @@ export class AuthService {
         message: "User created, OTP sent successfully!!",
       };
     } catch (error) {
-      console.log(error);
       // Rollback the transaction if an error occurs
       await queryRunner.rollbackTransaction();
       return {

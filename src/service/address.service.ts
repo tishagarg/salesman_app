@@ -92,7 +92,6 @@ export class AddressService {
           message: "Longitude must be between 19.0 and 31.6",
         };
       }
-
       const existing = await queryRunner.manager.findOne(Address, {
         where: {
           postal_code: data.postal_code,
@@ -167,7 +166,7 @@ export class AddressService {
       console.error("createAddress - Error:", error.message, error.stack);
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
-        message: `Failed to create address: ${error.message}`,
+        message: `Failed to create address`,
       };
     } finally {
       await queryRunner.release();

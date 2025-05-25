@@ -89,6 +89,20 @@ export class CustomerImportDto {
   @IsEnum(CustomerStatus)
   status?: CustomerStatus;
 }
+export class UpdateCustomerDto {
+  contact_name?: string;
+  contact_email?: string;
+  contact_phone?: string;
+  street_address?: string;
+  postal_code?: string;
+  area_name?: string;
+  subregion?: string;
+  region?: string;
+  org_id: number;
+
+  country?: string;
+  status?: CustomerStatus;
+}
 
 export class TerritoryDto {
   @IsString()

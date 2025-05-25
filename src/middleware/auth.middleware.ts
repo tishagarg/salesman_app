@@ -42,7 +42,6 @@ export const verifyToken = async (
     req.user = { ...decoded, token };
     next();
   } catch (error) {
-    console.log(error)
     return ApiResponse.error(res, 401, "not authorized");
   }
 };

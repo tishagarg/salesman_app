@@ -6,6 +6,7 @@ import {
 } from "../interfaces/user.interface";
 import { User, UserToken } from "../models/index";
 import { UserTokenQuery } from "./usertoken.query";
+import { Roles } from "../enum/roles";
 const userTokenQuery = new UserTokenQuery();
 export class UserQuery {
   async findUserByEmail(
@@ -114,8 +115,56 @@ export class UserQuery {
 
     return updatedUser;
   }
-
   async getAllUsersWithRoleName(
+    manager: EntityManager,
+    org_id: number,
+    role_name: string,
+    limit: number,
+    skip: number,
+    search: string
+  ): Promise<[any[], number]> {
+    let query = manager
+      .createQueryBuilder(User, "user")
+      .innerJoin("user.role", "role")
+      .select([
+        "user.user_id",
+        "user.email",
+        "user.phone",
+        "user.google_oauth_id",
+        "user.is_email_verified",
+        "user.full_name",
+        "user.org_id",
+        "user.role_id",
+        "user.is_admin",
+        "user.is_active",
+        "user.created_by",
+        "user.updated_by",
+        "user.created_at",
+        "user.is_super_admin",
+        "user.updated_at",
+        "role.role_name",
+      ])
+      .where("user.org_id = :org_id", { org_id })
+      .andWhere("user.is_active = :is_active", { is_active: true })
+      .andWhere("role.role_name = :role_name", { role_name });
+    if (search && search.trim() !== "") {
+      const searchTerm = `%${search.trim().toLowerCase()}%`;
+      query = query.andWhere(
+        `(LOWER(COALESCE(user.email, '')) LIKE :searchTerm
+         OR LOWER(COALESCE(user.full_name, '')) LIKE :searchTerm
+         OR LOWER(COALESCE(user.first_name, '')) LIKE :searchTerm
+         OR LOWER(COALESCE(user.last_name, '')) LIKE :searchTerm)`,
+        { searchTerm }
+      );
+    }
+    const [users, total] = await query
+      .orderBy("user.user_id", "ASC")
+      .take(limit)
+      .skip(skip)
+      .getManyAndCount();
+    return [users, total];
+  }
+  async getAllUsersWithRoles(
     manager: EntityManager,
     org_id: number,
     limit: number,
@@ -143,10 +192,7 @@ export class UserQuery {
         "user.updated_at",
         "role.role_name",
       ])
-      .where("user.org_id = :org_id", { org_id })
-      .andWhere("user.is_admin = :is_admin", { is_admin: 0 })
-      .andWhere("user.is_super_admin = :is_super_admin", { is_super_admin: 0 });
-
+      .where("user.org_id = :org_id", { org_id });
     if (search && search.trim() !== "") {
       const searchTerm = `%${search.trim().toLowerCase()}%`;
       query = query.andWhere(
