@@ -9,7 +9,8 @@ import { Polygon } from "../models/Polygon.entity";
 import { booleanPointInPolygon, point, polygon } from "@turf/turf";
 import { TerritorySalesman } from "../models/TerritorySalesMan.entity";
 import { In } from "typeorm";
-
+import { GeocodingService } from "../utils/geoCode.service";
+const geocodingService = new GeocodingService();
 export class TerritoryService {
   async drawPolygon(data: {
     name: string;
@@ -136,7 +137,7 @@ export class TerritoryService {
   }
 
   async autoAssignTerritory(
-    address_id: number, // Change to string for UUID
+    address_id: number,
     org_id: number
   ): Promise<{
     status: number;
@@ -357,6 +358,16 @@ export class TerritoryService {
         };
       }
       let polygonId: number | undefined;
+      let fetchedLocationData: {
+        postal_codes: string[];
+        regions: string[];
+        subregions: string[];
+      } = {
+        postal_codes: [],
+        regions: [],
+        subregions: [],
+      };
+
       if (data.geometry && data.geometry.length) {
         let geometry: Coordinates[];
         if (typeof data.geometry === "string") {
@@ -364,6 +375,8 @@ export class TerritoryService {
         } else {
           geometry = data.geometry;
         }
+        fetchedLocationData =
+          await geocodingService.getLocationDataFromCoordinates(geometry);
         const polygon = new Polygon();
         polygon.name = data.name;
         polygon.org_id = org_id;
@@ -381,11 +394,20 @@ export class TerritoryService {
         const savedPolygon = await queryRunner.manager.save(Polygon, polygon);
         polygonId = savedPolygon.polygon_id;
       }
+
       const territory = new Territory();
 
       territory.name = data.name;
-      territory.postal_codes = JSON.stringify(data.postal_codes || []);
-      territory.subregions = JSON.stringify(data.subregions || []);
+      territory.postal_codes = JSON.stringify(
+        fetchedLocationData.postal_codes.length > 0
+          ? fetchedLocationData.postal_codes
+          : data.postal_codes || []
+      );
+      territory.subregions = JSON.stringify(
+        fetchedLocationData.subregions.length > 0
+          ? fetchedLocationData.subregions
+          : data.subregions || []
+      );
       territory.org_id = org_id;
       territory.manager_id = data.manager_id ?? undefined;
       territory.polygon_id = polygonId;
@@ -397,7 +419,6 @@ export class TerritoryService {
         Territory,
         territory
       );
-
       // Handle salesmanIds
       if (data.salesmanIds && data.salesmanIds.length > 0) {
         const territorySalesmen = data.salesmanIds.map((salesmanId) => {

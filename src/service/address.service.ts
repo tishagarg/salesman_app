@@ -39,17 +39,6 @@ export class AddressService {
     try {
       const addressData = new AddressDto();
       Object.assign(addressData, data);
-      const validationErrors = await validate(addressData);
-      if (validationErrors.length) {
-        const errorMsg = validationErrors
-          .map((e) => Object.values(e.constraints || {}).join(", "))
-          .join("; ");
-        await queryRunner.rollbackTransaction();
-        return {
-          status: httpStatusCodes.BAD_REQUEST,
-          message: `Validation failed: ${errorMsg}`,
-        };
-      }
 
       if (!/^\d{5}$/.test(data.postal_code)) {
         await queryRunner.rollbackTransaction();
@@ -115,6 +104,8 @@ export class AddressService {
           postal_code: data.postal_code,
           subregion: data.subregion,
           region: data.region,
+          city: data.city,
+          state: data.state,
           country: data.country || "Finland",
         });
       }
@@ -134,8 +125,10 @@ export class AddressService {
       address.updated_by = String(userId);
       address.city = data.subregion;
       address.state = data.region;
-
+      console.log("addresss inside create ", address);
       const savedAddress = await queryRunner.manager.save(Address, address);
+      console.log("saved address inside create ", savedAddress);
+
       if (!savedAddress.address_id) {
         await queryRunner.rollbackTransaction();
         return {

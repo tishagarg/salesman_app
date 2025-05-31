@@ -15,6 +15,7 @@ import { Roles } from "../enum/roles";
 import { validate } from "class-validator";
 import { Region } from "../models/Region.entity";
 import { Subregion } from "../models/Subregion.entity";
+import { TerritorySalesman } from "../models/TerritorySalesMan.entity";
 
 const addressService = new AddressService();
 const territoryService = new TerritoryService();
@@ -94,6 +95,9 @@ export class CustomerService {
         region: data.region,
         country: data.country || "Finland",
         org_id: org_id,
+        city: data.city || "",
+        state: data.state || "",
+        comments: data.comments || "",
       };
       const addressResponse = await addressService.createAddress(
         addressData,
@@ -236,6 +240,10 @@ export class CustomerService {
             region: data.region || customer.address.region,
             country: data.country || customer.address.country,
             org_id: data.org_id || customer.org_id,
+
+            city: data.city || "",
+            state: data.state || "",
+            comments: data.comments || "",
           };
           const addressResponse = await addressService.createAddress(
             addressData,
@@ -563,128 +571,161 @@ export class CustomerService {
   }
 
   async importCustomers(
-    fileData: LeadImportDto[],
-    adminId: number
+    data: LeadImportDto[],
+    adminId: number,
+    org_id: number
   ): Promise<{
     status: number;
     message: string;
-    data?: any[] | null;
+    data?: { addresses: Address[]; customers: Leads[] } | null;
     errors?: string[];
   }> {
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
+      const addresses: Address[] = [];
       const customers: Leads[] = [];
       const errors: string[] = [];
-      const regions = await queryRunner.manager.find(Region, {
-        where: { is_active: true },
-        select: ["name"],
-      });
-      const finnishRegions = regions.map((region) => region.name);
-      for (const row of fileData) {
-        // Validate input
-        const customerData = new LeadImportDto();
-        Object.assign(customerData, row);
-        const validationErrors = await validate(customerData);
-        if (validationErrors.length) {
-          const errorMsg = validationErrors
-            .map((e) => Object.values(e.constraints || {}).join(", "))
-            .join("; ");
-          errors.push(`Validation failed for ${row.name}: ${errorMsg}`);
-          continue;
-        }
-        if (!finnishRegions.includes(row.region)) {
-          errors.push(`Invalid region for ${row.name}: ${row.region}`);
-          continue;
-        }
 
-        // Validate subregion
-        const subregions = await queryRunner.manager.find(Subregion, {
-          where: { region_name: row.region, is_active: true },
+      for (const row of data) {
+        const addressData = new LeadImportDto();
+        Object.assign(addressData, {
+          ...row,
+          name: row.name || undefined,
+          city: row.city || "",
+          region: row.region || "",
+          subregion: row.subregion || "",
+          org_id: org_id,
+        });
+
+        const regions = await queryRunner.manager.find(Region, {
+          where: { is_active: true },
           select: ["name"],
         });
-        const finnishSubregions = subregions.map((subregion) => subregion.name);
-        if (!finnishSubregions.includes(row.subregion)) {
-          errors.push(`Invalid subregion for ${row.name}: ${row.subregion}`);
-          continue;
-        }
-
-        // Deduplication check
-        const existingAddress = await queryRunner.manager.findOne(Address, {
-          where: {
-            postal_code: row.postal_code,
-            street_address: row.street_address,
-            subregion: row.subregion,
-            org_id: row.org_id,
-          },
-        });
-        if (existingAddress) {
-          const existingCustomer = await queryRunner.manager.findOne(Leads, {
-            where: { address_id: existingAddress.address_id, is_active: true },
-          });
-          if (existingCustomer) {
-            errors.push(
-              `Duplicate customer: ${row.name} at ${row.street_address}, ${row.postal_code}, ${row.subregion}`
-            );
-            continue;
-          }
-        }
-
-        // Check for duplicate email
-        const existingEmail = await queryRunner.manager.findOne(Leads, {
-          where: { contact_email: row.contact_email, is_active: true },
-        });
-        if (existingEmail) {
+        const finnishRegions = regions.map((region) => region.name);
+        if (!finnishRegions.includes(addressData.region)) {
           errors.push(
-            `Duplicate customer email: ${row.contact_email} for ${row.name}`
+            `Invalid region for ${addressData.street_address}: ${addressData.region}`
           );
           continue;
         }
 
-        // Create address
-        const addressData: AddressDto = {
-          street_address: row.street_address,
-          postal_code: row.postal_code,
-          area_name: row.area_name || "",
-          subregion: row.subregion,
-          region: row.region,
-          country: row.country || "Finland",
-          org_id: row.org_id,
-        };
-        const addressResult = await addressService.createAddress(
-          addressData,
-          adminId
-        );
-
-        if (addressResult.status >= 400) {
-          errors.push(`Failed to create address`);
+        const subregions = await queryRunner.manager.find(Subregion, {
+          where: { region_name: addressData.region, is_active: true },
+          select: ["name"],
+        });
+        const finnishSubregions = subregions.map((subregion) => subregion.name);
+        if (!finnishSubregions.includes(addressData.subregion)) {
+          errors.push(
+            `Invalid subregion for ${addressData.street_address}: ${addressData.subregion}`
+          );
           continue;
         }
+        const existingAddress = await queryRunner.manager.findOne(Address, {
+          where: {
+            postal_code: addressData.postal_code,
+            street_address: addressData.street_address,
+            subregion: addressData.subregion,
+            org_id: org_id,
+          },
+        });
+        console.log("existingAddress ", existingAddress);
+        if (existingAddress) {
+          if (addressData.name) {
+            const existingCustomer = await queryRunner.manager.findOne(Leads, {
+              where: {
+                address_id: existingAddress.address_id,
+                is_active: true,
+              },
+            });
+            if (existingCustomer) {
+              errors.push(
+                `Duplicate customer: ${addressData.name} at ${addressData.street_address}, ${addressData.postal_code}, ${addressData.subregion}`
+              );
+              continue;
+            }
+          }
+          existingAddress.comments = addressData.comments || "";
+          const updatedAddress = await queryRunner.manager.save(
+            Address,
+            existingAddress
+          );
+          console.log("updatedAddress ", updatedAddress);
+          addresses.push(updatedAddress);
+          console.log("addresses ", addresses);
+        } else {
+          const newAddressData: AddressDto = {
+            street_address: addressData.street_address,
+            postal_code: addressData.postal_code,
+            area_name: addressData.area_name || "",
+            subregion: addressData.subregion || "",
+            region: addressData.region || "",
+            country: "Finland",
+            org_id: org_id,
+            city: addressData.city || "",
+            state: addressData.state || "",
+            comments: addressData.comments || "",
+          };
+          console.log("newAddressData ", newAddressData);
+          const addressResult = await addressService.createAddress(
+            newAddressData,
+            adminId
+          );
+          console.log("addressResult ", addressResult);
+          if (addressResult.status >= 400) {
+            errors.push(
+              `Failed to create address for ${addressData.street_address}: ${addressResult.message}`
+            );
+            continue;
+          }
 
-        const address = addressResult.data as Address;
+          const address = addressResult.data as Address;
+          console.log("address in else ", address);
+          addresses.push(address);
+        }
+        // Create customer in Leads table only if name exists
+        if (addressData.name) {
+          const address = addresses[addresses.length - 1]; // Latest address
+          const customer = new Leads();
+          customer.name = addressData.name;
+          customer.contact_name = addressData.contact_name || addressData.name;
+          customer.contact_email = addressData.contact_email || "";
+          customer.contact_phone = addressData.contact_phone || "";
+          customer.address_id = address.address_id;
+          customer.status = addressData.status || LeadStatus.Prospect;
+          customer.pending_assignment = true;
+          customer.is_active = true;
+          customer.created_by = adminId.toString();
+          customer.updated_by = adminId.toString();
+          customer.org_id = org_id;
+          customer.territory_id = address.territory_id;
+          const savedCustomer = await queryRunner.manager.save(Leads, customer);
+          console.log("savedCustomer ", savedCustomer);
+          // Assign to sales representatives (from TerritorySalesman)
+          if (address.territory_id) {
+            const territorySalesmen = await queryRunner.manager.find(
+              TerritorySalesman,
+              {
+                where: { territory_id: address.territory_id },
+              }
+            );
+            if (territorySalesmen.length > 0) {
+              // Assign to the first salesman (or implement other logic)
+              customer.assigned_rep_id = territorySalesmen[0].salesman_id;
+              customer.pending_assignment = false;
+              await queryRunner.manager.save(Leads, customer);
+            }
+          }
 
-        // Create customer
-        const customer = new Leads();
-        customer.name = row.name;
-        customer.contact_name = row.contact_name ?? "";
-        customer.contact_email = row.contact_email ?? "";
-        customer.contact_phone = row.contact_phone ?? "";
-        customer.address_id = address.address_id;
-        customer.status = LeadStatus.Prospect;
-        customer.pending_assignment = true;
-        customer.is_active = true;
-        customer.created_by = adminId.toString();
-        customer.updated_by = adminId.toString();
-        customer.org_id = row.org_id;
-
-        const savedCustomer = await queryRunner.manager.save(Leads, customer);
-        customers.push(savedCustomer);
+          customers.push(savedCustomer);
+        }
       }
-      if (errors.length && !customers.length) {
+
+      if (errors.length && !addresses.length) {
         await queryRunner.rollbackTransaction();
         return {
           status: httpStatusCodes.BAD_REQUEST,
-          message: "No customers imported",
+          message: "No addresses imported",
           errors,
         };
       }
@@ -692,11 +733,12 @@ export class CustomerService {
       await queryRunner.commitTransaction();
       return {
         status: httpStatusCodes.OK,
-        data: customers,
-        message: "Customers imported successfully",
+        data: { addresses, customers },
+        message: "Addresses and customers imported successfully",
         errors: errors.length ? errors : undefined,
       };
     } catch (error: any) {
+      console.log(error);
       await queryRunner.rollbackTransaction();
       console.error("importCustomers - Error:", error.message, error.stack);
       return {

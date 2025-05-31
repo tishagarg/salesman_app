@@ -54,7 +54,8 @@ export class Address {
 
   @Column({ type: "float" })
   longitude: number;
-
+  @Column({ type: "text", nullable: true })
+  comments: string;
   @Column({ type: "int", nullable: true })
   territory_id: number;
 

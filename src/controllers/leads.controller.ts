@@ -217,96 +217,13 @@ export class LeadsController {
 
   async importLeads(req: any, res: Response): Promise<void> {
     try {
-      const file = req.file;
-      if (!file) {
-        return ApiResponse.error(
-          res,
-          httpStatusCodes.BAD_REQUEST,
-          "No file uploaded"
-        );
-      }
-
-      let data: LeadImportDto[] = [];
-
-      if (file.mimetype === "text/csv") {
-        data = await new Promise((resolve, reject) => {
-          const records: LeadImportDto[] = [];
-          createReadStream(file.path)
-            .pipe(parse({ columns: true, trim: true }))
-            .on("data", (row) => {
-              records.push({
-                name: row.name,
-                contact_name: row.contact_name || undefined,
-                contact_email: row.contact_email || undefined,
-                contact_phone: row.contact_phone || undefined,
-                street_address: row.street_address,
-                postal_code: row.postal_code,
-                area_name: row.area_name || undefined,
-                subregion: row.subregion,
-                region: row.region,
-                country: row.country || "Finland",
-                org_id: parseInt(row.org_id) || 1,
-              });
-            })
-            .on("end", () => resolve(records))
-            .on("error", reject);
-        });
-      }
-      // Parse Excel
-      else if (
-        file.mimetype ===
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" ||
-        file.mimetype === "application/vnd.ms-excel"
-      ) {
-        const workbook = XLSX.readFile(file.path);
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json(sheet);
-        data = rows.map((row: any) => ({
-          name: row.name,
-          contact_name: row.contact_name || undefined,
-          contact_email: row.contact_email || undefined,
-          contact_phone: row.contact_phone || undefined,
-          street_address: row.street_address,
-          postal_code: row.postal_code,
-          area_name: row.area_name || undefined,
-          subregion: row.subregion,
-          region: row.region,
-          country: row.country || "Finland",
-          org_id: row.org_id ? parseInt(row.org_id) : 1, // Default org_id if not provided
-        }));
-      } else {
-        return ApiResponse.error(
-          res,
-          httpStatusCodes.BAD_REQUEST,
-          "Unsupported file type. Use CSV or Excel"
-        );
-      }
-
-      // Validate parsed data
-      const errors: string[] = [];
-      for (const row of data) {
-        const validation = new LeadImportDto();
-        Object.assign(validation, row);
-        const validationErrors = await validate(validation);
-        if (validationErrors.length) {
-          errors.push(
-            `Invalid data for ${row.name}: ${validationErrors
-              .map((e) => Object.values(e.constraints || {}).join(", "))
-              .join(", ")}`
-          );
-        }
-      }
-      if (errors.length) {
-        return ApiResponse.error(
-          res,
-          httpStatusCodes.BAD_REQUEST,
-          "Validation errors in uploaded file"
-        );
-      }
-
-      const userId = parseInt(req.user.user_id);
-      const response = await customerService.importCustomers(data, userId);
+      let data: LeadImportDto[] = req.body.leads;
+      const { user_id, org_id } = req.user;
+      const response = await customerService.importCustomers(
+        data,
+        user_id,
+        org_id
+      );
       if (response.status >= 400) {
         return ApiResponse.error(res, response.status, response.message);
       }

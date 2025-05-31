@@ -1,16 +1,4 @@
-import {
-  IS_OPTIONAL,
-  IsArray,
-  IsBoolean,
-  IsEmail,
-  IsEnum,
-  IsInt,
-  IsNotEmpty,
-  IsNumber,
-  IsOptional,
-  IsPhoneNumber,
-  IsString,
-} from "class-validator";
+import { IsNumber } from "class-validator";
 import { LeadStatus } from "../enum/leadStatus";
 
 export interface IDeleteById {
@@ -79,14 +67,15 @@ export class LeadImportDto {
   contact_email: string;
   contact_phone?: string;
   street_address: string;
+  comments?:string;
   postal_code: string;
   area_name?: string;
+  city?:string;
+  state?:string;
   subregion: string;
   region: string;
   country?: string;
   org_id: number;
-  @IsOptional()
-  @IsEnum(LeadStatus)
   status?: LeadStatus;
 }
 export class UpdateLeadDto {
@@ -94,12 +83,15 @@ export class UpdateLeadDto {
   contact_email?: string;
   contact_phone?: string;
   street_address?: string;
+    comments?:string;
+
   postal_code?: string;
   area_name?: string;
   subregion?: string;
   region?: string;
   org_id: number;
-
+ city?:string;
+  state?:string;
   country?: string;
   status?: LeadStatus;
 }
@@ -133,62 +125,27 @@ export class TerritoryDto {
 }
 
 export class AddressDto {
-  @IsString()
   street_address: string;
-
-  @IsOptional()
-  @IsString()
   building_unit?: string;
-
-  @IsOptional()
-  @IsString()
   landmark?: string;
-
-  @IsString()
+  comments?: string;
   postal_code: string;
-
-  @IsString()
   area_name: string;
-
-  @IsString()
   subregion: string;
-
-  @IsString()
+  city:string;
+  state:string;
   region: string;
-
-  @IsOptional()
-  @IsString()
   country?: string;
-  @IsOptional()
-  @IsNumber()
   latitude?: number;
-
-  @IsOptional()
-  @IsNumber()
   longitude?: number;
-
-  @IsOptional()
-  @IsInt()
   territory_id?: number;
-
-  @IsOptional()
-  @IsString()
   polygon_id?: number;
-
-  @IsInt()
   org_id: number;
 }
 
 export class PolygonDto {
-  @IsString()
   name: string;
-
   geometry: { type: string; coordinates: number[][][] };
-
-  @IsInt()
   org_id: number;
-
-  @IsOptional()
-  @IsInt()
   territory_id?: number;
 }
