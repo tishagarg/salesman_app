@@ -5,20 +5,17 @@ import { parse } from "csv-parse";
 import httpStatusCodes from "http-status-codes";
 import * as XLSX from "xlsx";
 import { readFileSync, unlinkSync, createReadStream } from "fs";
-import {
-  CustomerImportDto,
-  UpdateCustomerDto,
-} from "../interfaces/common.interface";
+import { LeadImportDto, UpdateLeadDto } from "../interfaces/common.interface";
 import { validate } from "class-validator";
 
 const customerService = new CustomerService();
 
-export class CustomerController {
-  async createCustomer(req: any, res: Response): Promise<void> {
-    const data: CustomerImportDto = req.body;
+export class LeadsController {
+  async createLeads(req: any, res: Response): Promise<void> {
+    const data: LeadImportDto = req.body;
     const userId = parseInt(req.user.user_id);
-    const org_id = parseInt(req.user.org_id)    // Validate input
-    const validation = new CustomerImportDto();
+    const org_id = parseInt(req.user.org_id); // Validate input
+    const validation = new LeadImportDto();
     Object.assign(validation, data);
     const validationErrors = await validate(validation);
     if (validationErrors.length) {
@@ -32,7 +29,7 @@ export class CustomerController {
       );
     }
 
-    const response = await customerService.createCustomer(data, userId,org_id);
+    const response = await customerService.createCustomer(data, userId, org_id);
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
     }
@@ -46,9 +43,9 @@ export class CustomerController {
     );
   }
 
-  async updateCustomer(req: any, res: Response): Promise<void> {
+  async updateLead(req: any, res: Response): Promise<void> {
     const customerId = parseInt(req.params.id);
-    const data: Partial<UpdateCustomerDto> = req.body;
+    const data: Partial<UpdateLeadDto> = req.body;
     const userId = parseInt(req.user.user_id);
     const role = req.user.role;
 
@@ -72,7 +69,7 @@ export class CustomerController {
   }
   async updateStatus(req: any, res: Response): Promise<void> {
     const customerId = parseInt(req.params.id);
-    const data: Partial<UpdateCustomerDto> = req.body;
+    const data: Partial<UpdateLeadDto> = req.body;
     const userId = parseInt(req.user.user_id);
     const role = req.user.role;
 
@@ -95,7 +92,7 @@ export class CustomerController {
     );
   }
 
-  async deleteCustomer(req: any, res: Response): Promise<void> {
+  async deleteLead(req: any, res: Response): Promise<void> {
     const customerId = parseInt(req.params.id);
     const userId = parseInt(req.user.user_id);
 
@@ -107,7 +104,7 @@ export class CustomerController {
     return ApiResponse.result(res, {}, response.status, null, response.message);
   }
 
-  async getCustomerById(req: any, res: Response): Promise<void> {
+  async getLeadById(req: any, res: Response): Promise<void> {
     const customerId = parseInt(req.params.id);
     const userId = parseInt(req.user.user_id);
     const role = req.user.role;
@@ -130,7 +127,7 @@ export class CustomerController {
     );
   }
 
-  async getAllCustomers(req: any, res: Response): Promise<void> {
+  async getAllLeads(req: any, res: Response): Promise<void> {
     const filters: {
       territory_id?: number;
       rep_id?: number;
@@ -173,12 +170,12 @@ export class CustomerController {
     );
   }
 
-  async bulkAssignCustomers(req: any, res: Response): Promise<void> {
-    const { customer_ids, rep_id } = req.body;
+  async bulkAssignLeads(req: any, res: Response): Promise<void> {
+    const { lead_ids, rep_id } = req.body;
     const userId = parseInt(req.user.user_id);
 
     const response = await customerService.bulkAssignCustomers(
-      customer_ids,
+      lead_ids,
       rep_id,
       userId
     );
@@ -195,7 +192,7 @@ export class CustomerController {
     );
   }
 
-  async assignCustomer(req: any, res: Response): Promise<void> {
+  async assignLeads(req: any, res: Response): Promise<void> {
     const customerId = parseInt(req.params.id);
     const repId = parseInt(req.body.rep_id);
     const userId = parseInt(req.user.user_id);
@@ -218,7 +215,7 @@ export class CustomerController {
     );
   }
 
-  async importCustomers(req: any, res: Response): Promise<void> {
+  async importLeads(req: any, res: Response): Promise<void> {
     try {
       const file = req.file;
       if (!file) {
@@ -229,12 +226,11 @@ export class CustomerController {
         );
       }
 
-      let data: CustomerImportDto[] = [];
+      let data: LeadImportDto[] = [];
 
-      // Parse CSV with streaming
       if (file.mimetype === "text/csv") {
         data = await new Promise((resolve, reject) => {
-          const records: CustomerImportDto[] = [];
+          const records: LeadImportDto[] = [];
           createReadStream(file.path)
             .pipe(parse({ columns: true, trim: true }))
             .on("data", (row) => {
@@ -249,7 +245,7 @@ export class CustomerController {
                 subregion: row.subregion,
                 region: row.region,
                 country: row.country || "Finland",
-                org_id: parseInt(row.org_id) || 1, // Default org_id if not provided
+                org_id: parseInt(row.org_id) || 1,
               });
             })
             .on("end", () => resolve(records))
@@ -290,7 +286,7 @@ export class CustomerController {
       // Validate parsed data
       const errors: string[] = [];
       for (const row of data) {
-        const validation = new CustomerImportDto();
+        const validation = new LeadImportDto();
         Object.assign(validation, row);
         const validationErrors = await validate(validation);
         if (validationErrors.length) {

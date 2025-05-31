@@ -8,7 +8,7 @@ import {
 } from "../models/index";
 import dotenv from "dotenv";
 import { Address } from "../models/Address.entity";
-import { Customer } from "../models/Customer.entity";
+import { Leads } from "../models/Leads.entity";
 import { Visit } from "../models/Visits.entity";
 import { Territory } from "../models/Territory.entity";
 import { Message } from "../models/Message.entity";
@@ -45,7 +45,7 @@ export const AppDataSource: DataSourceOptions = {
     OtpVerification,
     UserToken,
     Address,
-    Customer,
+    Leads,
     Visit,
     Territory,
     Message,

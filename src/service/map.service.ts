@@ -1,5 +1,5 @@
 import dataSource from "../config/data-source";
-import { Customer } from "../models/Customer.entity";
+import { Customer } from "../models/Leads.entity";
 import httpStatusCodes from "http-status-codes";
 
 export class MapService {
@@ -14,7 +14,7 @@ export class MapService {
         relations: ["address"],
       });
       const mapData = customers.map((c) => ({
-        customer_id: c.customer_id,
+        lead_id: c.lead_id,
         name: c.name,
         status: c.status,
         latitude: c.address.latitude,

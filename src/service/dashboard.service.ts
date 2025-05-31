@@ -1,5 +1,5 @@
 import dataSource from "../config/data-source";
-import { Customer } from "../models/Customer.entity";
+import { Customer } from "../models/Leads.entity";
 import { Visit } from "../models/Visits.entity";
 import httpStatusCodes from "http-status-codes";
 
@@ -31,7 +31,7 @@ export class DashboardService {
         customers: {
           total: customers.length,
           visited: customers.filter((c) =>
-            visits.some((v) => v.customer_id === c.customer_id)
+            visits.some((v) => v.lead_id === c.lead_id)
           ).length,
         },
       };

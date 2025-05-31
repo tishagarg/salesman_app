@@ -7,16 +7,16 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from "typeorm";
-import { CustomerStatus } from "../enum/customerStatus";
+import { LeadStatus } from "../enum/leadStatus";
 import { User } from "./User.entity";
 import { Address } from "./Address.entity";
 import { Organization } from "./Organisation.entity";
 
 // Entities
-@Entity("customer")
-export class Customer {
+@Entity("leads")
+export class Leads {
   @PrimaryGeneratedColumn()
-  customer_id: number;
+  lead_id: number;
 
   @Column({ type: "varchar", length: 255 })
   name: string;
@@ -37,12 +37,12 @@ export class Customer {
   contact_phone: string;
 
   @Column({
-    type: 'enum',
-    enum: CustomerStatus,
-    enumName: "customer_status_enum",
-    default: CustomerStatus.Prospect,
+    type: "enum",
+    enum: LeadStatus,
+    enumName: "lead_status_enum",
+    default: LeadStatus.Prospect,
   })
-  status: CustomerStatus;
+  status: LeadStatus;
 
   @Column({ type: "int", nullable: true })
   territory_id: number;
