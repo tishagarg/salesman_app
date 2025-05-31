@@ -31,6 +31,7 @@ export class GeocodingService {
       throw new Error(`Geocoding failed`);
     }
   }
+
   async getLocationDataFromCoordinates(coordinates: Coordinates[]): Promise<{
     postal_codes: string[];
     regions: string[];
@@ -44,30 +45,62 @@ export class GeocodingService {
     const postalCodes = new Set<string>();
     const regions = new Set<string>();
     const subregions = new Set<string>();
-    const sampleCoord = coordinates[0];
-    try {
-      const response = await axios.get(
-        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${sampleCoord.lat},${sampleCoord.lng}&key=${apiKey}`
+    if (coordinates.length !== 4) {
+      throw new Error(
+        "Exactly 4 coordinates are required to form a bounding box"
       );
+    }
 
-      if (response.data.status !== "OK") {
-        throw new Error(`Geocoding API error: ${response.data.status}`);
-      }
+    // Calculate the bounding box
+    const lats = coordinates.map((coord) => coord.lat);
+    const lngs = coordinates.map((coord) => coord.lng);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLng = Math.min(...lngs);
+    const maxLng = Math.max(...lngs);
 
-      const results = response.data.results;
-      for (const result of results) {
-        for (const component of result.address_components) {
-          if (component.types.includes("postal_code")) {
-            postalCodes.add(component.long_name);
+    // Define a grid (e.g., 5x5 points) to sample within the bounding box
+    const gridSize = 5; // Adjust grid size for more/less granularity
+    const latStep = (maxLat - minLat) / (gridSize - 1);
+    const lngStep = (maxLng - minLng) / (gridSize - 1);
+
+    try {
+      // Iterate over the grid
+      for (let i = 0; i < gridSize; i++) {
+        for (let j = 0; j < gridSize; j++) {
+          const lat = minLat + i * latStep;
+          const lng = minLng + j * lngStep;
+
+          // Make API call for each grid point
+          const response = await axios.get(
+            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`
+          );
+
+          if (response.data.status !== "OK") {
+            console.warn(
+              `Geocoding API error at (${lat}, ${lng}): ${response.data.status}`
+            );
+            continue;
           }
-          if (component.types.includes("administrative_area_level_1")) {
-            regions.add(component.long_name);
-          }
-          if (
-            component.types.includes("sublocality") ||
-            component.types.includes("neighborhood")
-          ) {
-            subregions.add(component.long_name);
+
+          const results = response.data.results;
+          for (const result of results) {
+            for (const component of result.address_components) {
+              if (component.types.includes("postal_code")) {
+                postalCodes.add(component.long_name);
+              }
+              if (component.types.includes("administrative_area_level_1")) {
+                regions.add(component.long_name);
+              }
+              if (
+                component.types.includes("sublocality") ||
+                component.types.includes("neighborhood") ||
+                component.types.includes("administrative_area_level_2") ||
+                component.types.includes("administrative_area_level_3")
+              ) {
+                subregions.add(component.long_name);
+              }
+            }
           }
         }
       }

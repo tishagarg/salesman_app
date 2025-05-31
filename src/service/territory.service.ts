@@ -408,6 +408,11 @@ export class TerritoryService {
           ? fetchedLocationData.subregions
           : data.subregions || []
       );
+      territory.regions = JSON.stringify(
+        fetchedLocationData.regions.length > 0
+          ? fetchedLocationData.regions
+          : data.regions || []
+      );
       territory.org_id = org_id;
       territory.manager_id = data.manager_id ?? undefined;
       territory.polygon_id = polygonId;
