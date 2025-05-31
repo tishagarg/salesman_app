@@ -116,7 +116,7 @@ export class CustomerService {
       });
       if (territory) {
         address.territory_id = territory.territory_id;
-        address.polygon_id = territory.polygon_id;
+        address.polygon_id = territory.polygon_id || undefined;
         const updatedAddress = await queryRunner.manager.save(Address, address);
       }
       const customer = new Leads();

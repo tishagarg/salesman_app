@@ -103,37 +103,33 @@ export class UpdateLeadDto {
   country?: string;
   status?: LeadStatus;
 }
+export class Coordinates {
+  @IsNumber()
+  lat: number;
 
+  @IsNumber()
+  lng: number;
+}
 export class TerritoryDto {
-  @IsString()
   name: string;
 
-  @IsOptional()
-  @IsArray()
   postal_codes?: string[];
 
-  @IsOptional()
-  @IsArray()
   subregions?: string[];
 
-  @IsOptional()
-  @IsString()
   polygon_id?: number;
 
-  @IsOptional()
-  @IsInt()
   manager_id?: number;
 
-  @IsOptional()
-  @IsInt()
-  sales_rep_id?: number;
+  sales_rep_id?: number[];
 
-  @IsInt()
   org_id: number;
 
-  @IsOptional()
-  @IsBoolean()
   is_active?: boolean;
+
+  geometry?: Coordinates[];
+
+  salesmanIds?: string[];
 }
 
 export class AddressDto {

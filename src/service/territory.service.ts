@@ -2,11 +2,13 @@ import httpStatusCodes from "http-status-codes";
 import dataSource from "../config/data-source";
 import { Territory } from "../models/Territory.entity";
 import { Response } from "express";
-import { TerritoryDto } from "../interfaces/common.interface";
+import { Coordinates, TerritoryDto } from "../interfaces/common.interface";
 import { validate } from "class-validator";
 import { Address } from "../models/Address.entity";
 import { Polygon } from "../models/Polygon.entity";
 import { booleanPointInPolygon, point, polygon } from "@turf/turf";
+import { TerritorySalesman } from "../models/TerritorySalesMan.entity";
+import { In } from "typeorm";
 
 export class TerritoryService {
   async drawPolygon(data: {
@@ -133,67 +135,67 @@ export class TerritoryService {
     }
   }
 
-async autoAssignTerritory(
-  address_id: number, // Change to string for UUID
-  org_id: number
-): Promise<{
-  status: number;
-  data?: Address;
-  message: string;
-}> {
-  const queryRunner = dataSource.createQueryRunner();
-  await queryRunner.connect();
-  await queryRunner.startTransaction();
-  try {
-    const address = await queryRunner.manager.findOne(Address, {
-      where: { address_id, org_id, is_active: true },
-    });
+  async autoAssignTerritory(
+    address_id: number, // Change to string for UUID
+    org_id: number
+  ): Promise<{
+    status: number;
+    data?: Address;
+    message: string;
+  }> {
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+    try {
+      const address = await queryRunner.manager.findOne(Address, {
+        where: { address_id, org_id, is_active: true },
+      });
 
-    if (!address) {
-      await queryRunner.rollbackTransaction();
-      return {
-        status: httpStatusCodes.NOT_FOUND,
-        message: `Address not found: ${address_id}`,
-      };
-    }
+      if (!address) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.NOT_FOUND,
+          message: `Address not found: ${address_id}`,
+        };
+      }
 
-    const territory = await this.assignTerritory({
-      postal_code: address.postal_code,
-      subregion: address.subregion,
-      lat: address.latitude,
-      lng: address.longitude,
-      org_id,
-    });
+      const territory = await this.assignTerritory({
+        postal_code: address.postal_code,
+        subregion: address.subregion,
+        lat: address.latitude,
+        lng: address.longitude,
+        org_id,
+      });
 
-    if (territory) {
-      address.territory_id = territory.territory_id;
-      address.polygon_id = territory.polygon_id;
-      const updatedAddress = await queryRunner.manager.save(Address, address);
+      if (territory) {
+        address.territory_id = territory.territory_id;
+        address.polygon_id = territory.polygon_id;
+        const updatedAddress = await queryRunner.manager.save(Address, address);
+        await queryRunner.commitTransaction();
+        return {
+          status: httpStatusCodes.OK,
+          data: updatedAddress,
+          message: "Territory auto-assigned",
+        };
+      }
+
       await queryRunner.commitTransaction();
       return {
         status: httpStatusCodes.OK,
-        data: updatedAddress,
-        message: "Territory auto-assigned",
+        data: address,
+        message: "No matching territory found",
       };
+    } catch (error: any) {
+      await queryRunner.rollbackTransaction();
+      console.error("autoAssignTerritory - Error:", error.message, error.stack);
+      return {
+        status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+        message: `Failed to auto-assign territory: ${error.message}`,
+      };
+    } finally {
+      await queryRunner.release();
     }
-
-    await queryRunner.commitTransaction();
-    return {
-      status: httpStatusCodes.OK,
-      data: address,
-      message: "No matching territory found",
-    };
-  } catch (error: any) {
-    await queryRunner.rollbackTransaction();
-    console.error("autoAssignTerritory - Error:", error.message, error.stack);
-    return {
-      status: httpStatusCodes.INTERNAL_SERVER_ERROR,
-      message: `Failed to auto-assign territory: ${error.message}`,
-    };
-  } finally {
-    await queryRunner.release();
   }
-}
 
   async assignByPostalCode(
     postal_code: string,
@@ -332,7 +334,8 @@ async autoAssignTerritory(
 
   async addTerritory(
     data: TerritoryDto,
-    adminId: number
+    adminId: number,
+    org_id: number
   ): Promise<{
     status: number;
     data?: any;
@@ -343,18 +346,6 @@ async autoAssignTerritory(
     try {
       const territoryData = new TerritoryDto();
       Object.assign(territoryData, data);
-      const validationErrors = await validate(territoryData);
-      if (validationErrors.length) {
-        const errorMsg = validationErrors
-          .map((e) => Object.values(e.constraints || {}).join(", "))
-          .join("; ");
-        await queryRunner.rollbackTransaction();
-        return {
-          status: httpStatusCodes.BAD_REQUEST,
-          message: `Validation failed: ${errorMsg}`,
-        };
-      }
-
       const existing = await queryRunner.manager.findOne(Territory, {
         where: { name: data.name, org_id: data.org_id, is_active: true },
       });
@@ -365,14 +356,39 @@ async autoAssignTerritory(
           message: `Territory with name ${data.name} already exists`,
         };
       }
-
+      let polygonId: number | undefined;
+      if (data.geometry && data.geometry.length) {
+        let geometry: Coordinates[];
+        if (typeof data.geometry === "string") {
+          geometry = JSON.parse(data.geometry);
+        } else {
+          geometry = data.geometry;
+        }
+        const polygon = new Polygon();
+        polygon.name = data.name;
+        polygon.org_id = org_id;
+        polygon.created_by = adminId.toString();
+        polygon.updated_by = adminId.toString();
+        polygon.geometry = {
+          type: "Polygon",
+          coordinates: [
+            [
+              ...geometry.map((coord) => [coord.lng, coord.lat]),
+              [geometry[0].lng, geometry[0].lat],
+            ],
+          ],
+        };
+        const savedPolygon = await queryRunner.manager.save(Polygon, polygon);
+        polygonId = savedPolygon.polygon_id;
+      }
       const territory = new Territory();
+
       territory.name = data.name;
       territory.postal_codes = JSON.stringify(data.postal_codes || []);
       territory.subregions = JSON.stringify(data.subregions || []);
-      territory.org_id = data.org_id;
-      territory.manager_id = data.manager_id ?? 0;
-      territory.sales_rep_id = data.sales_rep_id ?? 0;
+      territory.org_id = org_id;
+      territory.manager_id = data.manager_id ?? undefined;
+      territory.polygon_id = polygonId;
       territory.is_active = true;
       territory.created_by = adminId.toString();
       territory.updated_by = adminId.toString();
@@ -381,13 +397,27 @@ async autoAssignTerritory(
         Territory,
         territory
       );
+
+      // Handle salesmanIds
+      if (data.salesmanIds && data.salesmanIds.length > 0) {
+        const territorySalesmen = data.salesmanIds.map((salesmanId) => {
+          const territorySalesman = new TerritorySalesman();
+          territorySalesman.territory_id = savedTerritory.territory_id;
+          territorySalesman.salesman_id = parseInt(salesmanId, 10);
+          return territorySalesman;
+        });
+        await queryRunner.manager.save(TerritorySalesman, territorySalesmen);
+      }
+
       await queryRunner.commitTransaction();
+
       return {
         status: httpStatusCodes.CREATED,
         data: savedTerritory,
         message: "Territory created successfully",
       };
     } catch (error: any) {
+      console.log(error);
       await queryRunner.rollbackTransaction();
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
@@ -468,7 +498,6 @@ async autoAssignTerritory(
               ? data.polygon_id ?? territory.polygon_id
               : undefined,
           manager_id: data.manager_id ?? territory.manager_id,
-          sales_rep_id: data.sales_rep_id ?? territory.sales_rep_id,
           updated_by: adminId.toString(),
           updated_at: new Date(),
         }
@@ -572,20 +601,44 @@ async autoAssignTerritory(
     }
   }
 
-  async getAllTerritories(): Promise<{
+  async getAllTerritories(org_id: number): Promise<{
     status: number;
     data?: any[] | null;
     message: string;
   }> {
     try {
       const territories = await dataSource.manager.find(Territory, {
-        where: { is_active: true },
+        where: { is_active: true, org_id },
         relations: ["polygon"],
+      });
+      if (!territories.length) {
+        return {
+          status: httpStatusCodes.OK,
+          data: [],
+          message: "No territories found",
+        };
+      }
+      const territoryIds = territories.map((t) => t.territory_id);
+      const territorySalesmen = await dataSource.manager.find(
+        TerritorySalesman,
+        {
+          where: { territory_id: In(territoryIds) },
+          relations: ["salesman"],
+        }
+      );
+      const territoriesWithSalesmen = territories.map((territory) => {
+        const salesmen = territorySalesmen
+          .filter((ts) => ts.territory_id === territory.territory_id)
+          .map((ts) => ts.salesman);
+        return {
+          ...territory,
+          salesmen: salesmen.length ? salesmen : [],
+        };
       });
 
       return {
         status: httpStatusCodes.OK,
-        data: territories,
+        data: territoriesWithSalesmen,
         message: "Territories retrieved successfully",
       };
     } catch (error: any) {

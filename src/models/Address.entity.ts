@@ -59,7 +59,7 @@ export class Address {
   territory_id: number;
 
   @Column({ type: "int", nullable: true })
-  polygon_id: number;
+  polygon_id: number | undefined;
 
   @Column({ type: "int", nullable: true })
   org_id: number;
