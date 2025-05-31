@@ -19,6 +19,7 @@ import { Polygon } from "../models/Polygon.entity";
 import { Region } from "../models/Region.entity";
 import { Subregion } from "../models/Subregion.entity";
 import { RefreshToken } from "../models/RefreshToken.entity";
+import { Route } from "../models/Route.entity";
 
 dotenv.config();
 
@@ -54,6 +55,7 @@ export const AppDataSource: DataSourceOptions = {
     RolePermission,
     Region,
     Subregion,
+    Route,
     RefreshToken,
   ],
   migrations: [],
