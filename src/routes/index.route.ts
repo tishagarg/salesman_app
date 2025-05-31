@@ -5,6 +5,7 @@ import visitRoute from "./visits.route";
 import dashboardRoute from "./dashboard.route";
 import messageRoute from "./message.route";
 import mapRoute from "./mapNRoute.route";
+import territoryRoute from "./territory.route";
 import express from "express";
 const router = express.Router();
 router.use("/auth", authRoute);
@@ -14,4 +15,6 @@ router.use("/visit", visitRoute);
 router.use("/map", mapRoute);
 router.use("/dashboard", dashboardRoute);
 router.use("/message", messageRoute);
+router.use("/territory", territoryRoute);
+
 export default router;

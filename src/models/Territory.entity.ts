@@ -26,15 +26,13 @@ export class Territory {
   subregions: string; // JSON string of subregions
 
   @Column({ type: "int", nullable: true })
-  polygon_id: number;
+  polygon_id: number | undefined;
   @Column({ type: "int", nullable: true })
-  manager_id: number;
+  manager_id: number |undefined;
 
   @Column({ type: "int", nullable: true })
   org_id: number;
 
-  @Column({ type: "int", nullable: true })
-  sales_rep_id: number;
   @Column({ type: "boolean", default: true })
   is_active: boolean;
 
@@ -50,9 +48,6 @@ export class Territory {
   @UpdateDateColumn()
   updated_at: Date;
 
-  @ManyToOne(() => User, { onDelete: "SET NULL" })
-  @JoinColumn({ name: "sales_rep_id" })
-  sales_rep: User;
   @ManyToOne(() => User, { onDelete: "SET NULL" })
   @JoinColumn({ name: "manager_id" })
   manager: User;

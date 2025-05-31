@@ -3,21 +3,15 @@ import httpStatusCodes from "http-status-codes";
 import { TerritoryService } from "../service/territory.service";
 import { TerritoryDto } from "../interfaces/common.interface";
 
+const territoryService = new TerritoryService();
 export class TerritoryController {
-  private territoryService = new TerritoryService();
 
   async addTerritory(req: any, res: Response): Promise<void> {
     const data: TerritoryDto = req.body;
-    const { user_id } = req.user;
-    if (!user_id) {
-       res
-        .status(httpStatusCodes.UNAUTHORIZED)
-        .json({ message: "User not authenticated" });
-    }
-
-    const result = await this.territoryService.addTerritory(
+    const { user_id,org_id } = req.user;
+    const result = await territoryService.addTerritory(
       data,
-      parseInt(user_id)
+      parseInt(user_id),org_id
     );
     res.status(result.status).json(result);
   }
@@ -27,12 +21,12 @@ export class TerritoryController {
     const data: Partial<TerritoryDto> = req.body;
     const userId = req.user?.user_id;
     if (!userId) {
-       res
+      res
         .status(httpStatusCodes.UNAUTHORIZED)
         .json({ message: "User not authenticated" });
     }
 
-    const result = await this.territoryService.updateTerritory(
+    const result = await territoryService.updateTerritory(
       territoryId,
       data,
       parseInt(userId)
@@ -44,12 +38,12 @@ export class TerritoryController {
     const territoryId = parseInt(req.params.id);
     const userId = req.user?.user_id;
     if (!userId) {
-       res
+      res
         .status(httpStatusCodes.UNAUTHORIZED)
         .json({ message: "User not authenticated" });
     }
 
-    const result = await this.territoryService.deleteTerritory(
+    const result = await territoryService.deleteTerritory(
       territoryId,
       parseInt(userId)
     );
@@ -58,31 +52,32 @@ export class TerritoryController {
 
   async getTerritoryById(req: any, res: Response): Promise<void> {
     const territoryId = parseInt(req.params.id);
-    const result = await this.territoryService.getTerritoryById(territoryId);
+    const result = await territoryService.getTerritoryById(territoryId);
     res.status(result.status).json(result);
   }
 
   async getAllTerritories(req: any, res: Response): Promise<void> {
-    const result = await this.territoryService.getAllTerritories();
+    const {org_id} = req.user;
+    const result = await territoryService.getAllTerritories(org_id);
     res.status(result.status).json(result);
   }
 
-  async drawPolygon(req: any, res: Response):Promise<void> {
+  async drawPolygon(req: any, res: Response): Promise<void> {
     const { name, geometry, org_id, territory_id } = req.body;
     const userId = req.user?.user_id;
     if (!userId) {
-       res
+      res
         .status(httpStatusCodes.UNAUTHORIZED)
         .json({ message: "User not authenticated" });
     }
 
     if (!name || !geometry || !org_id) {
-       res
+      res
         .status(httpStatusCodes.BAD_REQUEST)
         .json({ message: "Missing required fields" });
     }
 
-    const result = await this.territoryService.drawPolygon({
+    const result = await territoryService.drawPolygon({
       name,
       geometry,
       org_id,
@@ -95,12 +90,12 @@ export class TerritoryController {
   async assignByPostalCode(req: any, res: Response): Promise<void> {
     const { postal_code, territory_id, org_id } = req.body;
     if (!postal_code || !territory_id || !org_id) {
-       res
+      res
         .status(httpStatusCodes.BAD_REQUEST)
         .json({ message: "Missing required fields" });
     }
 
-    const result = await this.territoryService.assignByPostalCode(
+    const result = await territoryService.assignByPostalCode(
       postal_code,
       territory_id,
       org_id
@@ -111,12 +106,12 @@ export class TerritoryController {
   async assignBySubregion(req: any, res: Response): Promise<void> {
     const { subregion, territory_id, org_id } = req.body;
     if (!subregion || !territory_id || !org_id) {
-       res
+      res
         .status(httpStatusCodes.BAD_REQUEST)
         .json({ message: "Missing required fields" });
     }
 
-    const result = await this.territoryService.assignBySubregion(
+    const result = await territoryService.assignBySubregion(
       subregion,
       territory_id,
       org_id
@@ -127,12 +122,12 @@ export class TerritoryController {
   async manualOverride(req: any, res: Response): Promise<void> {
     const { address_id, territory_id, org_id } = req.body;
     if (!address_id || !territory_id || !org_id) {
-       res
+      res
         .status(httpStatusCodes.BAD_REQUEST)
         .json({ message: "Missing required fields" });
     }
 
-    const result = await this.territoryService.manualOverride(
+    const result = await territoryService.manualOverride(
       address_id,
       territory_id,
       org_id
@@ -143,12 +138,12 @@ export class TerritoryController {
   async autoAssignTerritory(req: any, res: Response): Promise<void> {
     const { address_id, org_id } = req.body;
     if (!address_id || !org_id) {
-       res
+      res
         .status(httpStatusCodes.BAD_REQUEST)
         .json({ message: "Missing required fields" });
     }
 
-    const result = await this.territoryService.autoAssignTerritory(
+    const result = await territoryService.autoAssignTerritory(
       address_id,
       org_id
     );
