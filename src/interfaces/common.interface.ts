@@ -67,11 +67,11 @@ export class LeadImportDto {
   contact_email: string;
   contact_phone?: string;
   street_address: string;
-  comments?:string;
+  comments?: string;
   postal_code: string;
   area_name?: string;
-  city?:string;
-  state?:string;
+  city?: string;
+  state?: string;
   subregion: string;
   region: string;
   country?: string;
@@ -83,15 +83,15 @@ export class UpdateLeadDto {
   contact_email?: string;
   contact_phone?: string;
   street_address?: string;
-    comments?:string;
+  comments?: string;
 
   postal_code?: string;
   area_name?: string;
   subregion?: string;
   region?: string;
   org_id: number;
- city?:string;
-  state?:string;
+  city?: string;
+  state?: string;
   country?: string;
   status?: LeadStatus;
 }
@@ -108,6 +108,8 @@ export class TerritoryDto {
   postal_codes?: string[];
 
   subregions?: string[];
+
+  regions?: string[];
 
   polygon_id?: number;
 
@@ -132,8 +134,8 @@ export class AddressDto {
   postal_code: string;
   area_name: string;
   subregion: string;
-  city:string;
-  state:string;
+  city: string;
+  state: string;
   region: string;
   country?: string;
   latitude?: number;
