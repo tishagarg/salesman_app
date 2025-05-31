@@ -7,6 +7,8 @@
     "strictPropertyInitialization": false,
     "strict": true,
     "experimentalDecorators": true,
+    "outDir": "./dist",
+    "rootDir": "./src",
     "emitDecoratorMetadata": true
   },
   "include": ["src/**/*.ts"],
