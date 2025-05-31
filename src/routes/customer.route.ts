@@ -1,4 +1,3 @@
-import { upload } from "../config/multer";
 import { LeadsController } from "../controllers/leads.controller";
 import { permissionMiddleware } from "../middleware/permission.middleware";
 import express from "express";
@@ -9,7 +8,6 @@ const router = express.Router();
 router.post(
   "/import",
   permissionMiddleware("customer_import"),
-  upload.single("file"),
   leadController.importLeads
 );
 

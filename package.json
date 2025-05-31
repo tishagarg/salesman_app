@@ -15,6 +15,7 @@
   "dependencies": {
     "@googlemaps/google-maps-services-js": "^3.4.1",
     "@turf/turf": "^7.2.0",
+    "axios": "^1.9.0",
     "bcrypt": "^5.1.1",
     "child_process": "^1.0.2",
     "class-validator": "^0.14.2",

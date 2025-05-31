@@ -497,6 +497,9 @@ export class UserTeamService {
             region: addressData.region || "",
             country: addressData.country || "",
             org_id: org_id,
+            city: addressData.city || "",
+            state: addressData.state || "",
+            comments: addressData.comments || "",
           };
 
           updatedAddress = await addressQuery.createAddress(
