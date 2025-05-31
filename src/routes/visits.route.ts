@@ -14,7 +14,7 @@ router.post(
   permissionMiddleware("customer_import"),
   visitController.logVisit
 );
-router.get("/route/daily",verifyToken, visitController.getDailyRoute);
-router.get("/route/refresh",verifyToken, visitController.refreshDailyRoute);
+router.get("/route/daily", verifyToken, visitController.getDailyRoute);
+router.get("/route/refresh", verifyToken, visitController.refreshDailyRoute);
 
 export default router;

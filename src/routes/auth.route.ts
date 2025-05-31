@@ -21,6 +21,8 @@ router.post("/google", authController.google);
 router.post("/forget-password", authController.forgotPassword);
 
 router.post("/reset-password", authController.resetPassword);
+router.post("/change-password", verifyToken,authController.resetPassword);
+
 
 router.post("/refresh-token", verifyToken, authController.refreshToken);
 

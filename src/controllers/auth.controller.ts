@@ -93,7 +93,7 @@ export class AuthController {
     let { user_id, email } = req.user;
     const params: IOtpBody = {
       email: email,
-      id:user_id,
+      id: user_id,
       otp_type: OtpType.EMAIL_VERIFICATION,
       medium: OtpMedium.EMAIL,
     };
@@ -142,15 +142,18 @@ export class AuthController {
 
   async resetPassword(req: any, res: Response) {
     const { token, oldPassword, newPassword } = req.body;
-    let org_id;
+    var org_id;
+    var user_id;
     if (req.user) {
       org_id = req.user.org_id;
+      user_id = req.user.user_id;
     }
     const response = await authService.resetPassword({
       token,
       oldPassword,
       newPassword,
       org_id,
+      user_id,
     });
 
     if (response.status >= 400) {
