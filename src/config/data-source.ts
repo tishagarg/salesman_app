@@ -21,6 +21,7 @@ import { Subregion } from "../models/Subregion.entity";
 import { RefreshToken } from "../models/RefreshToken.entity";
 import { Route } from "../models/Route.entity";
 import { TerritorySalesman } from "../models/TerritorySalesMan.entity";
+import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
 
 dotenv.config();
 
@@ -44,7 +45,7 @@ export const AppDataSource: DataSourceOptions = {
     Organization,
     Role,
     TerritorySalesman,
-    OtpVerification,
+    OtpVerification,ManagerSalesRep,
     UserToken,
     Address,
     Leads,

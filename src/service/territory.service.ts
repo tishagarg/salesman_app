@@ -10,7 +10,10 @@ import { booleanPointInPolygon, point, polygon } from "@turf/turf";
 import { TerritorySalesman } from "../models/TerritorySalesMan.entity";
 import { In } from "typeorm";
 import { GeocodingService } from "../utils/geoCode.service";
+import { UserQuery } from "../query/user.query";
+import { IJwtVerify } from "../interfaces/user.interface";
 const geocodingService = new GeocodingService();
+const userQuery = new UserQuery();
 export class TerritoryService {
   async drawPolygon(data: {
     name: string;
@@ -236,6 +239,103 @@ export class TerritoryService {
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: `Failed to assign territory: ${error.message}`,
+      };
+    } finally {
+      await queryRunner.release();
+    }
+  }
+  async assignManagerToTerritory(
+    userData: IJwtVerify,
+    manager_id: number,
+    territory_ids: number[]
+  ): Promise<{
+    status: number;
+    data?: any;
+    message: string;
+  }> {
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.startTransaction();
+    try {
+      // Verify the manager exists and belongs to the organization
+      const manager = await userQuery.getUserById(
+        queryRunner.manager,
+        userData.org_id,
+        manager_id
+      );
+      if (!manager) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.NOT_FOUND,
+          message: "Manager not found",
+          data: null,
+        };
+      }
+
+      // Validate territory_ids
+      if (!territory_ids || territory_ids.length === 0) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.BAD_REQUEST,
+          message: "No territory IDs provided",
+          data: null,
+        };
+      }
+
+      // Fetch territories to ensure they exist and belong to the organization
+      const territories = await queryRunner.manager.find(Territory, {
+        where: {
+          territory_id: In(territory_ids),
+          org_id: userData.org_id,
+          is_active: true,
+        },
+      });
+
+      // Check if all provided territory_ids exist
+      const foundTerritoryIds = territories.map((t) => t.territory_id);
+      const missingIds = territory_ids.filter(
+        (id) => !foundTerritoryIds.includes(id)
+      );
+      if (missingIds.length > 0) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.NOT_FOUND,
+          message: `Territories with IDs ${missingIds.join(
+            ", "
+          )} not found or do not belong to the organization`,
+          data: null,
+        };
+      }
+
+      // Update manager_id for each territory
+      await queryRunner.manager.update(
+        Territory,
+        { territory_id: In(territory_ids) },
+        {
+          manager_id,
+          updated_by: userData.user_id.toString(),
+          updated_at: new Date(),
+        }
+      );
+
+      // Fetch updated territories for response
+      const updatedTerritories = await queryRunner.manager.find(Territory, {
+        where: { territory_id: In(territory_ids) },
+        relations: ["manager"],
+      });
+
+      await queryRunner.commitTransaction();
+
+      return {
+        status: httpStatusCodes.OK,
+        data: updatedTerritories,
+        message: "Manager assigned to territories successfully",
+      };
+    } catch (error: any) {
+      await queryRunner.rollbackTransaction();
+      return {
+        status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+        message: `Failed to assign manager to territories: ${error.message}`,
+        data: null,
       };
     } finally {
       await queryRunner.release();

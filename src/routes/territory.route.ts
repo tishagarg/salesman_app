@@ -1,9 +1,15 @@
 import { Router } from "express";
 import { TerritoryController } from "../controllers/territory.controller";
 import { permissionMiddleware } from "../middleware/permission.middleware";
+import { verifyToken } from "../middleware/auth.middleware";
 
 const router = Router();
 const territoryController = new TerritoryController();
+router.post(
+  "/assign-manager",
+  verifyToken,
+  territoryController.assignManagerToTerritory
+);
 router.post(
   "/",
   permissionMiddleware("customer_import"),
@@ -24,6 +30,8 @@ router.get(
   permissionMiddleware("customer_import"),
   territoryController.getTerritoryById
 );
+
+
 router.get(
   "/",
   permissionMiddleware("customer_import"),

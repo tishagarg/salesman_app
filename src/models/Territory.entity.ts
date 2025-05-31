@@ -24,13 +24,13 @@ export class Territory {
 
   @Column({ type: "text", nullable: true })
   subregions: string; // JSON string of subregions
-  
+
   @Column({ type: "text", nullable: true })
-  regions: string; 
+  regions: string;
   @Column({ type: "int", nullable: true })
   polygon_id: number | undefined;
   @Column({ type: "int", nullable: true })
-  manager_id: number |undefined;
+  manager_id: number | undefined;
 
   @Column({ type: "int", nullable: true })
   org_id: number;

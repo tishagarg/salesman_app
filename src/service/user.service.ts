@@ -6,7 +6,11 @@ import httpStatusCodes from "http-status-codes";
 const SALT_ROUNDS = 10;
 import { generatePassword } from "../config/passwordGenerator";
 import { RoleQuery } from "../query/role.query";
-import { activeDeactiveI, ITeamMember } from "../interfaces/user.interface";
+import {
+  activeDeactiveI,
+  IJwtVerify,
+  ITeamMember,
+} from "../interfaces/user.interface";
 import { UserTokenQuery } from "../query/usertoken.query";
 import { sendEmail } from "./email.service";
 import { OrganizationQuery } from "../query/organization.query";
@@ -15,6 +19,9 @@ import { Address } from "../models/Address.entity";
 import { AddressQuery } from "../query/address.query";
 import { AddressDto } from "../interfaces/common.interface";
 import { TerritoryService } from "./territory.service";
+import { Territory } from "../models/Territory.entity";
+import { In } from "typeorm";
+import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
 
 const userQuery = new UserQuery();
 const roleQuery = new RoleQuery();
@@ -31,8 +38,78 @@ export class UserTeamService {
       body: `Your password is ${password} and email is ${email}. Please reset your password after login.`,
     });
   }
-  async getSalesRepresentative(
+  async assignManagerToSalesRep(
+    userData: IJwtVerify,
+    manager_id: number,
+    sales_rep_ids: number[]
+  ): Promise<{ status: number; data?: any; message: string }> {
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const manager = await userQuery.getUserById(
+        queryRunner.manager,
+        userData.org_id,
+        manager_id
+      );
+
+      if (!manager) {
+        await queryRunner.rollbackTransaction();
+        return { status: 404, message: "Manager not found", data: null };
+      }
+      if (manager?.role.role_name != Roles.MANAGER) {
+        await queryRunner.rollbackTransaction();
+        return { status: 404, message: "User is not a manager", data: null };
+      }
+
+      if (!Array.isArray(sales_rep_ids) || sales_rep_ids.length === 0) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: 400,
+          message: "Sales rep IDs must be a non-empty array.",
+          data: null,
+        };
+      }
+
+      await queryRunner.manager
+        .createQueryBuilder()
+        .delete()
+        .from("manager_sales_rep")
+        .where("sales_rep_id IN (:...ids)", { ids: sales_rep_ids })
+        .execute();
+
+      const assignments = sales_rep_ids.map((rep_id) =>
+        queryRunner.manager.create(ManagerSalesRep, {
+          manager_id,
+          sales_rep_id: rep_id,
+        })
+      );
+
+      await queryRunner.manager.save(ManagerSalesRep, assignments);
+
+      await queryRunner.commitTransaction();
+      return {
+        status: 200,
+        message: "Manager assigned to sales reps successfully",
+        data: assignments,
+      };
+    } catch (error) {
+      console.error(error);
+      await queryRunner.rollbackTransaction();
+      return {
+        status: 500,
+        message: "An error occurred while assigning manager to sales reps.",
+        data: null,
+      };
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  async getUsersByRole(
     org_id: number,
+    role: Roles,
     pagination: { limit: number; skip: number; search: string }
   ): Promise<{
     status: number;
@@ -46,7 +123,7 @@ export class UserTeamService {
       const [salesRep, total] = await userQuery.getAllUsersWithRoleName(
         queryRunner.manager,
         org_id,
-        Roles.SALES_REP,
+        role,
         pagination.limit,
         pagination.skip,
         pagination.search
@@ -63,6 +140,7 @@ export class UserTeamService {
         message: "Users fetched successfully",
       };
     } catch (error) {
+      console.log(error);
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: "An error occurred while fetching user data.",
@@ -105,6 +183,7 @@ export class UserTeamService {
       await queryRunner.release();
     }
   }
+
   async addTeamMember(
     org_id: number,
     user_id: number,
