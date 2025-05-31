@@ -8,7 +8,7 @@ import {
   UpdateDateColumn,
 } from "typeorm";
 import { User } from "./User.entity";
-import { Customer } from "./Leads.entity";
+import { Leads } from "./Leads.entity";
 @Entity("visit")
 export class Visit {
   @PrimaryGeneratedColumn()
@@ -52,9 +52,9 @@ export class Visit {
   @UpdateDateColumn()
   updated_at: Date;
 
-  @ManyToOne(() => Customer, { onDelete: "CASCADE" })
+  @ManyToOne(() => Leads, { onDelete: "CASCADE" })
   @JoinColumn({ name: "lead_id" })
-  customer: Customer;
+  lead: Leads;
 
   @ManyToOne(() => User, { onDelete: "SET NULL" })
   @JoinColumn({ name: "rep_id" })

@@ -1,5 +1,5 @@
 import dataSource from "../config/data-source";
-import { Customer } from "../models/Leads.entity";
+import {  Leads } from "../models/Leads.entity";
 import httpStatusCodes from "http-status-codes";
 
 export class MapService {
@@ -9,7 +9,7 @@ export class MapService {
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
-      const customers = await queryRunner.manager.find(Customer, {
+      const customers = await queryRunner.manager.find(Leads, {
         where: { assigned_rep_id: repId, is_active: true },
         relations: ["address"],
       });
