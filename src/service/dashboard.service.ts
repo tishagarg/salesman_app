@@ -1,5 +1,5 @@
 import dataSource from "../config/data-source";
-import { Customer } from "../models/Leads.entity";
+import { Leads } from "../models/Leads.entity";
 import { Visit } from "../models/Visits.entity";
 import httpStatusCodes from "http-status-codes";
 
@@ -19,7 +19,7 @@ export class DashboardService {
       const visits = await queryRunner.manager.find(Visit, {
         where: visitWhere,
       });
-      const customers = await queryRunner.manager.find(Customer, {
+      const leads = await queryRunner.manager.find(Leads, {
         where: customerWhere,
       });
       const data = {
@@ -28,9 +28,9 @@ export class DashboardService {
           completed: visits.filter((v) => v.check_out_time).length,
           missed: visits.filter((v) => !v.check_out_time).length,
         },
-        customers: {
-          total: customers.length,
-          visited: customers.filter((c) =>
+        leads: {
+          total: leads.length,
+          visited: leads.filter((c) =>
             visits.some((v) => v.lead_id === c.lead_id)
           ).length,
         },

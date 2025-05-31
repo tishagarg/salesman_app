@@ -55,9 +55,6 @@ export class TerritoryService {
       polygonEntity.name = data.name;
       polygonEntity.geometry = data.geometry;
       polygonEntity.org_id = data.org_id;
-      if (typeof data.territory_id === "number") {
-        polygonEntity.territory_id = data.territory_id;
-      }
       polygonEntity.created_by = data.created_by;
       polygonEntity.updated_by = data.created_by;
 

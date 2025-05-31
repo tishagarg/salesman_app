@@ -13,7 +13,7 @@ import {
 import { Role } from "./Role.entity";
 import { Address } from "./Address.entity";
 import { Visit } from "./Visits.entity";
-import { Customer } from "./Leads.entity";
+import {  Leads } from "./Leads.entity";
 import { Message } from "./Message.entity";
 
 @Entity("user")
@@ -83,8 +83,8 @@ export class User {
   @JoinColumn({ name: "role_id" })
   role: Role;
 
-  @OneToMany(() => Customer, (customer) => customer.assigned_rep)
-  customers: Customer[];
+  @OneToMany(() => Leads, (lead) => lead.assigned_rep)
+  leads: Leads[];
 
   @OneToMany(() => Visit, (visit) => visit.rep)
   visits: Visit[];
