@@ -38,7 +38,7 @@ export class VisitController {
   }
 
   async getDailyRoute(req: any, res: Response): Promise<void> {
-    console.log(req.user)
+    console.log(req.user);
     const rep_id = req.user.user_id;
 
     const response = await visitService.getDailyRoute(rep_id);

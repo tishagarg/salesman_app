@@ -608,12 +608,13 @@ export class AuthService {
       token,
       oldPassword,
       newPassword,
-      org_id,
+      org_id,user_id
     }: {
       token?: string;
       oldPassword?: string;
       newPassword: string;
       org_id: number;
+      user_id:number
     },
     userFromSession?: any
   ) {
@@ -660,7 +661,7 @@ export class AuthService {
         }
       } else {
         // Case 2: Change password from profile using old password
-        user = await userQuery.findById(userFromSession._id);
+        user = await userQuery.findById(user_id);
         orgId = org_id;
         if (!user) {
           await queryRunner.rollbackTransaction();
