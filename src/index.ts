@@ -11,6 +11,9 @@ const userController = new UserTeamController();
 const PORT = process.env.PORT || 3002;
 
 const app = express();
+app.use("/", (req, res) => {
+  res.send("Welcome to track");
+});
 app.use(cors());
 app.use(
   expressSession({
@@ -22,21 +25,16 @@ app.use(
 
 app.use(express.json());
 
-
 app.use("/api", router);
 app.use(verifyToken);
 
 app.get("/api/user/me", userController.getUserById);
-
-
-
 
 const MAX_RETRIES = 5;
 const INITIAL_RETRY_DELAY = 5000;
 
 const connect = async (retries = 0) => {
   try {
-
     await dataSource.initialize();
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
