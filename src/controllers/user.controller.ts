@@ -8,12 +8,33 @@ import {
   IUserProfile,
 } from "../interfaces/user.interface";
 import { Response } from "express";
+import { Roles } from "../enum/roles";
 
 const userTeamService = new UserTeamService();
 export class UserTeamController {
   async getUserById(req: any, res: Response): Promise<void> {
     let { user_id } = req.user as IJwtVerify;
     const response = await userTeamService.getUserById(user_id);
+    if (response.status >= 400) {
+      return ApiResponse.error(res, response.status, response.message);
+    }
+    return ApiResponse.result(
+      res,
+      response.data,
+      response.status,
+      null,
+      response.message
+    );
+  }
+
+  async assignManagerToSalesRep(req: any, res: Response): Promise<void> {
+    let { user_id, org_id } = req.user;
+    const { manager_id, sale_rep_ids } = req.body;
+    const response = await userTeamService.assignManagerToSalesRep(
+      { user_id, org_id } as IJwtVerify,
+      manager_id,
+      sale_rep_ids
+    );
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
     }
@@ -139,16 +160,20 @@ export class UserTeamController {
   }
 
   async getSalesRep(req: any, res: Response): Promise<void> {
-    const { org_id } = req.user as IJwtVerify;
+    const { org_id, role_id } = req.user as IJwtVerify;
     const page = parseInt(req.query.page as string) || 1;
     const limit = parseInt(req.query.limit as string) || 10;
     const skip = (page - 1) * limit;
     const search = req.query.search as string;
-    const response = await userTeamService.getSalesRepresentative(org_id, {
-      limit,
-      skip,
-      search,
-    });
+    const response = await userTeamService.getUsersByRole(
+      org_id,
+      Roles.SALES_REP,
+      {
+        limit,
+        skip,
+        search,
+      }
+    );
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
     }
@@ -161,7 +186,42 @@ export class UserTeamController {
       response.message
     );
   }
+  async getAllManagers(req: any, res: Response): Promise<void> {
+    const { org_id } = req.user;
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+    const search = req.query.search as string;
+    const response = await userTeamService.getUsersByRole(
+      org_id,
+      Roles.MANAGER,
+      {
+        limit,
+        skip,
+        search,
+      }
+    );
+    if (response.status >= 400) {
+      return ApiResponse.error(res, response.status, response.message);
+    }
 
+    return ApiResponse.result(
+      res,
+      {
+        teamMembers: response.data,
+        pagination: {
+          page,
+          limit,
+          total: response.total ?? 0,
+          totalPages: Math.ceil((response.total ?? 0) / limit),
+        },
+      },
+
+      response.status,
+      null,
+      response.message
+    );
+  }
   async updateProfile(req: any, res: Response): Promise<void> {
     const { org_id, user_id } = req.user;
 
