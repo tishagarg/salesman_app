@@ -11,7 +11,7 @@ import {
   IsPhoneNumber,
   IsString,
 } from "class-validator";
-import { CustomerStatus } from "../enum/customerStatus";
+import { LeadStatus } from "../enum/leadStatus";
 
 export interface IDeleteById {
   id: string;
@@ -61,7 +61,7 @@ export interface IAttachment {
   contentType?: string;
 }
 
-export interface ICustomerImport {
+export interface ILeadImport {
   name: string;
   contact_name?: string;
   contact_email?: string;
@@ -73,7 +73,7 @@ export interface ICustomerImport {
   country: string;
 }
 
-export class CustomerImportDto {
+export class LeadImportDto {
   name: string;
   contact_name?: string;
   contact_email: string;
@@ -86,10 +86,10 @@ export class CustomerImportDto {
   country?: string;
   org_id: number;
   @IsOptional()
-  @IsEnum(CustomerStatus)
-  status?: CustomerStatus;
+  @IsEnum(LeadStatus)
+  status?: LeadStatus;
 }
-export class UpdateCustomerDto {
+export class UpdateLeadDto {
   contact_name?: string;
   contact_email?: string;
   contact_phone?: string;
@@ -101,7 +101,7 @@ export class UpdateCustomerDto {
   org_id: number;
 
   country?: string;
-  status?: CustomerStatus;
+  status?: LeadStatus;
 }
 
 export class TerritoryDto {

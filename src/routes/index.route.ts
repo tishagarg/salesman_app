@@ -9,7 +9,7 @@ import express from "express";
 const router = express.Router();
 router.use("/auth", authRoute);
 router.use("/user", userRoute);
-router.use("/customers", customerRoute);
+router.use("/leads", customerRoute);
 router.use("/visit", visitRoute);
 router.use("/map", mapRoute);
 router.use("/dashboard", dashboardRoute);

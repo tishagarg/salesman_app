@@ -22,9 +22,6 @@ export class Polygon {
   name: string;
 
   @Column({ type: "int", nullable: true })
-  territory_id: number;
-
-  @Column({ type: "int", nullable: true })
   org_id: number;
 
   @Column({ type: "char", length: 36, nullable: true })
@@ -38,10 +35,6 @@ export class Polygon {
 
   @UpdateDateColumn()
   updated_at: Date;
-
-  @ManyToOne(() => Territory, { onDelete: "SET NULL" })
-  @JoinColumn({ name: "territory_id" })
-  territory: Territory;
 
   @ManyToOne(() => Organization, { onDelete: "SET NULL" })
   @JoinColumn({ name: "org_id" })

@@ -1,63 +1,63 @@
 import { upload } from "../config/multer";
-import { CustomerController } from "../controllers/customer.controller";
+import { LeadsController } from "../controllers/leads.controller";
 import { permissionMiddleware } from "../middleware/permission.middleware";
 import express from "express";
 
-const customerController = new CustomerController();
+const leadController = new LeadsController();
 const router = express.Router();
 
 router.post(
   "/import",
   permissionMiddleware("customer_import"),
   upload.single("file"),
-  customerController.importCustomers
+  leadController.importLeads
 );
 
 router.post(
   "/:id/assign",
   permissionMiddleware("customer_assign"),
-  customerController.assignCustomer
+  leadController.assignLeads
 );
 
 router.post(
   "/",
   permissionMiddleware("customer_create"),
-  customerController.createCustomer
+  leadController.createLeads
 );
 
 router.patch(
   "/:id",
   permissionMiddleware("customer_update"),
-  customerController.updateCustomer
+  leadController.updateLead
 );
 router.post(
   "/:id/status",
   permissionMiddleware("customer_status_update"),
-  customerController.updateStatus
+  leadController.updateStatus
 );
 
 router.delete(
   "/:id",
   permissionMiddleware("customer_delete"),
-  customerController.deleteCustomer
+  leadController.deleteLead
 );
 
 router.get(
   "/:id",
   permissionMiddleware("customer_view"),
-  customerController.getCustomerById
+  leadController.getLeadById
 );
 
 router.get(
   "/",
   permissionMiddleware("customer_view"),
-  customerController.getAllCustomers
+  leadController.getAllLeads
 );
 
 router.post(
   "/bulk-assign",
   permissionMiddleware("customer_bulk_assign"),
-  customerController.bulkAssignCustomers
+  leadController.bulkAssignLeads
 );
 
 export default router;

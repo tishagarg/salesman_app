@@ -1,5 +1,5 @@
 import dataSource from "../config/data-source";
-import { Customer } from "../models/Customer.entity";
+import { Leads } from "../models/Leads.entity";
 import { Visit } from "../models/Visits.entity";
 import { Route } from "../models/Route.entity";
 import httpStatusCodes from "http-status-codes";
@@ -17,20 +17,20 @@ if (!GOOGLE_MAPS_API_KEY) {
 
 export class VisitService {
   async planVisit(
-    data: { customer_id: number; rep_id: number; date: Date },
+    data: { lead_id: number; rep_id: number; date: Date },
     managerId: number
   ): Promise<{ status: number; data?: any; message: string }> {
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
-      const customer = await queryRunner.manager.findOne(Customer, {
-        where: { customer_id: data.customer_id, assigned_rep_id: data.rep_id },
+      const customer = await queryRunner.manager.findOne(Leads, {
+        where: { lead_id: data.lead_id, assigned_rep_id: data.rep_id },
       });
       if (!customer) {
         throw new Error("Customer not assigned to rep");
       }
       const visit = await queryRunner.manager.save(Visit, {
-        customer_id: data.customer_id,
+        lead_id: data.lead_id,
         rep_id: data.rep_id,
         check_in_time: data.date,
         created_by: managerId.toString(),
@@ -53,7 +53,7 @@ export class VisitService {
   }
 
   async logVisit(data: {
-    customer_id: number;
+    lead_id: number;
     rep_id: number;
     latitude: number;
     longitude: number;
@@ -63,15 +63,15 @@ export class VisitService {
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
-      const customer = await queryRunner.manager.findOne(Customer, {
-        where: { customer_id: data.customer_id, assigned_rep_id: data.rep_id },
+      const customer = await queryRunner.manager.findOne(Leads, {
+        where: { lead_id: data.lead_id, assigned_rep_id: data.rep_id },
       });
       if (!customer) {
         throw new Error("Customer not assigned to rep");
       }
       const existingVisit = await queryRunner.manager.findOne(Visit, {
         where: {
-          customer_id: data.customer_id,
+          lead_id: data.lead_id,
           check_in_time: MoreThanOrEqual(
             new Date(new Date().setHours(0, 0, 0, 0))
           ),
@@ -81,7 +81,7 @@ export class VisitService {
         throw new Error("Duplicate visit for today");
       }
       const visit = await queryRunner.manager.save(Visit, {
-        customer_id: data.customer_id,
+        lead_id: data.lead_id,
         rep_id: data.rep_id,
         check_in_time: new Date(),
         latitude: data.latitude,
@@ -130,7 +130,7 @@ export class VisitService {
       }
 
       // Fetch customers assigned to the rep
-      const customers = await queryRunner.manager.find(Customer, {
+      const customers = await queryRunner.manager.find(Leads, {
         where: { assigned_rep_id: repId, is_active: true },
         relations: ["address"],
       });
@@ -205,7 +205,7 @@ export class VisitService {
           });
 
           return {
-            customer_id: customer.customer_id,
+            lead_id: customer.lead_id,
             distance: Number(distance.toFixed(2)),
             eta,
           };
@@ -265,17 +265,13 @@ export class VisitService {
       // Fetch customer details for the route
       const routeDetails = await Promise.all(
         route.route_order.map(
-          async (item: {
-            customer_id: number;
-            eta: string;
-            distance: number;
-          }) => {
-            const customer = await dataSource.manager.findOne(Customer, {
-              where: { customer_id: item.customer_id },
+          async (item: { lead_id: number; eta: string; distance: number }) => {
+            const customer = await dataSource.manager.findOne(Leads, {
+              where: { lead_id: item.lead_id },
               relations: ["address"],
             });
             return {
-              customer_id: item.customer_id,
+              lead_id: item.lead_id,
               name: customer?.name || "Unknown",
               address: customer?.address
                 ? `${customer.address.street_address}, ${customer.address.city}, ${customer.address.state} ${customer.address.postal_code}`

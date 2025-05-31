@@ -22,7 +22,7 @@ export class Route {
   route_date: Date;
 
   @Column({ type: "json" }) // Store ordered list of customer IDs with metadata
-  route_order: { customer_id: number; eta: string; distance: number }[];
+  route_order: { lead_id: number; eta: string; distance: number }[];
 
   @Column({ type: "boolean", default: true })
   is_active: boolean;

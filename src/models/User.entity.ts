@@ -13,7 +13,7 @@ import {
 import { Role } from "./Role.entity";
 import { Address } from "./Address.entity";
 import { Visit } from "./Visits.entity";
-import { Customer } from "./Customer.entity";
+import { Customer } from "./Leads.entity";
 import { Message } from "./Message.entity";
 
 @Entity("user")

@@ -1,12 +1,12 @@
 import dataSource from "../config/data-source";
-import { CustomerStatus } from "../enum/customerStatus";
+import { LeadStatus } from "../enum/leadStatus";
 import {
-  CustomerImportDto,
+  LeadImportDto,
   AddressDto,
-  UpdateCustomerDto,
+  UpdateLeadDto,
 } from "../interfaces/common.interface";
 import { Role, User } from "../models";
-import { Customer } from "../models/Customer.entity";
+import { Leads } from "../models/Leads.entity";
 import { Address } from "../models/Address.entity";
 import httpStatusCodes from "http-status-codes";
 import { AddressService } from "./address.service";
@@ -21,9 +21,9 @@ const territoryService = new TerritoryService();
 
 export class CustomerService {
   async createCustomer(
-    data: CustomerImportDto,
+    data: LeadImportDto,
     userId: number,
-    org_id:number
+    org_id: number
   ): Promise<{
     status: number;
     data?: any;
@@ -33,7 +33,7 @@ export class CustomerService {
     await queryRunner.startTransaction();
     try {
       // Validate input
-      const customerData = new CustomerImportDto();
+      const customerData = new LeadImportDto();
       Object.assign(customerData, data);
       const validationErrors = await validate(customerData);
       if (validationErrors.length) {
@@ -57,7 +57,7 @@ export class CustomerService {
         },
       });
       if (existingAddress) {
-        const existingCustomer = await queryRunner.manager.findOne(Customer, {
+        const existingCustomer = await queryRunner.manager.findOne(Leads, {
           where: {
             address_id: existingAddress.address_id,
             is_active: true,
@@ -74,7 +74,7 @@ export class CustomerService {
       }
 
       // Check for duplicate email
-      const existingEmail = await queryRunner.manager.findOne(Customer, {
+      const existingEmail = await queryRunner.manager.findOne(Leads, {
         where: { contact_email: data.contact_email, is_active: true },
       });
       if (existingEmail) {
@@ -119,21 +119,21 @@ export class CustomerService {
         address.polygon_id = territory.polygon_id;
         const updatedAddress = await queryRunner.manager.save(Address, address);
       }
-      const customer = new Customer();
+      const customer = new Leads();
       customer.name = data.name;
       customer.contact_name = data.contact_name ?? "";
       customer.contact_email = data.contact_email ?? "";
       customer.contact_phone = data.contact_phone ?? "";
       customer.address_id = address.address_id;
       customer.assigned_rep_id = userId;
-      customer.status = CustomerStatus.Prospect;
+      customer.status = LeadStatus.Prospect;
       customer.pending_assignment = true;
       customer.is_active = true;
       customer.created_by = userId.toString();
       customer.updated_by = userId.toString();
       customer.org_id = org_id;
 
-      const savedCustomer = await queryRunner.manager.save(Customer, customer);
+      const savedCustomer = await queryRunner.manager.save(Leads, customer);
 
       await queryRunner.commitTransaction();
       return {
@@ -155,7 +155,7 @@ export class CustomerService {
 
   async updateCustomer(
     customerId: number,
-    data: Partial<UpdateCustomerDto>,
+    data: Partial<UpdateLeadDto>,
     userId: number,
     role: string
   ): Promise<{
@@ -166,9 +166,9 @@ export class CustomerService {
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
-      const customer = await queryRunner.manager.findOne(Customer, {
+      const customer = await queryRunner.manager.findOne(Leads, {
         where: {
-          customer_id: customerId,
+          lead_id: customerId,
           is_active: true,
           org_id: data.org_id,
         },
@@ -189,19 +189,19 @@ export class CustomerService {
         };
       }
       if (role === Roles.SALES_REP) {
-        const allowedFields: (keyof Customer)[] = [
+        const allowedFields: (keyof Leads)[] = [
           "contact_name",
           "contact_email",
           "contact_phone",
           "status",
         ];
-        const updates: Partial<Customer> = {};
+        const updates: Partial<Leads> = {};
         for (const key of allowedFields) {
-          if (data[key as keyof UpdateCustomerDto] !== undefined) {
-            updates[key] = data[key as keyof UpdateCustomerDto] as any;
+          if (data[key as keyof UpdateLeadDto] !== undefined) {
+            updates[key] = data[key as keyof UpdateLeadDto] as any;
           }
         }
-        if (updates.status && updates.status !== CustomerStatus.Active) {
+        if (updates.status && updates.status !== LeadStatus.Active) {
           await queryRunner.rollbackTransaction();
           return {
             status: httpStatusCodes.FORBIDDEN,
@@ -209,8 +209,8 @@ export class CustomerService {
           };
         }
         await queryRunner.manager.update(
-          Customer,
-          { customer_id: customerId },
+          Leads,
+          { lead_id: customerId },
           {
             ...updates,
             updated_by: userId.toString(),
@@ -263,8 +263,8 @@ export class CustomerService {
         }
 
         await queryRunner.manager.update(
-          Customer,
-          { customer_id: customerId },
+          Leads,
+          { lead_id: customerId },
           {
             contact_name: data.contact_name || customer.contact_name,
             contact_email: data.contact_email || customer.contact_email,
@@ -276,8 +276,8 @@ export class CustomerService {
           }
         );
       }
-      const updatedCustomer = await queryRunner.manager.findOne(Customer, {
-        where: { customer_id: customerId },
+      const updatedCustomer = await queryRunner.manager.findOne(Leads, {
+        where: { lead_id: customerId },
         relations: ["address"],
       });
 
@@ -324,8 +324,8 @@ export class CustomerService {
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
-      const customer = await queryRunner.manager.findOne(Customer, {
-        where: { customer_id: customerId, is_active: true },
+      const customer = await queryRunner.manager.findOne(Leads, {
+        where: { lead_id: customerId, is_active: true },
       });
       if (!customer) {
         await queryRunner.rollbackTransaction();
@@ -336,8 +336,8 @@ export class CustomerService {
       }
 
       await queryRunner.manager.update(
-        Customer,
-        { customer_id: customerId },
+        Leads,
+        { lead_id: customerId },
         {
           is_active: false,
           updated_by: adminId.toString(),
@@ -382,8 +382,8 @@ export class CustomerService {
     message: string;
   }> {
     try {
-      const customer = await dataSource.manager.findOne(Customer, {
-        where: { customer_id: customerId, is_active: true },
+      const customer = await dataSource.manager.findOne(Leads, {
+        where: { lead_id: customerId, is_active: true },
         relations: ["address"],
       });
 
@@ -453,7 +453,7 @@ export class CustomerService {
         where.assigned_rep_id = userId;
       }
 
-      const customers = await dataSource.manager.find(Customer, {
+      const customers = await dataSource.manager.find(Leads, {
         where,
         relations: ["address"],
       });
@@ -497,12 +497,12 @@ export class CustomerService {
         };
       }
 
-      const updatedCustomers: Customer[] = [];
+      const updatedCustomers: Leads[] = [];
       const errors: string[] = [];
 
       for (const customerId of customerIds) {
-        const customer = await queryRunner.manager.findOne(Customer, {
-          where: { customer_id: customerId, is_active: true },
+        const customer = await queryRunner.manager.findOne(Leads, {
+          where: { lead_id: customerId, is_active: true },
         });
         if (!customer) {
           errors.push(`Customer with ID ${customerId} not found`);
@@ -517,8 +517,8 @@ export class CustomerService {
         }
 
         await queryRunner.manager.update(
-          Customer,
-          { customer_id: customerId },
+          Leads,
+          { lead_id: customerId },
           {
             assigned_rep_id: repId,
             pending_assignment: false,
@@ -527,8 +527,8 @@ export class CustomerService {
           }
         );
 
-        const updatedCustomer = await queryRunner.manager.findOne(Customer, {
-          where: { customer_id: customerId },
+        const updatedCustomer = await queryRunner.manager.findOne(Leads, {
+          where: { lead_id: customerId },
           relations: ["address"],
         });
         updatedCustomers.push(updatedCustomer!);
@@ -563,7 +563,7 @@ export class CustomerService {
   }
 
   async importCustomers(
-    fileData: CustomerImportDto[],
+    fileData: LeadImportDto[],
     adminId: number
   ): Promise<{
     status: number;
@@ -574,7 +574,7 @@ export class CustomerService {
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
-      const customers: Customer[] = [];
+      const customers: Leads[] = [];
       const errors: string[] = [];
       const regions = await queryRunner.manager.find(Region, {
         where: { is_active: true },
@@ -583,7 +583,7 @@ export class CustomerService {
       const finnishRegions = regions.map((region) => region.name);
       for (const row of fileData) {
         // Validate input
-        const customerData = new CustomerImportDto();
+        const customerData = new LeadImportDto();
         Object.assign(customerData, row);
         const validationErrors = await validate(customerData);
         if (validationErrors.length) {
@@ -619,7 +619,7 @@ export class CustomerService {
           },
         });
         if (existingAddress) {
-          const existingCustomer = await queryRunner.manager.findOne(Customer, {
+          const existingCustomer = await queryRunner.manager.findOne(Leads, {
             where: { address_id: existingAddress.address_id, is_active: true },
           });
           if (existingCustomer) {
@@ -631,7 +631,7 @@ export class CustomerService {
         }
 
         // Check for duplicate email
-        const existingEmail = await queryRunner.manager.findOne(Customer, {
+        const existingEmail = await queryRunner.manager.findOne(Leads, {
           where: { contact_email: row.contact_email, is_active: true },
         });
         if (existingEmail) {
@@ -657,32 +657,27 @@ export class CustomerService {
         );
 
         if (addressResult.status >= 400) {
-          errors.push(
-            `Failed to create address`
-          );
+          errors.push(`Failed to create address`);
           continue;
         }
 
         const address = addressResult.data as Address;
 
         // Create customer
-        const customer = new Customer();
+        const customer = new Leads();
         customer.name = row.name;
         customer.contact_name = row.contact_name ?? "";
         customer.contact_email = row.contact_email ?? "";
         customer.contact_phone = row.contact_phone ?? "";
         customer.address_id = address.address_id;
-        customer.status = CustomerStatus.Prospect;
+        customer.status = LeadStatus.Prospect;
         customer.pending_assignment = true;
         customer.is_active = true;
         customer.created_by = adminId.toString();
         customer.updated_by = adminId.toString();
         customer.org_id = row.org_id;
 
-        const savedCustomer = await queryRunner.manager.save(
-          Customer,
-          customer
-        );
+        const savedCustomer = await queryRunner.manager.save(Leads, customer);
         customers.push(savedCustomer);
       }
       if (errors.length && !customers.length) {
@@ -726,9 +721,9 @@ export class CustomerService {
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
-      const customer = await queryRunner.manager.findOne(Customer, {
+      const customer = await queryRunner.manager.findOne(Leads, {
         where: {
-          customer_id: customerId,
+          lead_id: customerId,
           pending_assignment: true,
           is_active: true,
         },
@@ -753,8 +748,8 @@ export class CustomerService {
       }
 
       await queryRunner.manager.update(
-        Customer,
-        { customer_id: customerId },
+        Leads,
+        { lead_id: customerId },
         {
           assigned_rep_id: repId,
           pending_assignment: false,
@@ -763,8 +758,8 @@ export class CustomerService {
         }
       );
 
-      const updatedCustomer = await queryRunner.manager.findOne(Customer, {
-        where: { customer_id: customerId },
+      const updatedCustomer = await queryRunner.manager.findOne(Leads, {
+        where: { lead_id: customerId },
         relations: ["address"],
       });
 
