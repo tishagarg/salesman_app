@@ -7,54 +7,54 @@ const router = express.Router();
 
 router.post(
   "/import",
-  permissionMiddleware("customer_import"),
+  // permissionMiddleware("customer_import"),
   leadController.importLeads
 );
 
 router.post(
   "/:id/assign",
-  permissionMiddleware("customer_assign"),
+  // permissionMiddleware("customer_assign"),
   leadController.assignLeads
 );
 
 router.post(
   "/",
-  permissionMiddleware("customer_create"),
+  // permissionMiddleware("customer_create"),
   leadController.createLeads
 );
 
 router.patch(
   "/:id",
-  permissionMiddleware("customer_update"),
+  // permissionMiddleware("customer_update"),
   leadController.updateLead
 );
 router.post(
   "/:id/status",
-  permissionMiddleware("customer_status_update"),
+  // permissionMiddleware("customer_status_update"),
   leadController.updateStatus
 );
 
 router.delete(
   "/:id",
-  permissionMiddleware("customer_delete"),
+  // permissionMiddleware("customer_delete"),
   leadController.deleteLead
 );
 
 router.get(
   "/:id",
-  permissionMiddleware("customer_view"),
+  // permissionMiddleware("customer_view"),
   leadController.getLeadById
 );
 
 router.get(
   "/",
-  permissionMiddleware("customer_view"),
+  // permissionMiddleware("customer_view"),
   leadController.getAllLeads
 );
 
 router.post(
   "/bulk-assign",
-  permissionMiddleware("customer_bulk_assign"),
+  // permissionMiddleware("customer_bulk_assign"),
   leadController.bulkAssignLeads
 );
 
