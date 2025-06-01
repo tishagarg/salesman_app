@@ -449,6 +449,53 @@ export class TerritoryService {
         where: { name: data.name, org_id, is_active: true },
         select: ["territory_id"],
       });
+
+      if (existing && data.salesmanIds?.length) {
+        // Fetch all existing relationships in one query
+        const salesmanIds = data.salesmanIds.map((id) => parseInt(id, 10));
+        const existingRelations = await queryRunner.manager
+          .createQueryBuilder(TerritorySalesman, "ts")
+          .where(
+            "ts.territory_id = :territoryId AND ts.salesman_id IN (:...salesmanIds)",
+            {
+              territoryId: existing.territory_id,
+              salesmanIds,
+            }
+          )
+          .getMany();
+
+        // Identify new salesman IDs
+        const existingSalesmanIds = new Set(
+          existingRelations.map((rel) => rel.salesman_id)
+        );
+        const newTerritorySalesmen = salesmanIds
+          .filter((id) => !existingSalesmanIds.has(id))
+          .map((salesmanId) =>
+            queryRunner.manager.create(TerritorySalesman, {
+              territory_id: existing.territory_id,
+              salesman_id: salesmanId,
+            })
+          );
+
+        if (newTerritorySalesmen.length > 0) {
+          await queryRunner.manager.save(
+            TerritorySalesman,
+            newTerritorySalesmen
+          );
+          await queryRunner.commitTransaction();
+          return {
+            status: httpStatusCodes.CREATED,
+            message: `New salesman relationships added for territory ${data.name}`,
+          };
+        }
+
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.CONFLICT,
+          message: `All provided salesman IDs are already associated with territory ${data.name}`,
+        };
+      }
+
       if (existing) {
         await queryRunner.rollbackTransaction();
         return {
@@ -470,11 +517,7 @@ export class TerritoryService {
       }
 
       // Fetch location data for geometry if provided
-      let fetchedLocationData: {
-        postal_codes: string[];
-        regions: string[];
-        subregions: string[];
-      } = {
+      let fetchedLocationData = {
         postal_codes: data.postal_codes || [],
         regions: data.regions || [],
         subregions: data.subregions || [],

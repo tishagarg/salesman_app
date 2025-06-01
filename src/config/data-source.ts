@@ -45,7 +45,8 @@ export const AppDataSource: DataSourceOptions = {
     Organization,
     Role,
     TerritorySalesman,
-    OtpVerification,ManagerSalesRep,
+    OtpVerification,
+    ManagerSalesRep,
     UserToken,
     Address,
     Leads,
@@ -66,13 +67,5 @@ export const AppDataSource: DataSourceOptions = {
 };
 
 const dataSource = new DataSource(AppDataSource);
-dataSource
-  .initialize()
-  .then(() => {
-    console.log("Data Source has been initialized!");
-  })
-  .catch((err) => {
-    console.error("Error during Data Source initialization:", err);
-  });
 
 export default dataSource;
