@@ -32,59 +32,49 @@ export class GeocodingService {
     }
   }
 
-  async getLocationDataFromCoordinates(coordinates: Coordinates[]): Promise<{
-    postal_codes: string[];
-    regions: string[];
-    subregions: string[];
-  }> {
-    const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-    if (!apiKey) {
-      throw new Error("Google API key is not configured");
-    }
+async getLocationDataFromCoordinates(coordinates: Coordinates[]): Promise<{
+  postal_codes: string[];
+  regions: string[];
+  subregions: string[];
+}> {
+  const apiKey = process.env.GOOGLE_MAPS_API_KEY;
+  if (!apiKey) {
+    throw new Error("Google API key is not configured");
+  }
+  if (coordinates.length < 3) {
+    throw new Error("Minimum 3 coordinates are required to form a polygon");
+  }
 
-    const postalCodes = new Set<string>();
-    const regions = new Set<string>();
-    const subregions = new Set<string>();
-    if (coordinates.length !== 4) {
-      throw new Error(
-        "Exactly 4 coordinates are required to form a bounding box"
-      );
-    }
+  const postalCodes = new Set<string>();
+  const regions = new Set<string>();
+  const subregions = new Set<string>();
 
-    // Calculate the bounding box
-    const lats = coordinates.map((coord) => coord.lat);
-    const lngs = coordinates.map((coord) => coord.lng);
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLng = Math.min(...lngs);
-    const maxLng = Math.max(...lngs);
+  // Calculate the bounding box
+  const lats = coordinates.map((coord) => coord.lat);
+  const lngs = coordinates.map((coord) => coord.lng);
+  const minLat = Math.min(...lats);
+  const maxLat = Math.max(...lats);
+  const minLng = Math.min(...lngs);
+  const maxLng = Math.max(...lngs);
 
-    // Define a grid (e.g., 5x5 points) to sample within the bounding box
-    const gridSize = 5; // Adjust grid size for more/less granularity
-    const latStep = (maxLat - minLat) / (gridSize - 1);
-    const lngStep = (maxLng - minLng) / (gridSize - 1);
+  // Define a grid (e.g., 5x5 points) to sample within the bounding box
+  const gridSize = 5; // Adjustable for granularity (e.g., 7x7 for more points)
+  const latStep = (maxLat - minLat) / (gridSize - 1);
+  const lngStep = (maxLng - minLng) / (gridSize - 1);
 
-    try {
-      // Iterate over the grid
-      for (let i = 0; i < gridSize; i++) {
-        for (let j = 0; j < gridSize; j++) {
-          const lat = minLat + i * latStep;
-          const lng = minLng + j * lngStep;
+  const cache = new Map<string, any>();
 
-          // Make API call for each grid point
-          const response = await axios.get(
-            `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`
-          );
-
-          if (response.data.status !== "OK") {
-            console.warn(
-              `Geocoding API error at (${lat}, ${lng}): ${response.data.status}`
-            );
-            continue;
-          }
-
-          const results = response.data.results;
-          for (const result of results) {
+  try {
+    // Iterate over the grid
+    const geocodePromises: Promise<void>[] = [];
+    for (let i = 0; i < gridSize; i++) {
+      for (let j = 0; j < gridSize; j++) {
+        const lat = minLat + i * latStep;
+        const lng = minLng + j * lngStep;
+        const cacheKey = `${lat.toFixed(6)},${lng.toFixed(6)}`;
+        if (cache.has(cacheKey)) {
+          const results = cache.get(cacheKey);
+          results.forEach((result: any) => {
             for (const component of result.address_components) {
               if (component.types.includes("postal_code")) {
                 postalCodes.add(component.long_name);
@@ -101,18 +91,68 @@ export class GeocodingService {
                 subregions.add(component.long_name);
               }
             }
-          }
+          });
+          continue;
         }
-      }
 
-      return {
-        postal_codes: Array.from(postalCodes),
-        regions: Array.from(regions),
-        subregions: Array.from(subregions),
-      };
-    } catch (error: any) {
-      console.error("Error fetching location data:", error.message);
-      return { postal_codes: [], regions: [], subregions: [] };
+        geocodePromises.push(
+          (async () => {
+            try {
+              const response = await axios.get(
+                `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`
+              );
+
+              if (response.data.status !== "OK") {
+                console.warn(
+                  `Geocoding API error at (${lat}, ${lng}): ${response.data.status}`
+                );
+                return;
+              }
+
+              cache.set(cacheKey, response.data.results);
+              response.data.results.forEach((result: any) => {
+                for (const component of result.address_components) {
+                  if (component.types.includes("postal_code")) {
+                    postalCodes.add(component.long_name);
+                  }
+                  if (component.types.includes("administrative_area_level_1")) {
+                    regions.add(component.long_name);
+                  }
+                  if (
+                    component.types.includes("sublocality") ||
+                    component.types.includes("neighborhood") ||
+                    component.types.includes("administrative_area_level_2") ||
+                    component.types.includes("administrative_area_level_3")
+                  ) {
+                    subregions.add(component.long_name);
+                  }
+                }
+              });
+            } catch (error: any) {
+              console.warn(`Geocoding failed at (${lat}, ${lng}): ${error.message}`);
+            }
+          })()
+        );
+      }
     }
+
+    // Execute geocoding requests in parallel with rate limiting
+    const batchSize = 10; // Adjust based on API rate limits (e.g., 50 QPS)
+    for (let k = 0; k < geocodePromises.length; k += batchSize) {
+      await Promise.all(geocodePromises.slice(k, k + batchSize));
+      if (k + batchSize < geocodePromises.length) {
+        await new Promise((resolve) => setTimeout(resolve, 200)); // Throttle to avoid rate limits
+      }
+    }
+
+    return {
+      postal_codes: Array.from(postalCodes),
+      regions: Array.from(regions),
+      subregions: Array.from(subregions),
+    };
+  } catch (error: any) {
+    console.error("Error fetching location data:", error.message);
+    return { postal_codes: [], regions: [], subregions: [] };
   }
+}
 }

@@ -218,7 +218,7 @@ async updateCustomer(
       if (data.contact_name) updateData.contact_name = data.contact_name;
       if (data.contact_email) updateData.contact_email = data.contact_email;
       if (data.contact_phone) updateData.contact_phone = data.contact_phone;
-      if (data.name) updateData.name = data.name; // Fixed bug: assign to name, not contact_phone
+      if (data.name) updateData.name = data.name;
       if (data.status) {
         if (data.status !== LeadStatus.Active) {
           await queryRunner.rollbackTransaction();
