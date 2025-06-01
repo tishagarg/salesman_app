@@ -32,9 +32,12 @@ export const AppDataSource: DataSourceOptions = {
   username: process.env.POSTGRES_USER,
   password: process.env.POSTGRES_PASSWORD,
   database: process.env.POSTGRES_DB_DEVELOPMENT,
-  ssl: {
-    rejectUnauthorized: true,
-  },
+  ssl: process.env.NODE_ENV === "production"
+    ? { rejectUnauthorized: false } // required for Neon
+    : false,
+  // ssl: {
+  //   rejectUnauthorized: true,
+  // },
   // process.env.NODE_ENV === "production"
   //   ? { rejectUnauthorized: false }
   //   : false,
