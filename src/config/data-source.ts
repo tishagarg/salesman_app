@@ -26,12 +26,19 @@ import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
 
 dotenv.config();
 
-export const AppDataSource: DataSourceOptions = {
+// Validate environment variables
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL is not defined in environment variables");
+}
+
+export const dataSourceOptions: DataSourceOptions = {
   type: "postgres",
-  url: process.env.DATABASE_URL, // full Neon connection URL
-  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
+  url: process.env.DATABASE_URL, // postgresql://neondb_owner:npg_gfo0iBqteP3D@ep-frosty.us-east-1.aws.neon.tech:5432/salesman_app_dev?sslmode=require
+  ssl: {
+    rejectUnauthorized: false, // Neon requires SSL
+  },
   synchronize: false,
-  logging: ["error"],
+  logging: process.env.NODE_ENV === "production" ? ["error"] : ["query", "error"],
   entities: [
     User,
     Organization,
@@ -56,15 +63,43 @@ export const AppDataSource: DataSourceOptions = {
   ],
   migrations: [],
   subscribers: [],
+  poolSize: 10, // Connection pooling for Neon
+  extra: {
+    connectionTimeoutMillis: 10000, // 10s timeout
+    idleTimeoutMillis: 30000, // 30s idle timeout
+    max: 10, // Max connections
+    min: 2, // Min connections
+  },
 };
 
 // Singleton pattern for serverless compatibility
 let dataSource: DataSource | null = null;
 
 export const getDataSource = async (): Promise<DataSource> => {
-  if (!dataSource || !dataSource.isInitialized) {
-    dataSource = new DataSource(AppDataSource);
-    await dataSource.initialize();
+  try {
+    if (!dataSource || !dataSource.isInitialized) {
+      console.log("Initializing DataSource...");
+      dataSource = new DataSource(dataSourceOptions);
+      await dataSource.initialize();
+      console.log("DataSource initialized successfully");
+    }
+    return dataSource;
+  } catch (error) {
+    console.error("Failed to initialize DataSource:", error);
+    throw new Error(`DataSource initialization failed: ${error instanceof Error ? error.message : "Unknown error"}`);
   }
-  return dataSource;
+};
+
+// Cleanup for serverless environments
+export const destroyDataSource = async (): Promise<void> => {
+  try {
+    if (dataSource && dataSource.isInitialized) {
+      await dataSource.destroy();
+      console.log("DataSource destroyed");
+      dataSource = null;
+    }
+  } catch (error) {
+    console.error("Failed to destroy DataSource:", error);
+    throw new Error(`DataSource destruction failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+  }
 };
