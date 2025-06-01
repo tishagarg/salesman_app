@@ -140,16 +140,18 @@ export class AuthService {
         status: 1,
         active: 1,
       });
+      const existingRefreshtoken = await dataSource
+        .getRepository(RefreshToken)
+        .findOne({ where: { user_id: user.user_id } });
+      if (existingRefreshtoken) {
+        userTokenQuery.deleteRefreshTokens(queryRunner.manager, user.user_id);
+      }
       const refreshToken = await generateRefreshToken(user.user_id);
       await this.saveRefreshToken(
         queryRunner.manager,
         user.user_id,
         refreshToken
       );
-      await queryRunner.manager.getRepository(RefreshToken).delete({
-        user_id: user.user_id,
-        token: Not(refreshToken), // Keep the new token
-      });
       const getUserByIdWithOrganization =
         await organizationQuery.getUserByIdWithOrganization(
           queryRunner.manager,
@@ -788,7 +790,7 @@ export class AuthService {
         message: "Token refreshed successfully",
       };
     } catch (error) {
-      console.log(error)
+      console.log(error);
       await queryRunner.rollbackTransaction();
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
