@@ -12,7 +12,7 @@ router.post(
 );
 router.post(
   "/",
-  permissionMiddleware("customer_import"),
+  permissionMiddleware("territory_assign"),
   territoryController.addTerritory
 );
 router.put(
@@ -30,7 +30,6 @@ router.get(
   permissionMiddleware("customer_import"),
   territoryController.getTerritoryById
 );
-
 
 router.get(
   "/",
