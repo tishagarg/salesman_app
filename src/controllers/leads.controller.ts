@@ -17,18 +17,6 @@ export class LeadsController {
     const org_id = parseInt(req.user.org_id); // Validate input
     const validation = new LeadImportDto();
     Object.assign(validation, data);
-    const validationErrors = await validate(validation);
-    if (validationErrors.length) {
-      const errorMsg = validationErrors
-        .map((e) => Object.values(e.constraints || {}).join(", "))
-        .join("; ");
-      return ApiResponse.error(
-        res,
-        httpStatusCodes.BAD_REQUEST,
-        `Validation failed: ${errorMsg}`
-      );
-    }
-
     const response = await customerService.createCustomer(data, userId, org_id);
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
