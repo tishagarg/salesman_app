@@ -57,7 +57,7 @@ export class Address {
   @Column({ type: "text", nullable: true })
   comments: string;
   @Column({ type: "int", nullable: true })
-  territory_id: number;
+  territory_id: number | null;
 
   @Column({ type: "int", nullable: true })
   polygon_id: number | undefined;

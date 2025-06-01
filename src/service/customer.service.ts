@@ -16,6 +16,8 @@ import { validate } from "class-validator";
 import { Region } from "../models/Region.entity";
 import { Subregion } from "../models/Subregion.entity";
 import { TerritorySalesman } from "../models/TerritorySalesMan.entity";
+import { Territory } from "../models/Territory.entity";
+import { In } from "typeorm";
 
 const addressService = new AddressService();
 const territoryService = new TerritoryService();
@@ -147,7 +149,6 @@ export class CustomerService {
       };
     } catch (error: any) {
       await queryRunner.rollbackTransaction();
-      console.error("createCustomer - Error:", error.message, error.stack);
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: `Failed to create customer: ${error.message}`,
@@ -312,7 +313,6 @@ export class CustomerService {
       };
     } catch (error: any) {
       await queryRunner.rollbackTransaction();
-      console.error("updateCustomer - Error:", error.message, error.stack);
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: `Failed to update customer: ${error.message}`,
@@ -370,7 +370,6 @@ export class CustomerService {
       };
     } catch (error: any) {
       await queryRunner.rollbackTransaction();
-      console.error("deleteCustomer - Error:", error.message, error.stack);
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: `Failed to delete customer: ${error.message}`,
@@ -415,7 +414,6 @@ export class CustomerService {
         message: "Customer retrieved successfully",
       };
     } catch (error: any) {
-      console.error("getCustomerById - Error:", error.message, error.stack);
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: `Failed to retrieve customer: ${error.message}`,
@@ -472,7 +470,6 @@ export class CustomerService {
         message: "Customers retrieved successfully",
       };
     } catch (error: any) {
-      console.error("getAllCustomers - Error:", error.message, error.stack);
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: `Failed to retrieve customers: ${error.message}`,
@@ -560,7 +557,6 @@ export class CustomerService {
       };
     } catch (error: any) {
       await queryRunner.rollbackTransaction();
-      console.error("bulkAssignCustomers - Error:", error.message, error.stack);
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: `Failed to assign customers: ${error.message}`,
@@ -573,7 +569,8 @@ export class CustomerService {
   async importCustomers(
     data: LeadImportDto[],
     adminId: number,
-    org_id: number
+    org_id: number,
+    batchSize: number = 500
   ): Promise<{
     status: number;
     message: string;
@@ -587,137 +584,231 @@ export class CustomerService {
       const customers: Leads[] = [];
       const errors: string[] = [];
 
-      for (const row of data) {
-        const addressData = new LeadImportDto();
-        Object.assign(addressData, {
-          ...row,
-          name: row.name || undefined,
-          city: row.city || "",
-          region: row.region || "",
-          subregion: row.subregion || "",
-          org_id: org_id,
-        });
+      // Fetch territories once
+      const territories = await queryRunner.manager.find(Territory, {
+        where: { org_id, is_active: true },
+        select: ["territory_id", "regions", "subregions", "postal_codes"],
+      });
 
-        const regions = await queryRunner.manager.find(Region, {
-          where: { is_active: true },
-          select: ["name"],
-        });
-        const finnishRegions = regions.map((region) => region.name);
-        if (!finnishRegions.includes(addressData.region)) {
-          errors.push(
-            `Invalid region for ${addressData.street_address}: ${addressData.region}`
-          );
-          continue;
+      // Unified lookup map for territory matching
+      const territoryLookup = new Map<string, number>();
+      territories.forEach((territory) => {
+        const territoryId = territory.territory_id;
+        try {
+          if (territory.postal_codes) {
+            (JSON.parse(territory.postal_codes) as string[]).forEach((code) =>
+              territoryLookup.set(`postal:${code}`, territoryId)
+            );
+          }
+          if (territory.regions) {
+            (JSON.parse(territory.regions) as string[]).forEach((region) =>
+              territoryLookup.set(`region:${region}`, territoryId)
+            );
+          }
+          if (territory.subregions) {
+            (JSON.parse(territory.subregions) as string[]).forEach(
+              (subregion) =>
+                territoryLookup.set(`subregion:${subregion}`, territoryId)
+            );
+          }
+        } catch (e) {
+          console.warn(`Malformed JSON in territory ${territoryId}: ${e}`);
         }
+      });
 
-        const subregions = await queryRunner.manager.find(Subregion, {
-          where: { region_name: addressData.region, is_active: true },
-          select: ["name"],
+      // Process data in batches
+      for (let i = 0; i < data.length; i += batchSize) {
+        const batch = data.slice(i, i + batchSize);
+
+        // Prepare address keys for bulk lookup
+        const addressKeys = batch.map((row) => ({
+          postal_code: row.postal_code || "00000",
+          street_address: row.street_address || "",
+          subregion: row.subregion || row.city || "",
+          org_id,
+        }));
+
+        // Bulk fetch existing addresses
+        const existingAddresses = await queryRunner.manager.find(Address, {
+          where: addressKeys,
+          select: [
+            "address_id",
+            "postal_code",
+            "street_address",
+            "subregion",
+            "org_id",
+            "territory_id",
+            "comments",
+          ],
         });
-        const finnishSubregions = subregions.map((subregion) => subregion.name);
-        if (!finnishSubregions.includes(addressData.subregion)) {
-          errors.push(
-            `Invalid subregion for ${addressData.street_address}: ${addressData.subregion}`
-          );
-          continue;
-        }
-        const existingAddress = await queryRunner.manager.findOne(Address, {
-          where: {
-            postal_code: addressData.postal_code,
-            street_address: addressData.street_address,
-            subregion: addressData.subregion,
-            org_id: org_id,
-          },
-        });
-        console.log("existingAddress ", existingAddress);
-        if (existingAddress) {
-          if (addressData.name) {
-            const existingCustomer = await queryRunner.manager.findOne(Leads, {
-              where: {
-                address_id: existingAddress.address_id,
-                is_active: true,
-              },
-            });
-            if (existingCustomer) {
+        const addressMap = new Map<string, Address>(
+          existingAddresses.map((addr) => [
+            `${addr.postal_code}|${addr.street_address}|${addr.subregion}|${org_id}`,
+            addr,
+          ])
+        );
+
+        // Bulk fetch existing leads
+        const addressIds = existingAddresses.map((addr) => addr.address_id);
+        const existingLeads = addressIds.length
+          ? await queryRunner.manager.find(Leads, {
+              where: { address_id: In(addressIds), is_active: true },
+              select: ["address_id"],
+            })
+          : [];
+        const leadAddressIds = new Set(
+          existingLeads.map((lead) => lead.address_id)
+        );
+
+        const newAddresses: Address[] = [];
+        const addressesToUpdate: Address[] = [];
+        const newCustomers: Leads[] = [];
+        const customerToAddressIndex: Map<number, number> = new Map(); // Maps customer index to address index
+
+        // Process batch
+        batch.forEach((row, index) => {
+          const addressData = {
+            name: row.name || "",
+            contact_name: row.contact_name || "",
+            contact_email: row.contact_email || "",
+            contact_phone: row.contact_phone || "",
+            street_address: row.street_address || "",
+            comments: row.comments || "",
+            postal_code: row.postal_code || "00000",
+            area_name: row.area_name || "",
+            city: row.city || "",
+            state: row.state || "",
+            subregion: row.subregion || row.city || "",
+            region: row.region || row.state || "",
+            country: row.country || "Finland",
+          };
+
+          // Find territory_id
+          const territoryId =
+            territoryLookup.get(`postal:${addressData.postal_code}`) ||
+            territoryLookup.get(`region:${addressData.region}`) ||
+            territoryLookup.get(`subregion:${addressData.subregion}`) ||
+            null;
+
+          const addressKey = `${addressData.postal_code}|${addressData.street_address}|${addressData.subregion}|${org_id}`;
+          const existingAddress = addressMap.get(addressKey);
+
+          let address: Address;
+          if (existingAddress) {
+            if (
+              addressData.name &&
+              leadAddressIds.has(existingAddress.address_id)
+            ) {
               errors.push(
                 `Duplicate customer: ${addressData.name} at ${addressData.street_address}, ${addressData.postal_code}, ${addressData.subregion}`
               );
-              continue;
+              return;
             }
+            existingAddress.comments =
+              addressData.comments || existingAddress.comments;
+            existingAddress.territory_id =
+              territoryId || existingAddress.territory_id;
+            addressesToUpdate.push(existingAddress);
+            address = existingAddress;
+          } else {
+            const newAddress: Address = queryRunner.manager.create(Address, {
+              street_address: addressData.street_address,
+              postal_code: addressData.postal_code,
+              area_name: addressData.area_name,
+              subregion: addressData.subregion,
+              region: addressData.region,
+              country: addressData.country,
+              org_id,
+              city: addressData.city,
+              state: addressData.state,
+              comments: addressData.comments,
+              territory_id: territoryId,
+              latitude: 0, // Replace with geocoding if needed
+              longitude: 0,
+              created_by: adminId.toString(),
+              updated_by: adminId.toString(),
+              is_active: true,
+            });
+            newAddresses.push(newAddress);
+            address = newAddress;
           }
-          existingAddress.comments = addressData.comments || "";
-          const updatedAddress = await queryRunner.manager.save(
-            Address,
-            existingAddress
-          );
-          console.log("updatedAddress ", updatedAddress);
-          addresses.push(updatedAddress);
-          console.log("addresses ", addresses);
-        } else {
-          const newAddressData: AddressDto = {
-            street_address: addressData.street_address,
-            postal_code: addressData.postal_code,
-            area_name: addressData.area_name || "",
-            subregion: addressData.subregion || "",
-            region: addressData.region || "",
-            country: "Finland",
-            org_id: org_id,
-            city: addressData.city || "",
-            state: addressData.state || "",
-            comments: addressData.comments || "",
-          };
-          console.log("newAddressData ", newAddressData);
-          const addressResult = await addressService.createAddress(
-            newAddressData,
-            adminId
-          );
-          console.log("addressResult ", addressResult);
-          if (addressResult.status >= 400) {
-            errors.push(
-              `Failed to create address for ${addressData.street_address}: ${addressResult.message}`
-            );
-            continue;
-          }
-
-          const address = addressResult.data as Address;
-          console.log("address in else ", address);
           addresses.push(address);
-        }
-        // Create customer in Leads table only if name exists
-        if (addressData.name) {
-          const address = addresses[addresses.length - 1]; // Latest address
-          const customer = new Leads();
-          customer.name = addressData.name;
-          customer.contact_name = addressData.contact_name || addressData.name;
-          customer.contact_email = addressData.contact_email || "";
-          customer.contact_phone = addressData.contact_phone || "";
-          customer.address_id = address.address_id;
-          customer.status = addressData.status || LeadStatus.Prospect;
-          customer.pending_assignment = true;
-          customer.is_active = true;
-          customer.created_by = adminId.toString();
-          customer.updated_by = adminId.toString();
-          customer.org_id = org_id;
-          customer.territory_id = address.territory_id;
-          const savedCustomer = await queryRunner.manager.save(Leads, customer);
-          console.log("savedCustomer ", savedCustomer);
-          // Assign to sales representatives (from TerritorySalesman)
-          if (address.territory_id) {
-            const territorySalesmen = await queryRunner.manager.find(
-              TerritorySalesman,
-              {
-                where: { territory_id: address.territory_id },
-              }
-            );
-            if (territorySalesmen.length > 0) {
-              // Assign to the first salesman (or implement other logic)
-              customer.assigned_rep_id = territorySalesmen[0].salesman_id;
-              customer.pending_assignment = false;
-              await queryRunner.manager.save(Leads, customer);
-            }
-          }
 
-          customers.push(savedCustomer);
+          if (addressData.name) {
+            const customer = queryRunner.manager.create(Leads, {
+              name: addressData.name,
+              contact_name: addressData.contact_name || addressData.name,
+              contact_email: addressData.contact_email,
+              contact_phone: addressData.contact_phone,
+              pending_assignment: true,
+              is_active: true,
+              created_by: adminId.toString(),
+              updated_by: adminId.toString(),
+              org_id,
+              territory_id: territoryId,
+            });
+            newCustomers.push(customer);
+            customerToAddressIndex.set(
+              newCustomers.length - 1,
+              newAddresses.length - 1
+            );
+          }
+        });
+
+        // Bulk insert new addresses
+        if (newAddresses.length) {
+          const savedAddresses = await queryRunner.manager.save(
+            Address,
+            newAddresses
+          );
+          // Update address_id for customers
+          newCustomers.forEach((customer, customerIndex) => {
+            const addressIndex = customerToAddressIndex.get(customerIndex);
+            if (addressIndex !== undefined && savedAddresses[addressIndex]) {
+              customer.address_id = savedAddresses[addressIndex].address_id;
+            }
+          });
+          addresses.splice(
+            addresses.length - newAddresses.length,
+            newAddresses.length,
+            ...savedAddresses
+          );
+        }
+
+        // Bulk update existing addresses
+        if (addressesToUpdate.length) {
+          await queryRunner.manager.save(Address, addressesToUpdate);
+        }
+
+        const territoryIds = [
+          ...new Set(
+            newCustomers.map((c) => c.territory_id).filter((id) => id)
+          ),
+        ];
+        const territorySalesmen = territoryIds.length
+          ? await queryRunner.manager.find(TerritorySalesman, {
+              where: { territory_id: In(territoryIds) },
+              select: ["territory_id", "salesman_id"],
+            })
+          : [];
+        const salesmanMap = new Map<number, number>(
+          territorySalesmen.map((ts) => [ts.territory_id, ts.salesman_id])
+        );
+        newCustomers.forEach((customer) => {
+          if (customer.territory_id && salesmanMap.has(customer.territory_id)) {
+            customer.assigned_rep_id = salesmanMap.get(customer.territory_id)!;
+
+            customer.pending_assignment = false;
+          }
+        });
+
+        // Bulk insert new customers
+        if (newCustomers.length) {
+          const savedCustomers = await queryRunner.manager.save(
+            Leads,
+            newCustomers
+          );
+          customers.push(...savedCustomers);
         }
       }
 
@@ -738,9 +829,7 @@ export class CustomerService {
         errors: errors.length ? errors : undefined,
       };
     } catch (error: any) {
-      console.log(error);
       await queryRunner.rollbackTransaction();
-      console.error("importCustomers - Error:", error.message, error.stack);
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: `Failed to import customers: ${error.message}`,
@@ -750,7 +839,6 @@ export class CustomerService {
       await queryRunner.release();
     }
   }
-
   async assignCustomer(
     customerId: number,
     repId: number,
@@ -813,7 +901,6 @@ export class CustomerService {
       };
     } catch (error: any) {
       await queryRunner.rollbackTransaction();
-      console.error("assignCustomer - Error:", error.message, error.stack);
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: `Failed to assign customer: ${error.message}`,

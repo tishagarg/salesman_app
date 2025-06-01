@@ -48,24 +48,6 @@ export class AddressService {
         };
       }
 
-      const finnishRegions = await this.getFinnishRegions();
-      if (!finnishRegions.includes(data.region)) {
-        await queryRunner.rollbackTransaction();
-        return {
-          status: httpStatusCodes.BAD_REQUEST,
-          message: `Invalid region: ${data.region}`,
-        };
-      }
-
-      const finnishSubregions = await this.getFinnishSubregions(data.region);
-      if (!finnishSubregions.includes(data.subregion)) {
-        await queryRunner.rollbackTransaction();
-        return {
-          status: httpStatusCodes.BAD_REQUEST,
-          message: `Invalid subregion: ${data.subregion}`,
-        };
-      }
-
       if (data.latitude && (data.latitude < 59.5 || data.latitude > 70.1)) {
         await queryRunner.rollbackTransaction();
         return {
