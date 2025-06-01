@@ -1,12 +1,12 @@
 // api/index.ts
 import express from "express";
 import "reflect-metadata";
-import dataSource from "../config/data-source";
+import dataSource from "../src/config/data-source";
 import expressSession from "express-session";
-import router from "../routes/index.route";
+import router from "../src/routes/index.route";
 import cors from "cors";
-import { verifyToken } from "../middleware/auth.middleware";
-import { UserTeamController } from "../controllers/user.controller";
+import { verifyToken } from "../src/middleware/auth.middleware";
+import { UserTeamController } from "../src/controllers/user.controller";
 
 const userController = new UserTeamController();
 const app = express();
