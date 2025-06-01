@@ -454,8 +454,7 @@ export class CustomerService {
       search: string;
       source: string;
     },
-    userId: number,
-    role: string
+    userId: number
   ): Promise<{
     status: number;
     data?: any[] | null;
