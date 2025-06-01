@@ -45,7 +45,7 @@ export class Leads {
   status: LeadStatus;
 
   @Column({ type: "int", nullable: true })
-  territory_id: number;
+  territory_id: number | null;
 
   @Column({ type: "int", nullable: true })
   org_id: number;

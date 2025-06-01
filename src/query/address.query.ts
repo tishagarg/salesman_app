@@ -1,5 +1,6 @@
 import { EntityManager } from "typeorm";
 import { Address } from "../models/Address.entity";
+import { AddressDto } from "../interfaces/common.interface";
 
 export class AddressQuery {
   async updateAddress(
@@ -38,7 +39,7 @@ export class AddressQuery {
   }
   async createAddress(
     manager: EntityManager,
-    addressData: Partial<Address>,
+    addressData: Partial<AddressDto>,
     org_id: number
   ): Promise<Address> {
     const addressRepo = manager.getRepository(Address);
