@@ -33,6 +33,7 @@ const INITIAL_RETRY_DELAY = 5000;
 const connect = async (retries = 0) => {
   try {
     await dataSource.initialize();
+    console.log("Data Source has been initialized!");
     app.listen(PORT, () => {
       console.log(`Server running on port ${PORT}`);
     });
