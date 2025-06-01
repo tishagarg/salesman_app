@@ -1,5 +1,5 @@
 import httpStatusCodes from "http-status-codes";
-import dataSource from "../config/data-source";
+import { getDataSource } from "../config/data-source"; // Updated import
 import { Territory } from "../models/Territory.entity";
 import { Response } from "express";
 import { Coordinates, TerritoryDto } from "../interfaces/common.interface";
@@ -12,8 +12,10 @@ import { In } from "typeorm";
 import { GeocodingService } from "../utils/geoCode.service";
 import { UserQuery } from "../query/user.query";
 import { IJwtVerify } from "../interfaces/user.interface";
+
 const geocodingService = new GeocodingService();
 const userQuery = new UserQuery();
+
 export class TerritoryService {
   async drawPolygon(data: {
     name: string;
@@ -26,6 +28,7 @@ export class TerritoryService {
     data?: Polygon;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -101,6 +104,7 @@ export class TerritoryService {
     lng?: number;
     org_id: number;
   }): Promise<Territory | null> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -147,6 +151,7 @@ export class TerritoryService {
     data?: Address;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -208,6 +213,7 @@ export class TerritoryService {
     status: number;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -243,6 +249,7 @@ export class TerritoryService {
       await queryRunner.release();
     }
   }
+
   async assignManagerToTerritory(
     userData: IJwtVerify,
     manager_id: number,
@@ -252,6 +259,7 @@ export class TerritoryService {
     data?: any;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -349,6 +357,7 @@ export class TerritoryService {
     status: number;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -394,6 +403,7 @@ export class TerritoryService {
     data?: Address;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -441,6 +451,7 @@ export class TerritoryService {
     data?: any;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -604,6 +615,7 @@ export class TerritoryService {
       await queryRunner.release();
     }
   }
+
   async updateTerritory(
     territoryId: number,
     data: Partial<TerritoryDto>,
@@ -613,6 +625,7 @@ export class TerritoryService {
     data?: any;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -707,6 +720,7 @@ export class TerritoryService {
     status: number;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -752,6 +766,7 @@ export class TerritoryService {
     data?: any;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     try {
       const territory = await dataSource.manager.findOne(Territory, {
         where: { territory_id: territoryId, is_active: true },
@@ -782,6 +797,7 @@ export class TerritoryService {
     data?: any[] | null;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     try {
       const territories = await dataSource.manager.find(Territory, {
         where: { is_active: true, org_id },

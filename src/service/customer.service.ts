@@ -1,5 +1,5 @@
-import dataSource from "../config/data-source";
-import { DataSource, LeadStatus } from "../enum/leadStatus";
+import { getDataSource } from "../config/data-source"; // Updated import
+import { LeadStatus, Source } from "../enum/leadStatus"; // Fixed enum import (assuming Source is the correct enum)
 import {
   LeadImportDto,
   AddressDto,
@@ -23,6 +23,7 @@ import { GeocodingService } from "../utils/geoCode.service";
 const addressService = new AddressService();
 const territoryService = new TerritoryService();
 const geoCodeingService = new GeocodingService();
+
 export class CustomerService {
   async createCustomer(
     data: LeadImportDto,
@@ -33,6 +34,7 @@ export class CustomerService {
     data?: any;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -107,7 +109,7 @@ export class CustomerService {
       if (territory) {
         address.territory_id = territory.territory_id;
         address.polygon_id = territory.polygon_id || undefined;
-        const updatedAddress = await queryRunner.manager.save(Address, address);
+        await queryRunner.manager.save(Address, address);
       }
       const customer = new Leads();
       customer.name = data.name;
@@ -119,8 +121,8 @@ export class CustomerService {
       customer.status = LeadStatus.Prospect;
       customer.pending_assignment = true;
       customer.is_active = true;
-      (customer.source = DataSource.Manual),
-        (customer.created_by = userId.toString());
+      customer.source = Source.Manual;
+      customer.created_by = userId.toString();
       customer.updated_by = userId.toString();
       customer.org_id = org_id;
 
@@ -154,10 +156,10 @@ export class CustomerService {
     data?: Leads | null;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
-      // Fetch customer with minimal fields
       const customer = await queryRunner.manager.findOne(Leads, {
         where: { lead_id: customerId, is_active: true, org_id },
         select: [
@@ -181,7 +183,6 @@ export class CustomerService {
         };
       }
 
-      // Check access for sales reps
       if (role === Roles.SALES_REP && customer.assigned_rep_id !== userId) {
         await queryRunner.rollbackTransaction();
         return {
@@ -197,7 +198,6 @@ export class CustomerService {
       };
 
       if (role === Roles.SALES_REP) {
-        // Sales rep: update allowed fields
         if (data.contact_name) updateData.contact_name = data.contact_name;
         if (data.contact_email) updateData.contact_email = data.contact_email;
         if (data.contact_phone) updateData.contact_phone = data.contact_phone;
@@ -213,14 +213,12 @@ export class CustomerService {
           updateData.status = data.status;
         }
       } else {
-        // Admin: update all allowed fields
         if (data.contact_name) updateData.contact_name = data.contact_name;
         if (data.contact_email) updateData.contact_email = data.contact_email;
         if (data.contact_phone) updateData.contact_phone = data.contact_phone;
         if (data.name) updateData.name = data.name;
         if (data.status) updateData.status = data.status;
 
-        // Handle address updates
         const hasAddressUpdate =
           data.street_address ||
           data.postal_code ||
@@ -318,7 +316,7 @@ export class CustomerService {
         relations: {
           address: true,
         },
-        relationLoadStrategy: "join", // Use JOIN to fetch address in one query
+        relationLoadStrategy: "join",
       });
 
       if (!updatedCustomer) {
@@ -353,6 +351,7 @@ export class CustomerService {
     status: number;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -412,6 +411,7 @@ export class CustomerService {
     data?: any;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     try {
       const customer = await dataSource.manager.findOne(Leads, {
         where: { lead_id: customerId, is_active: true },
@@ -445,89 +445,94 @@ export class CustomerService {
     }
   }
 
-async getAllCustomers(
-  filters: {
-    page: number;
-    limit: number;
-    skip: number;
-    search?: string;
-    source?: string;
-  },
-  userId: number,
-  role: string
-): Promise<{
-  status: number;
-  data?: any[] | null;
-  message: string;
-  total?: number;
-}> {
-  try {
-    // Normalize search and source parameters
-    const search = filters.search?.trim().toLowerCase();
-    const source = filters.source?.trim() || undefined; // Use undefined to skip filtering if empty
+  async getAllCustomers(
+    filters: {
+      page: number;
+      limit: number;
+      skip: number;
+      search?: string;
+      source?: string;
+    },
+    userId: number,
+    role: string
+  ): Promise<{
+    status: number;
+    data?: any[] | null;
+    message: string;
+    total?: number;
+  }> {
+    const dataSource = await getDataSource();
+    try {
+      const search = filters.search?.trim().toLowerCase();
+      const source = filters.source?.trim() || undefined;
 
-    // Build the where clause
-    const where: any = { is_active: true };
-    if (role === Roles.SALES_REP) {
-      where.assigned_rep_id = userId;
+      const where: any = { is_active: true };
+      if (role === Roles.SALES_REP) {
+        where.assigned_rep_id = userId;
+      }
+
+      const query = dataSource.manager
+        .createQueryBuilder(Leads, "leads")
+        .leftJoinAndSelect("leads.address", "address")
+        .where("leads.is_active = :isActive", { isActive: true });
+
+      if (role === Roles.SALES_REP) {
+        query.andWhere("leads.assigned_rep_id = :userId", { userId });
+      }
+
+      if (search) {
+        query.andWhere(
+          new Brackets((qb) => {
+            qb.where("LOWER(leads.name) LIKE :search", { search: `%${search}%` })
+              .orWhere("LOWER(leads.contact_name) LIKE :search", {
+                search: `%${search}%`,
+              })
+              .orWhere("LOWER(leads.contact_email) LIKE :search", {
+                search: `%${search}%`,
+              })
+              .orWhere("LOWER(address.street_address) LIKE :search", {
+                search: `%${search}%`,
+              })
+              .orWhere("LOWER(address.country) LIKE :search", {
+                search: `%${search}%`,
+              })
+              .orWhere("LOWER(address.city) LIKE :search", {
+                search: `%${search}%`,
+              })
+              .orWhere("LOWER(address.postal_code) LIKE :search", {
+                search: `%${search}%`,
+              });
+          })
+        );
+      }
+
+      if (source) {
+        query.andWhere("leads.source = :source", { source });
+      }
+
+      query
+        .skip(filters.skip)
+        .take(filters.limit)
+        .orderBy("leads.created_at", "DESC");
+
+      const [customers, total] = await query.getManyAndCount();
+
+      return {
+        status: httpStatusCodes.OK,
+        data: customers,
+        message: "Customers retrieved successfully",
+        total,
+      };
+    } catch (error: any) {
+      console.error("Error retrieving customers:", error);
+      return {
+        status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+        message: `Failed to retrieve customers: ${error.message}`,
+        data: null,
+        total: 0,
+      };
     }
-
-    // Create query builder
-    const query = dataSource.manager
-      .createQueryBuilder(Leads, "leads")
-      .leftJoinAndSelect("leads.address", "address")
-      .where("leads.is_active = :isActive", { isActive: true });
-
-    // Add role-based filter
-    if (role === Roles.SALES_REP) {
-      query.andWhere("leads.assigned_rep_id = :userId", { userId });
-    }
-
-    // Add search filter
-    if (search) {
-      query.andWhere(
-        new Brackets((qb) => {
-          qb.where("LOWER(leads.name) LIKE :search", { search: `%${search}%` })
-            .orWhere("LOWER(leads.contact_name) LIKE :search", { search: `%${search}%` })
-            .orWhere("LOWER(leads.contact_email) LIKE :search", { search: `%${search}%` })
-            .orWhere("LOWER(address.street_address) LIKE :search", { search: `%${search}%` })
-            .orWhere("LOWER(address.country) LIKE :search", { search: `%${search}%` })
-            .orWhere("LOWER(address.city) LIKE :search", { search: `%${search}%` })
-            .orWhere("LOWER(address.postal_code) LIKE :search", { search: `%${search}%` });
-        })
-      );
-    }
-
-    // Add source filter only if source is defined and not empty
-    if (source) {
-      query.andWhere("leads.source = :source", { source });
-    }
-
-    // Apply pagination and sorting
-    query
-      .skip(filters.skip)
-      .take(filters.limit)
-      .orderBy("leads.created_at", "DESC");
-
-    // Execute query
-    const [customers, total] = await query.getManyAndCount();
-
-    return {
-      status: httpStatusCodes.OK,
-      data: customers,
-      message: "Customers retrieved successfully",
-      total,
-    };
-  } catch (error: any) {
-    console.error("Error retrieving customers:", error); // Log full error for debugging
-    return {
-      status: httpStatusCodes.INTERNAL_SERVER_ERROR,
-      message: `Failed to retrieve customers: ${error.message}`,
-      data: null,
-      total: 0,
-    };
   }
-}
 
   async bulkAssignCustomers(
     customerIds: number[],
@@ -539,6 +544,7 @@ async getAllCustomers(
     message: string;
     errors?: string[];
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -628,6 +634,7 @@ async getAllCustomers(
     data?: { addresses: Address[]; customers: Leads[] } | null;
     errors?: string[];
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     try {
       const addresses: Address[] = [];
@@ -791,7 +798,7 @@ async getAllCustomers(
                 state: addressData.state,
                 comments: addressData.comments,
                 territory_id: territoryId,
-                latitude: 0, // Will be set after geocoding
+                latitude: 0,
                 longitude: 0,
                 created_by: adminId.toString(),
                 updated_by: adminId.toString(),
@@ -825,7 +832,7 @@ async getAllCustomers(
                 created_by: adminId.toString(),
                 updated_by: adminId.toString(),
                 org_id,
-                source: DataSource.Excel,
+                source: Source.Excel,
                 territory_id: territoryId,
               });
               newCustomers.push(customer);
@@ -954,6 +961,7 @@ async getAllCustomers(
       await queryRunner.release();
     }
   }
+
   async assignCustomer(
     customerId: number,
     repId: number,
@@ -963,6 +971,7 @@ async getAllCustomers(
     message: string;
     data?: any;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {

@@ -1,53 +1,56 @@
 import express from "express";
 import "reflect-metadata";
-import dataSource from "./config/data-source";
+import { getDataSource } from "./config/data-source";
 import expressSession from "express-session";
 import router from "./routes/index.route";
 import cors from "cors";
 import { verifyToken } from "./middleware/auth.middleware";
 import { UserTeamController } from "./controllers/user.controller";
-const userController = new UserTeamController();
 
 const PORT = process.env.PORT || 3002;
 
-const app = express();
-app.use(cors());
+(async () => {
+  const app = express();
+  const dataSource = await getDataSource();
+  const userController = new UserTeamController();
 
-app.use(
-  expressSession({
-    secret: "your-secret-key",
-    resave: false,
-    saveUninitialized: false,
-  })
-);
+  app.use(cors());
 
-app.use(express.json());
+  app.use(
+    expressSession({
+      secret: "your-secret-key",
+      resave: false,
+      saveUninitialized: false,
+    })
+  );
 
-app.use("/api", router);
-app.use(verifyToken);
-app.get("/api/user/me", userController.getUserById);
+  app.use(express.json());
 
-const MAX_RETRIES = 5;
-const INITIAL_RETRY_DELAY = 5000;
+  app.use("/api", router);
+  app.use(verifyToken);
+  app.get("/api/user/me", userController.getUserById);
 
-const connect = async (retries = 0) => {
-  try {
-    await dataSource.initialize();
-    console.log("Data Source has been initialized!");
-    app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
-    });
-  } catch (error) {
-    if (retries < MAX_RETRIES) {
-      const retryDelay = INITIAL_RETRY_DELAY * Math.pow(2, retries);
+  const MAX_RETRIES = 5;
+  const INITIAL_RETRY_DELAY = 5000;
 
-      setTimeout(() => connect(retries + 1), retryDelay);
-    } else {
-      console.log(
-        `The connection to database failed after ${MAX_RETRIES} attempts: ${error}`
-      );
+  const connect = async (retries = 0) => {
+    try {
+      await dataSource.initialize();
+      console.log("Data Source has been initialized!");
+      app.listen(PORT, () => {
+        console.log(`Server running on port ${PORT}`);
+      });
+    } catch (error) {
+      if (retries < MAX_RETRIES) {
+        const retryDelay = INITIAL_RETRY_DELAY * Math.pow(2, retries);
+        setTimeout(() => connect(retries + 1), retryDelay);
+      } else {
+        console.log(
+          `The connection to database failed after ${MAX_RETRIES} attempts: ${error}`
+        );
+      }
     }
-  }
-};
+  };
 
-connect();
+  connect();
+})();

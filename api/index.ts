@@ -1,7 +1,6 @@
 // api/index.ts
 import express from "express";
 import "reflect-metadata";
-import dataSource from "../src/config/data-source";
 import expressSession from "express-session";
 import router from "../src/routes/index.route";
 import cors from "cors";

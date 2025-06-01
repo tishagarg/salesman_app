@@ -1,4 +1,6 @@
+import "reflect-metadata";
 import { DataSource, DataSourceOptions } from "typeorm";
+import dotenv from "dotenv";
 import {
   Organization,
   OtpVerification,
@@ -6,7 +8,6 @@ import {
   User,
   UserToken,
 } from "../models/index";
-import dotenv from "dotenv";
 import { Address } from "../models/Address.entity";
 import { Leads } from "../models/Leads.entity";
 import { Visit } from "../models/Visits.entity";
@@ -27,17 +28,8 @@ dotenv.config();
 
 export const AppDataSource: DataSourceOptions = {
   type: "postgres",
-  host: process.env.POSTGRES_HOST || "localhost",
-  port: parseInt(process.env.POSTGRES_PORT || "5432", 10),
-  username: process.env.POSTGRES_USER,
-  password: process.env.POSTGRES_PASSWORD,
-  database: process.env.POSTGRES_DB_DEVELOPMENT,
-  ssl: {
-    rejectUnauthorized: false,
-  },
-  // process.env.NODE_ENV === "production"
-  //   ? { rejectUnauthorized: false }
-  //   : false,
+  url: process.env.DATABASE_URL, // full Neon connection URL
+  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
   synchronize: false,
   logging: ["error"],
   entities: [
@@ -66,6 +58,13 @@ export const AppDataSource: DataSourceOptions = {
   subscribers: [],
 };
 
-const dataSource = new DataSource(AppDataSource);
+// Singleton pattern for serverless compatibility
+let dataSource: DataSource | null = null;
 
-export default dataSource;
+export const getDataSource = async (): Promise<DataSource> => {
+  if (!dataSource || !dataSource.isInitialized) {
+    dataSource = new DataSource(AppDataSource);
+    await dataSource.initialize();
+  }
+  return dataSource;
+};

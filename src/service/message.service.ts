@@ -1,4 +1,4 @@
-import dataSource from "../config/data-source";
+import { getDataSource } from "../config/data-source"; // Updated import
 import { Role, User } from "../models";
 import httpStatusCodes from "http-status-codes";
 import { Message } from "../models/Message.entity";
@@ -10,21 +10,24 @@ export class MessageService {
     receiver_id: number;
     content: string;
   }): Promise<{ status: number; message: string; data: any }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
       const sender = await queryRunner.manager.findOne(User, {
         where: { user_id: data.sender_id },
+        relations: ["role"], // Ensure role relation is loaded
       });
       const receiver = await queryRunner.manager.findOne(User, {
         where: { user_id: data.receiver_id },
+        relations: ["role"], // Ensure role relation is loaded
       });
       if (!sender || !receiver) {
         throw new Error("Invalid sender or receiver");
       }
       if (
         sender.role.role_name === Roles.SALES_REP &&
-        receiver.role.role_name !== "manager"
+        receiver.role.role_name !== Roles.MANAGER
       ) {
         throw new Error("Reps can only message managers");
       }
@@ -44,9 +47,9 @@ export class MessageService {
     } catch (error: any) {
       await queryRunner.rollbackTransaction();
       return {
-        status: httpStatusCodes.BAD_REQUEST,
-        message: error.message,
-        data:null
+        status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+        message: `Failed to send message: ${error.message}`,
+        data: null,
       };
     } finally {
       await queryRunner.release();

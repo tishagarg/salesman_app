@@ -17,17 +17,15 @@ import {
 import { OtpService } from "./otp.service";
 import { UserTokenQuery } from "../query/usertoken.query";
 import { OAuth2Client } from "google-auth-library";
-import dataSource from "../config/data-source";
+import { getDataSource } from "../config/data-source"; // Updated import
 import { OrganizationQuery } from "../query/organization.query";
 import { OtpMedium } from "../enum/otpMedium";
 import { OtpType } from "../enum/otpType";
 import { User } from "../models/index";
 import { RoleQuery } from "../query/role.query";
 import { sendEmail } from "./email.service";
-import { P } from "pino";
 import { Roles } from "../enum/roles";
 import { RefreshToken } from "../models/RefreshToken.entity";
-import { Not } from "typeorm";
 
 const userQuery = new UserQuery();
 const otpService = new OtpService();
@@ -76,19 +74,20 @@ export class AuthService {
     data?: IloginResponse;
     message: string;
   }> {
-    const queryRunner = dataSource.createQueryRunner(); // Create a query runner
-    await queryRunner.startTransaction(); // Start the transaction
+    const dataSource = await getDataSource();
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.startTransaction();
 
     try {
       if (!email || !password) {
-        await queryRunner.rollbackTransaction(); // Rollback transaction in case of error
+        await queryRunner.rollbackTransaction();
         return {
           status: httpStatusCodes.BAD_REQUEST,
           message: "Email and password are required",
         };
       }
 
-      const user = await userQuery.findUserByEmail(queryRunner.manager, email); // Use queryRunner.manager for transaction context
+      const user = await userQuery.findUserByEmail(queryRunner.manager, email);
       if (!user) {
         await queryRunner.rollbackTransaction();
         return {
@@ -101,7 +100,7 @@ export class AuthService {
         await queryRunner.rollbackTransaction();
         return {
           status: httpStatusCodes.UNAUTHORIZED,
-          message: "user inactive",
+          message: "User inactive",
         };
       }
 
@@ -130,7 +129,7 @@ export class AuthService {
         user.user_id
       );
       if (existingToken) {
-        userTokenQuery.deleteUserTokens(queryRunner.manager, user.user_id);
+        await userTokenQuery.deleteUserTokens(queryRunner.manager, user.user_id);
       }
       await userQuery.saveToken(queryRunner.manager, {
         id: token,
@@ -140,11 +139,12 @@ export class AuthService {
         status: 1,
         active: 1,
       });
-      const existingRefreshtoken = await dataSource
+
+      const existingRefreshToken = await dataSource
         .getRepository(RefreshToken)
         .findOne({ where: { user_id: user.user_id } });
-      if (existingRefreshtoken) {
-        userTokenQuery.deleteRefreshTokens(queryRunner.manager, user.user_id);
+      if (existingRefreshToken) {
+        await userTokenQuery.deleteRefreshTokens(queryRunner.manager, user.user_id);
       }
       const refreshToken = await generateRefreshToken(user.user_id);
       await this.saveRefreshToken(
@@ -161,7 +161,7 @@ export class AuthService {
 
       if (user.is_active && !user.is_email_verified) {
         await queryRunner.commitTransaction();
-        otpService.generateSaveAndSendOtp(user.user_id, {
+        await otpService.generateSaveAndSendOtp(user.user_id, {
           email: user.email,
           medium: OtpMedium.EMAIL,
           otp_type: OtpType.EMAIL_VERIFICATION,
@@ -192,7 +192,6 @@ export class AuthService {
         message: "Login successful",
       };
     } catch (error: any) {
-      // Rollback the transaction if an error occurs
       await queryRunner.rollbackTransaction();
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
@@ -208,6 +207,7 @@ export class AuthService {
     data?: IloginResponse;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
 
@@ -246,10 +246,10 @@ export class AuthService {
         );
 
         if (existingUserByEmail) {
-          // If the email is already taken, throw an error
+          await queryRunner.rollbackTransaction();
           return {
             status: httpStatusCodes.BAD_REQUEST,
-            message: "Email is already register.",
+            message: "Email is already registered",
           };
         }
 
@@ -268,16 +268,14 @@ export class AuthService {
         });
         await queryRunner.manager.save(user);
 
-        // Save the new organization
-        const updateOrganization = await organizationQuery.updateOrganization(
+        await organizationQuery.updateOrganization(
           queryRunner.manager,
           newOrganization.org_id,
           { owner_id: user.user_id }
         );
 
         if (!email_verified) {
-          // Assuming otpService generates and sends OTP
-          otpService.generateSaveAndSendOtp(user.user_id, {
+          await otpService.generateSaveAndSendOtp(user.user_id, {
             email: user.email,
             medium: OtpMedium.EMAIL,
             otp_type: OtpType.EMAIL_VERIFICATION,
@@ -295,7 +293,6 @@ export class AuthService {
       );
       const refreshToken = await generateRefreshToken(user.user_id);
 
-      // Save refresh token
       await this.saveRefreshToken(
         queryRunner.manager,
         user.user_id,
@@ -319,8 +316,6 @@ export class AuthService {
 
       const { password_hash, ...safeUser } = getUserByIdWithOrganization;
 
-      // Commit the transaction if everything is successful
-
       await queryRunner.commitTransaction();
 
       return {
@@ -334,15 +329,12 @@ export class AuthService {
         message: "Login successful",
       };
     } catch (err) {
-      // Rollback transaction if an error
       await queryRunner.rollbackTransaction();
       return {
         status: httpStatusCodes.BAD_REQUEST,
         message: "Google authentication failed",
       };
     } finally {
-      // Release the query runner to avoid memory leaks
-      console.log("Finished");
       await queryRunner.release();
     }
   }
@@ -352,8 +344,9 @@ export class AuthService {
     data?: IloginResponse;
     message: string;
   }> {
-    const queryRunner = dataSource.createQueryRunner(); // Create a query runner
-    await queryRunner.startTransaction(); // Start the transaction
+    const dataSource = await getDataSource();
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.startTransaction();
 
     try {
       if (
@@ -364,7 +357,7 @@ export class AuthService {
         !param.phone_no ||
         !param.org_name
       ) {
-        await queryRunner.rollbackTransaction(); // Rollback transaction in case of missing parameters
+        await queryRunner.rollbackTransaction();
         return {
           status: httpStatusCodes.BAD_REQUEST,
           message: "Missing required fields",
@@ -374,9 +367,9 @@ export class AuthService {
       const existingUser = await userQuery.findUserByEmail(
         queryRunner.manager,
         param.email
-      ); // Use queryRunner.manager for transaction context
+      );
       if (existingUser) {
-        await queryRunner.rollbackTransaction(); // Rollback if the user already exists
+        await queryRunner.rollbackTransaction();
         return {
           status: httpStatusCodes.BAD_REQUEST,
           message: "Email is already registered",
@@ -385,7 +378,6 @@ export class AuthService {
 
       const passwordhash: string = await passwordHash(param.password);
 
-      // Save the new organization
       const newOrganization = await organizationQuery.saveOrganization(
         queryRunner.manager,
         param.org_name
@@ -406,7 +398,7 @@ export class AuthService {
         });
         role_id = newRole.role_id;
       }
-      // Save the new user within the transaction context
+
       const newUser = await userQuery.addUser(queryRunner.manager, {
         ...param,
         password_hash: passwordhash,
@@ -416,14 +408,14 @@ export class AuthService {
         full_name: "",
         role_id: role_id,
       });
-      // Save the new organization
-      const updateOrganization = await organizationQuery.updateOrganization(
+
+      await organizationQuery.updateOrganization(
         queryRunner.manager,
         newOrganization.org_id,
         { owner_id: newUser.user_id }
       );
-      // Generate and send OTP
-      otpService.generateSaveAndSendOtp(newUser.user_id, {
+
+      await otpService.generateSaveAndSendOtp(newUser.user_id, {
         email: newUser.email,
         medium: OtpMedium.EMAIL,
         otp_type: OtpType.EMAIL_VERIFICATION,
@@ -438,7 +430,6 @@ export class AuthService {
         newUser.is_admin
       );
 
-      // Save the token within the transaction context
       await userQuery.saveToken(queryRunner.manager, {
         id: token,
         userId: newUser.user_id,
@@ -461,7 +452,7 @@ export class AuthService {
         newUser.user_id,
         refreshToken
       );
-      // Commit the transaction if everything is successful
+
       await queryRunner.commitTransaction();
 
       return {
@@ -475,20 +466,18 @@ export class AuthService {
         message: "User created, OTP sent successfully!!",
       };
     } catch (error) {
-      // Rollback the transaction if an error occurs
       await queryRunner.rollbackTransaction();
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: "Internal server error",
       };
     } finally {
-      // Release the query runner to avoid memory leaks
-      console.log("Finished");
       await queryRunner.release();
     }
   }
 
   async verifyOTP(params: IverifyOTPParams) {
+    const dataSource = await getDataSource();
     try {
       const isVerified = await otpService.verifyOtp(
         params.id,
@@ -516,17 +505,15 @@ export class AuthService {
   }
 
   async logout(token: string) {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
 
     try {
-      // Get user ID from token
       const payload = await jwtVerify(token);
 
-      // Delete access token
       await userTokenQuery.deleteTokenFromDatabase(token);
 
-      // Delete all refresh tokens for the user
       await queryRunner.manager.getRepository(RefreshToken).delete({
         user_id: payload.user_id,
       });
@@ -550,11 +537,13 @@ export class AuthService {
       await queryRunner.release();
     }
   }
+
   async forgotPassword(email: string): Promise<{
     status: number;
     data?: ISaveOtp | null;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
 
     try {
@@ -583,7 +572,7 @@ export class AuthService {
         medium: OtpMedium.EMAIL,
         user_id: user.user_id,
       };
-      const userTokenData = otpService.saveOtpOrLink(
+      const userTokenData = await otpService.saveOtpOrLink(
         queryRunner.manager,
         params
       );
@@ -621,6 +610,7 @@ export class AuthService {
     },
     userFromSession?: any
   ) {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     let orgId;
 
@@ -714,8 +704,10 @@ export class AuthService {
     data?: any;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
+
     try {
       const decoded = await verifyRefreshToken(refreshToken);
 
@@ -726,7 +718,7 @@ export class AuthService {
           token: refreshToken,
         });
       if (!(tokenRecord && tokenRecord.expires_at > new Date())) {
-        queryRunner.rollbackTransaction();
+        await queryRunner.rollbackTransaction();
         return {
           status: httpStatusCodes.INTERNAL_SERVER_ERROR,
           message: "Token not found or expired",
@@ -754,30 +746,19 @@ export class AuthService {
         user.is_admin
       );
 
-      // Implement token rotation: generate new refresh token
       const newRefreshToken = await generateRefreshToken(user.user_id);
 
-      // Save new refresh token
       await this.saveRefreshToken(
         queryRunner.manager,
         user.user_id,
         newRefreshToken
       );
 
-      // Delete old refresh token
-      const existingRefresh = await queryRunner.manager
-        .getRepository(RefreshToken)
-        .delete({
-          user_id: user.user_id,
-          token: refreshToken,
-        });
-      if (!existingRefresh) {
-        queryRunner.rollbackTransaction();
-        return {
-          status: httpStatusCodes.NOT_FOUND,
-          message: "Refresh token not found",
-        };
-      }
+      await queryRunner.manager.getRepository(RefreshToken).delete({
+        user_id: user.user_id,
+        token: refreshToken,
+      });
+
       await queryRunner.commitTransaction();
 
       return {
