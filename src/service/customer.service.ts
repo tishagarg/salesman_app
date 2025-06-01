@@ -23,8 +23,6 @@ import { GeocodingService } from "../utils/geoCode.service";
 const addressService = new AddressService();
 const territoryService = new TerritoryService();
 const geoCodeingService = new GeocodingService();
-const redis = require("redis");
-
 export class CustomerService {
   async createCustomer(
     data: LeadImportDto,
