@@ -44,7 +44,6 @@ export class UserTeamService {
     sales_rep_ids: number[]
   ): Promise<{ status: number; data?: any; message: string }> {
     const queryRunner = dataSource.createQueryRunner();
-    await queryRunner.connect();
     await queryRunner.startTransaction();
 
     try {

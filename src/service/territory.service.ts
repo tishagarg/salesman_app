@@ -148,7 +148,6 @@ export class TerritoryService {
     message: string;
   }> {
     const queryRunner = dataSource.createQueryRunner();
-    await queryRunner.connect();
     await queryRunner.startTransaction();
     try {
       const address = await queryRunner.manager.findOne(Address, {

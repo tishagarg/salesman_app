@@ -625,7 +625,6 @@ export class AuthService {
     let orgId;
 
     try {
-      await queryRunner.connect();
       await queryRunner.startTransaction();
 
       let user;

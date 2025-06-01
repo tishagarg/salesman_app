@@ -36,7 +36,6 @@ export class AddressService {
     message: string;
   }> {
     const queryRunner = dataSource.createQueryRunner();
-    await queryRunner.connect();
     await queryRunner.startTransaction();
     try {
       const addressData = new AddressDto();
