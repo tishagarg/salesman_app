@@ -17,12 +17,13 @@ import { Region } from "../models/Region.entity";
 import { Subregion } from "../models/Subregion.entity";
 import { TerritorySalesman } from "../models/TerritorySalesMan.entity";
 import { Territory } from "../models/Territory.entity";
-import { In } from "typeorm";
+import { Brackets, In } from "typeorm";
 import { GeocodingService } from "../utils/geoCode.service";
 
 const addressService = new AddressService();
 const territoryService = new TerritoryService();
 const geoCodeingService = new GeocodingService();
+const redis = require("redis");
 
 export class CustomerService {
   async createCustomer(
@@ -446,75 +447,89 @@ export class CustomerService {
     }
   }
 
-  async getAllCustomers(
-    filters: {
-      page: number;
-      limit: number;
-      skip: number;
-      search: string;
-      source: string;
-    },
-    userId: number
-  ): Promise<{
-    status: number;
-    data?: any[] | null;
-    message: string;
-    total?: number;
-  }> {
-    try {
-      const search = filters.search?.trim().toLowerCase() || "";
-      const source = filters.source?.trim().toLowerCase() || "";
+async getAllCustomers(
+  filters: {
+    page: number;
+    limit: number;
+    skip: number;
+    search?: string;
+    source?: string;
+  },
+  userId: number,
+  role: string
+): Promise<{
+  status: number;
+  data?: any[] | null;
+  message: string;
+  total?: number;
+}> {
+  try {
+    // Normalize search and source parameters
+    const search = filters.search?.trim().toLowerCase();
+    const source = filters.source?.trim() || undefined; // Use undefined to skip filtering if empty
 
-      const where: any = { is_active: true };
-      if (role === Roles.SALES_REP) {
-        where.assigned_rep_id = userId;
-      }
-
-      const query = dataSource.manager
-        .createQueryBuilder(Leads, "leads")
-        .leftJoinAndSelect("leads.address", "address")
-        .where("leads.is_active = :isActive", { isActive: true });
-      if (role === Roles.SALES_REP) {
-        query.andWhere("leads.assigned_rep_id = :userId", { userId });
-      }
-      if (search) {
-        query.andWhere(
-          `(
-          LOWER(leads.name) LIKE :search OR
-          LOWER(leads.contact_name) LIKE :search OR
-          LOWER(leads.contact_email) LIKE :search OR
-          LOWER(address.street_address) LIKE :search OR
-          LOWER(address.country) LIKE :search OR
-          LOWER(address.city) LIKE :search OR
-          LOWER(address.postal_code) LIKE :search
-        )`,
-          { search: `%${search}%` }
-        );
-      }
-      if (source) {
-        query.andWhere("LOWER(leads.source) = :source", { source });
-      }
-      query
-        .skip(filters.skip)
-        .take(filters.limit)
-        .orderBy("leads.created_at", "DESC");
-      const [customers, total] = await query.getManyAndCount();
-
-      return {
-        status: httpStatusCodes.OK,
-        data: customers,
-        message: "Customers retrieved successfully",
-        total,
-      };
-    } catch (error: any) {
-      return {
-        status: httpStatusCodes.INTERNAL_SERVER_ERROR,
-        message: `Failed to retrieve customers: ${error.message}`,
-        data: null,
-        total: 0,
-      };
+    // Build the where clause
+    const where: any = { is_active: true };
+    if (role === Roles.SALES_REP) {
+      where.assigned_rep_id = userId;
     }
+
+    // Create query builder
+    const query = dataSource.manager
+      .createQueryBuilder(Leads, "leads")
+      .leftJoinAndSelect("leads.address", "address")
+      .where("leads.is_active = :isActive", { isActive: true });
+
+    // Add role-based filter
+    if (role === Roles.SALES_REP) {
+      query.andWhere("leads.assigned_rep_id = :userId", { userId });
+    }
+
+    // Add search filter
+    if (search) {
+      query.andWhere(
+        new Brackets((qb) => {
+          qb.where("LOWER(leads.name) LIKE :search", { search: `%${search}%` })
+            .orWhere("LOWER(leads.contact_name) LIKE :search", { search: `%${search}%` })
+            .orWhere("LOWER(leads.contact_email) LIKE :search", { search: `%${search}%` })
+            .orWhere("LOWER(address.street_address) LIKE :search", { search: `%${search}%` })
+            .orWhere("LOWER(address.country) LIKE :search", { search: `%${search}%` })
+            .orWhere("LOWER(address.city) LIKE :search", { search: `%${search}%` })
+            .orWhere("LOWER(address.postal_code) LIKE :search", { search: `%${search}%` });
+        })
+      );
+    }
+
+    // Add source filter only if source is defined and not empty
+    if (source) {
+      query.andWhere("leads.source = :source", { source });
+    }
+
+    // Apply pagination and sorting
+    query
+      .skip(filters.skip)
+      .take(filters.limit)
+      .orderBy("leads.created_at", "DESC");
+
+    // Execute query
+    const [customers, total] = await query.getManyAndCount();
+
+    return {
+      status: httpStatusCodes.OK,
+      data: customers,
+      message: "Customers retrieved successfully",
+      total,
+    };
+  } catch (error: any) {
+    console.error("Error retrieving customers:", error); // Log full error for debugging
+    return {
+      status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+      message: `Failed to retrieve customers: ${error.message}`,
+      data: null,
+      total: 0,
+    };
   }
+}
 
   async bulkAssignCustomers(
     customerIds: number[],
