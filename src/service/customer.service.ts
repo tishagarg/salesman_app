@@ -37,22 +37,8 @@ export class CustomerService {
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
-      // Validate input
       const customerData = new LeadImportDto();
       Object.assign(customerData, data);
-      const validationErrors = await validate(customerData);
-      if (validationErrors.length) {
-        const errorMsg = validationErrors
-          .map((e) => Object.values(e.constraints || {}).join(", "))
-          .join("; ");
-        await queryRunner.rollbackTransaction();
-        return {
-          status: httpStatusCodes.BAD_REQUEST,
-          message: `Validation failed: ${errorMsg}`,
-        };
-      }
-
-      // Deduplication check using Address entity's unique constraint
       const existingAddress = await queryRunner.manager.findOne(Address, {
         where: {
           postal_code: data.postal_code,
@@ -77,8 +63,6 @@ export class CustomerService {
           };
         }
       }
-
-      // Check for duplicate email
       const existingEmail = await queryRunner.manager.findOne(Leads, {
         where: { contact_email: data.contact_email, is_active: true },
       });
@@ -89,8 +73,6 @@ export class CustomerService {
           message: `Customer with email ${data.contact_email} already exists`,
         };
       }
-
-      // Create address
       const addressData: AddressDto = {
         street_address: data.street_address,
         postal_code: data.postal_code,
@@ -105,7 +87,8 @@ export class CustomerService {
       };
       const addressResponse = await addressService.createAddress(
         addressData,
-        userId
+        userId,
+        org_id
       );
       if (addressResponse.status >= 400) {
         await queryRunner.rollbackTransaction();
@@ -137,7 +120,8 @@ export class CustomerService {
       customer.status = LeadStatus.Prospect;
       customer.pending_assignment = true;
       customer.is_active = true;
-      customer.created_by = userId.toString();
+      (customer.source = DataSource.Manual),
+        (customer.created_by = userId.toString());
       customer.updated_by = userId.toString();
       customer.org_id = org_id;
 
