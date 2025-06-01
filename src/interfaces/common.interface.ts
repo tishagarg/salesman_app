@@ -84,8 +84,8 @@ export class UpdateLeadDto {
   contact_phone?: string;
   street_address?: string;
   comments?: string;
-
   postal_code?: string;
+  name?: string;
   area_name?: string;
   subregion?: string;
   region?: string;

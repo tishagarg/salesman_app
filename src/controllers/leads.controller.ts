@@ -47,12 +47,15 @@ export class LeadsController {
     const customerId = parseInt(req.params.id);
     const data: Partial<UpdateLeadDto> = req.body;
     const userId = parseInt(req.user.user_id);
+    const org_id = parseInt(req.user.org_id);
+
     const role = req.user.role;
 
     const response = await customerService.updateCustomer(
       customerId,
       data,
       userId,
+      org_id,
       role
     );
     if (response.status >= 400) {
@@ -61,7 +64,7 @@ export class LeadsController {
 
     return ApiResponse.result(
       res,
-      response.data,
+      response.data ?? null,
       response.status,
       null,
       response.message
@@ -71,12 +74,15 @@ export class LeadsController {
     const customerId = parseInt(req.params.id);
     const data: Partial<UpdateLeadDto> = req.body;
     const userId = parseInt(req.user.user_id);
+    const org_id = parseInt(req.user.org_id);
+
     const role = req.user.role;
 
     const response = await customerService.updateCustomer(
       customerId,
       data,
       userId,
+      org_id,
       role
     );
     if (response.status >= 400) {
@@ -85,7 +91,7 @@ export class LeadsController {
 
     return ApiResponse.result(
       res,
-      response.data,
+      response.data ?? null,
       response.status,
       null,
       response.message
