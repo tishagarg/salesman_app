@@ -33,24 +33,31 @@ const PORT = process.env.PORT || 3002;
   const MAX_RETRIES = 5;
   const INITIAL_RETRY_DELAY = 5000;
 
-  const connect = async (retries = 0) => {
-    try {
+const connect = async (retries = 0) => {
+  try {
+    if (!dataSource.isInitialized) {
       await dataSource.initialize();
       console.log("Data Source has been initialized!");
-      app.listen(PORT, () => {
-        console.log(`Server running on port ${PORT}`);
-      });
-    } catch (error) {
-      if (retries < MAX_RETRIES) {
-        const retryDelay = INITIAL_RETRY_DELAY * Math.pow(2, retries);
-        setTimeout(() => connect(retries + 1), retryDelay);
-      } else {
-        console.log(
-          `The connection to database failed after ${MAX_RETRIES} attempts: ${error}`
-        );
-      }
+    } else {
+      console.log("Data Source already initialized. Skipping initialization.");
     }
-  };
+
+    const server = app.listen(PORT, () => {
+      console.log(`Server is running on http://localhost:${(server.address() as any).port}`);
+    });
+
+  } catch (error) {
+    console.error(`Database connection failed (Attempt ${retries + 1}):`, error);
+
+    if (retries < MAX_RETRIES) {
+      const retryDelay = INITIAL_RETRY_DELAY * Math.pow(2, retries); // exponential backoff
+      console.log(`🔁 Retrying in ${retryDelay / 1000} seconds...`);
+      setTimeout(() => connect(retries + 1), retryDelay);
+    } else {
+      console.log(`The connection to database failed after ${MAX_RETRIES} attempts.`);
+    }
+  }
+};
 
   connect();
 })();
