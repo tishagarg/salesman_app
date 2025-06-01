@@ -134,27 +134,13 @@ export class LeadsController {
   }
 
   async getAllLeads(req: any, res: Response): Promise<void> {
-    const filters: {
-      territory_id?: number;
-      rep_id?: number;
-      status?: string;
-      pending_assignment?: boolean;
-      org_id?: number;
-    } = {
-      territory_id: req.query.territory_id
-        ? parseInt(req.query.territory_id as string)
-        : undefined,
-      rep_id: req.query.rep_id
-        ? parseInt(req.query.rep_id as string)
-        : undefined,
-      status: req.query.status as string,
-      pending_assignment: req.query.pending_assignment
-        ? req.query.pending_assignment === "true"
-        : undefined,
-      org_id: req.query.org_id
-        ? parseInt(req.query.org_id as string)
-        : undefined,
-    };
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+    const source = req.query.source as string;
+
+    const search = req.query.search as string;
+    const filters = { page, limit, skip, search, source };
     const userId = parseInt(req.user.user_id);
     const role = req.user.role;
 
@@ -169,7 +155,15 @@ export class LeadsController {
 
     return ApiResponse.result(
       res,
-      response.data ?? null,
+      {
+        leads: response.data,
+        pagination: {
+          page,
+          limit,
+          total: response.total ?? 0,
+          totalPages: Math.ceil((response.total ?? 0) / limit),
+        },
+      },
       response.status,
       null,
       response.message

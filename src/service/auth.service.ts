@@ -608,13 +608,14 @@ export class AuthService {
       token,
       oldPassword,
       newPassword,
-      org_id,user_id
+      org_id,
+      user_id,
     }: {
       token?: string;
       oldPassword?: string;
       newPassword: string;
       org_id: number;
-      user_id:number
+      user_id: number;
     },
     userFromSession?: any
   ) {
@@ -640,7 +641,6 @@ export class AuthService {
           if (!tokenData) {
             throw new Error("Invalid token or user not found");
           }
-
 
           user = await userQuery.findById(payload.user_id);
           if (!user) {
@@ -724,7 +724,6 @@ export class AuthService {
           user_id: decoded.user_id,
           token: refreshToken,
         });
-
       if (!(tokenRecord && tokenRecord.expires_at > new Date())) {
         queryRunner.rollbackTransaction();
         return {
@@ -789,6 +788,7 @@ export class AuthService {
         message: "Token refreshed successfully",
       };
     } catch (error) {
+      console.log(error)
       await queryRunner.rollbackTransaction();
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
