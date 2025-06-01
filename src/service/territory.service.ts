@@ -445,10 +445,10 @@ export class TerritoryService {
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
-      const territoryData = new TerritoryDto();
-      Object.assign(territoryData, data);
+      // Check for existing territory
       const existing = await queryRunner.manager.findOne(Territory, {
-        where: { name: data.name, org_id: data.org_id, is_active: true },
+        where: { name: data.name, org_id, is_active: true },
+        select: ["territory_id"],
       });
       if (existing) {
         await queryRunner.rollbackTransaction();
@@ -457,93 +457,102 @@ export class TerritoryService {
           message: `Territory with name ${data.name} already exists`,
         };
       }
-      let polygonId: number | undefined;
+
+      // Parse geometry early if provided
+      let geometry: Coordinates[] | undefined;
+      if (data.geometry) {
+        geometry =
+          typeof data.geometry === "string"
+            ? JSON.parse(data.geometry)
+            : data.geometry;
+        if (!Array.isArray(geometry) || geometry.length === 0) {
+          throw new Error("Invalid geometry format");
+        }
+      }
+
+      // Fetch location data for geometry if provided
       let fetchedLocationData: {
         postal_codes: string[];
         regions: string[];
         subregions: string[];
       } = {
-        postal_codes: [],
-        regions: [],
-        subregions: [],
+        postal_codes: data.postal_codes || [],
+        regions: data.regions || [],
+        subregions: data.subregions || [],
       };
+      let polygonId: number | undefined;
 
-      if (data.geometry && data.geometry.length) {
-        let geometry: Coordinates[];
-        if (typeof data.geometry === "string") {
-          geometry = JSON.parse(data.geometry);
-        } else {
-          geometry = data.geometry;
-        }
+      if (geometry) {
         fetchedLocationData =
           await geocodingService.getLocationDataFromCoordinates(geometry);
-        const polygon = new Polygon();
-        polygon.name = data.name;
-        polygon.org_id = org_id;
-        polygon.created_by = adminId.toString();
-        polygon.updated_by = adminId.toString();
-        polygon.geometry = {
-          type: "Polygon",
-          coordinates: [
-            [
-              ...geometry.map((coord) => [coord.lng, coord.lat]),
-              [geometry[0].lng, geometry[0].lat],
+        const polygon = queryRunner.manager.create(Polygon, {
+          name: data.name,
+          org_id,
+          created_by: adminId.toString(),
+          updated_by: adminId.toString(),
+          geometry: {
+            type: "Polygon",
+            coordinates: [
+              [
+                ...geometry.map((coord) => [coord.lng, coord.lat]),
+                [geometry[0].lng, geometry[0].lat],
+              ],
             ],
-          ],
-        };
+          },
+        });
         const savedPolygon = await queryRunner.manager.save(Polygon, polygon);
         polygonId = savedPolygon.polygon_id;
       }
 
-      const territory = new Territory();
-
-      territory.name = data.name;
-      territory.postal_codes = JSON.stringify(
-        fetchedLocationData.postal_codes.length > 0
-          ? fetchedLocationData.postal_codes
-          : data.postal_codes || []
-      );
-      territory.subregions = JSON.stringify(
-        fetchedLocationData.subregions.length > 0
-          ? fetchedLocationData.subregions
-          : data.subregions || []
-      );
-      territory.regions = JSON.stringify(
-        fetchedLocationData.regions.length > 0
-          ? fetchedLocationData.regions
-          : data.regions || []
-      );
-      territory.org_id = org_id;
-      territory.manager_id = data.manager_id ?? undefined;
-      territory.polygon_id = polygonId;
-      territory.is_active = true;
-      territory.created_by = adminId.toString();
-      territory.updated_by = adminId.toString();
+      // Create territory
+      const territory = queryRunner.manager.create(Territory, {
+        name: data.name,
+        postal_codes: JSON.stringify(
+          fetchedLocationData.postal_codes.length > 0
+            ? fetchedLocationData.postal_codes
+            : data.postal_codes || []
+        ),
+        subregions: JSON.stringify(
+          fetchedLocationData.subregions.length > 0
+            ? fetchedLocationData.subregions
+            : data.subregions || []
+        ),
+        regions: JSON.stringify(
+          fetchedLocationData.regions.length > 0
+            ? fetchedLocationData.regions
+            : data.regions || []
+        ),
+        org_id,
+        manager_id: data.manager_id ?? undefined,
+        polygon_id: polygonId,
+        is_active: true,
+        created_by: adminId.toString(),
+        updated_by: adminId.toString(),
+      });
 
       const savedTerritory = await queryRunner.manager.save(
         Territory,
         territory
       );
+
       // Handle salesmanIds
-      if (data.salesmanIds && data.salesmanIds.length > 0) {
-        const territorySalesmen = data.salesmanIds.map((salesmanId) => {
-          const territorySalesman = new TerritorySalesman();
-          territorySalesman.territory_id = savedTerritory.territory_id;
-          territorySalesman.salesman_id = parseInt(salesmanId, 10);
-          return territorySalesman;
-        });
+      if (data.salesmanIds?.length) {
+        const territorySalesmen = data.salesmanIds.map((salesmanId) =>
+          queryRunner.manager.create(TerritorySalesman, {
+            territory_id: savedTerritory.territory_id,
+            salesman_id: parseInt(salesmanId, 10),
+          })
+        );
         await queryRunner.manager.save(TerritorySalesman, territorySalesmen);
       }
 
       await queryRunner.commitTransaction();
-
       return {
         status: httpStatusCodes.CREATED,
         data: savedTerritory,
         message: "Territory created successfully",
       };
     } catch (error: any) {
-      console.log(error);
       await queryRunner.rollbackTransaction();
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
@@ -553,7 +562,6 @@ export class TerritoryService {
       await queryRunner.release();
     }
   }
-
   async updateTerritory(
     territoryId: number,
     data: Partial<TerritoryDto>,

@@ -18,9 +18,11 @@ import { Subregion } from "../models/Subregion.entity";
 import { TerritorySalesman } from "../models/TerritorySalesMan.entity";
 import { Territory } from "../models/Territory.entity";
 import { In } from "typeorm";
+import { GeocodingService } from "../utils/geoCode.service";
 
 const addressService = new AddressService();
 const territoryService = new TerritoryService();
+const geoCodeingService = new GeocodingService();
 
 export class CustomerService {
   async createCustomer(
@@ -158,169 +160,207 @@ export class CustomerService {
     }
   }
 
-  async updateCustomer(
-    customerId: number,
-    data: Partial<UpdateLeadDto>,
-    userId: number,
-    role: string
-  ): Promise<{
-    status: number;
-    data?: any;
-    message: string;
-  }> {
-    const queryRunner = dataSource.createQueryRunner();
-    await queryRunner.startTransaction();
-    try {
-      const customer = await queryRunner.manager.findOne(Leads, {
-        where: {
-          lead_id: customerId,
-          is_active: true,
-          org_id: data.org_id,
-        },
-        relations: ["address"],
-      });
-      if (!customer) {
-        await queryRunner.rollbackTransaction();
-        return {
-          status: httpStatusCodes.NOT_FOUND,
-          message: "Customer not found",
-        };
-      }
-      if (role === Roles.SALES_REP && customer.assigned_rep_id !== userId) {
-        await queryRunner.rollbackTransaction();
-        return {
-          status: httpStatusCodes.FORBIDDEN,
-          message: "Access denied: You are not assigned to this customer",
-        };
-      }
-      if (role === Roles.SALES_REP) {
-        const allowedFields: (keyof Leads)[] = [
-          "contact_name",
-          "contact_email",
-          "contact_phone",
-          "status",
-        ];
-        const updates: Partial<Leads> = {};
-        for (const key of allowedFields) {
-          if (data[key as keyof UpdateLeadDto] !== undefined) {
-            updates[key] = data[key as keyof UpdateLeadDto] as any;
-          }
-        }
-        if (updates.status && updates.status !== LeadStatus.Active) {
+async updateCustomer(
+  customerId: number,
+  data: Partial<UpdateLeadDto>,
+  userId: number,
+  org_id: number,
+  role: string
+): Promise<{
+  status: number;
+  data?: Leads | null;
+  message: string;
+}> {
+  const queryRunner = dataSource.createQueryRunner();
+  await queryRunner.startTransaction();
+  try {
+    // Fetch customer with minimal fields
+    const customer = await queryRunner.manager.findOne(Leads, {
+      where: { lead_id: customerId, is_active: true, org_id },
+      select: [
+        "lead_id",
+        "assigned_rep_id",
+        "contact_name",
+        "contact_email",
+        "contact_phone",
+        "name",
+        "address_id",
+        "status",
+        "org_id",
+      ],
+    });
+
+    if (!customer) {
+      await queryRunner.rollbackTransaction();
+      return {
+        status: httpStatusCodes.NOT_FOUND,
+        message: "Customer not found",
+      };
+    }
+
+    // Check access for sales reps
+    if (role === Roles.SALES_REP && customer.assigned_rep_id !== userId) {
+      await queryRunner.rollbackTransaction();
+      return {
+        status: httpStatusCodes.FORBIDDEN,
+        message: "Access denied: You are not assigned to this customer",
+      };
+    }
+
+    let addressId = customer.address_id;
+    const updateData: Partial<Leads> = {
+      updated_by: userId.toString(),
+      updated_at: new Date(),
+    };
+
+    if (role === Roles.SALES_REP) {
+      // Sales rep: update allowed fields
+      if (data.contact_name) updateData.contact_name = data.contact_name;
+      if (data.contact_email) updateData.contact_email = data.contact_email;
+      if (data.contact_phone) updateData.contact_phone = data.contact_phone;
+      if (data.name) updateData.name = data.name; // Fixed bug: assign to name, not contact_phone
+      if (data.status) {
+        if (data.status !== LeadStatus.Active) {
           await queryRunner.rollbackTransaction();
           return {
             status: httpStatusCodes.FORBIDDEN,
             message: "Sales reps can only change status to Active",
           };
         }
-        await queryRunner.manager.update(
-          Leads,
-          { lead_id: customerId },
-          {
-            ...updates,
-            updated_by: userId.toString(),
-            updated_at: new Date(),
-          }
-        );
-      } else {
-        let addressId = customer.address_id;
-        if (
-          data.street_address ||
-          data.postal_code ||
-          data.subregion ||
-          data.region ||
-          data.country ||
-          data.area_name
-        ) {
-          const addressData: AddressDto = {
-            street_address:
-              data.street_address || customer.address.street_address,
-            postal_code: data.postal_code || customer.address.postal_code,
-            area_name: data.area_name || customer.address.area_name,
-            subregion: data.subregion || customer.address.subregion,
-            region: data.region || customer.address.region,
-            country: data.country || customer.address.country,
-            org_id: data.org_id || customer.org_id,
-
-            city: data.city || "",
-            state: data.state || "",
-            comments: data.comments || "",
-          };
-          const addressResponse = await addressService.createAddress(
-            addressData,
-            userId
-          );
-          if (addressResponse.status >= 400 || !addressResponse.data) {
-            await queryRunner.rollbackTransaction();
-            return {
-              status: addressResponse.status,
-              message: `Failed to create address`,
-            };
-          }
-          addressId = addressResponse.data.address_id;
-
-          // Soft-delete old address
-          await queryRunner.manager.update(
-            Address,
-            { address_id: customer.address_id },
-            {
-              is_active: false,
-              updated_by: userId.toString(),
-              updated_at: new Date(),
-            }
-          );
-        }
-
-        await queryRunner.manager.update(
-          Leads,
-          { lead_id: customerId },
-          {
-            contact_name: data.contact_name || customer.contact_name,
-            contact_email: data.contact_email || customer.contact_email,
-            contact_phone: data.contact_phone || customer.contact_phone,
-            address_id: addressId,
-            status: data.status || customer.status,
-            updated_by: userId.toString(),
-            updated_at: new Date(),
-          }
-        );
+        updateData.status = data.status;
       }
-      const updatedCustomer = await queryRunner.manager.findOne(Leads, {
-        where: { lead_id: customerId },
-        relations: ["address"],
-      });
+    } else {
+      // Admin: update all allowed fields
+      if (data.contact_name) updateData.contact_name = data.contact_name;
+      if (data.contact_email) updateData.contact_email = data.contact_email;
+      if (data.contact_phone) updateData.contact_phone = data.contact_phone;
+      if (data.name) updateData.name = data.name;
+      if (data.status) updateData.status = data.status;
 
-      // Auto-assign territory if address changed
-      if (data.street_address || data.postal_code || data.subregion) {
-        const autoAssignResult = await territoryService.autoAssignTerritory(
-          updatedCustomer!.address_id,
-          data.org_id || customer.org_id
-        );
-        if (autoAssignResult.status >= 400) {
+      // Handle address updates
+      const hasAddressUpdate =
+        data.street_address ||
+        data.postal_code ||
+        data.subregion ||
+        data.region ||
+        data.country ||
+        data.area_name ||
+        data.city ||
+        data.state ||
+        data.comments;
+
+      if (hasAddressUpdate) {
+        const address = await queryRunner.manager.findOne(Address, {
+          where: { address_id: customer.address_id, is_active: true },
+          select: [
+            "address_id",
+            "street_address",
+            "postal_code",
+            "area_name",
+            "subregion",
+            "region",
+            "country",
+            "city",
+            "state",
+            "comments",
+          ],
+        });
+
+        if (!address) {
           await queryRunner.rollbackTransaction();
           return {
-            status: autoAssignResult.status,
-            message: `Failed to auto-assign territory: ${autoAssignResult.message}`,
+            status: httpStatusCodes.NOT_FOUND,
+            message: "Address not found",
           };
         }
-      }
 
-      await queryRunner.commitTransaction();
-      return {
-        status: httpStatusCodes.OK,
-        data: updatedCustomer,
-        message: "Customer updated successfully",
-      };
-    } catch (error: any) {
+        const addressUpdate: Partial<Address> = {
+          street_address: data.street_address || address.street_address,
+          postal_code: data.postal_code || address.postal_code,
+          area_name: data.area_name || address.area_name,
+          subregion: data.subregion || data.city || address.subregion,
+          region: data.region || data.state || address.region,
+          country: data.country || address.country,
+          city: data.city || data.subregion || address.city,
+          state: data.state || data.region || address.state,
+          comments: data.comments || address.comments,
+          updated_by: userId.toString(),
+          updated_at: new Date(),
+        };
+
+        await queryRunner.manager.update(
+          Address,
+          { address_id: address.address_id },
+          addressUpdate
+        );
+      }
+    }
+
+    // Apply lead updates only if there are changes
+    if (Object.keys(updateData).length > 2) {
+      await queryRunner.manager.update(Leads, { lead_id: customerId }, updateData);
+    }
+
+    // Auto-assign territory if address changed
+    if (data.street_address || data.postal_code || data.subregion) {
+      const autoAssignResult = await territoryService.autoAssignTerritory(
+        addressId,
+        org_id
+      );
+      if (autoAssignResult.status >= 400) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: autoAssignResult.status,
+          message: `Failed to auto-assign territory: ${autoAssignResult.message}`,
+        };
+      }
+    }
+
+    // Fetch updated customer with address
+    const updatedCustomer = await queryRunner.manager.findOne(Leads, {
+      where: { lead_id: customerId, is_active: true },
+      select: [
+        "lead_id",
+        "contact_name",
+        "contact_email",
+        "contact_phone",
+        "name",
+        "address_id",
+        "status",
+        "org_id",
+        "updated_by",
+        "updated_at",
+      ],
+      relations: {
+        address: true,
+      },
+      relationLoadStrategy: "join", // Use JOIN to fetch address in one query
+    });
+
+    if (!updatedCustomer) {
       await queryRunner.rollbackTransaction();
       return {
-        status: httpStatusCodes.INTERNAL_SERVER_ERROR,
-        message: `Failed to update customer: ${error.message}`,
+        status: httpStatusCodes.NOT_FOUND,
+        message: "Updated customer not found",
       };
-    } finally {
-      await queryRunner.release();
     }
+
+    await queryRunner.commitTransaction();
+    return {
+      status: httpStatusCodes.OK,
+      data: updatedCustomer,
+      message: "Customer updated successfully",
+    };
+  } catch (error: any) {
+    await queryRunner.rollbackTransaction();
+    return {
+      status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+      message: `Failed to update customer: ${error.message}`,
+    };
+  } finally {
+    await queryRunner.release();
   }
+}
 
   async deleteCustomer(
     customerId: number,
@@ -566,58 +606,64 @@ export class CustomerService {
     }
   }
 
-  async importCustomers(
-    data: LeadImportDto[],
-    adminId: number,
-    org_id: number,
-    batchSize: number = 500
-  ): Promise<{
-    status: number;
-    message: string;
-    data?: { addresses: Address[]; customers: Leads[] } | null;
-    errors?: string[];
-  }> {
-    const queryRunner = dataSource.createQueryRunner();
-    await queryRunner.startTransaction();
-    try {
-      const addresses: Address[] = [];
-      const customers: Leads[] = [];
-      const errors: string[] = [];
+ async importCustomers(
+  data: LeadImportDto[],
+  adminId: number,
+  org_id: number,
+  batchSize: number = 500
+): Promise<{
+  status: number;
+  message: string;
+  data?: { addresses: Address[]; customers: Leads[] } | null;
+  errors?: string[];
+}> {
+  const queryRunner = dataSource.createQueryRunner();
+  try {
+    const addresses: Address[] = [];
+    const customers: Leads[] = [];
+    const errors: string[] = [];
 
-      // Fetch territories once
-      const territories = await queryRunner.manager.find(Territory, {
-        where: { org_id, is_active: true },
-        select: ["territory_id", "regions", "subregions", "postal_codes"],
-      });
+    // Fetch territories once (outside transaction to reduce scope)
+    const territories = await dataSource.manager.find(Territory, {
+      where: { org_id, is_active: true },
+      select: ["territory_id", "regions", "subregions", "postal_codes"],
+    });
 
-      // Unified lookup map for territory matching
-      const territoryLookup = new Map<string, number>();
-      territories.forEach((territory) => {
-        const territoryId = territory.territory_id;
-        try {
-          if (territory.postal_codes) {
-            (JSON.parse(territory.postal_codes) as string[]).forEach((code) =>
-              territoryLookup.set(`postal:${code}`, territoryId)
-            );
-          }
-          if (territory.regions) {
-            (JSON.parse(territory.regions) as string[]).forEach((region) =>
-              territoryLookup.set(`region:${region}`, territoryId)
-            );
-          }
-          if (territory.subregions) {
-            (JSON.parse(territory.subregions) as string[]).forEach(
-              (subregion) =>
-                territoryLookup.set(`subregion:${subregion}`, territoryId)
-            );
-          }
-        } catch (e) {
-          console.warn(`Malformed JSON in territory ${territoryId}: ${e}`);
+    // Unified lookup map for territory matching
+    const territoryLookup = new Map<string, number>();
+    territories.forEach((territory) => {
+      const territoryId = territory.territory_id;
+      try {
+        if (territory.postal_codes) {
+          (JSON.parse(territory.postal_codes) as string[]).forEach((code) =>
+            territoryLookup.set(`postal:${code}`, territoryId)
+          );
         }
-      });
+        if (territory.regions) {
+          (JSON.parse(territory.regions) as string[]).forEach((region) =>
+            territoryLookup.set(`region:${region}`, territoryId)
+          );
+        }
+        if (territory.subregions) {
+          (JSON.parse(territory.subregions) as string[]).forEach((subregion) =>
+            territoryLookup.set(`subregion:${subregion}`, territoryId)
+          );
+        }
+      } catch (e) {
+        console.warn(`Malformed JSON in territory ${territoryId}: ${e}`);
+      }
+    });
 
-      // Process data in batches
-      for (let i = 0; i < data.length; i += batchSize) {
+    // Cache for geocoding results
+    const geocodeCache = new Map<
+      string,
+      { latitude: number; longitude: number }
+    >();
+
+    // Process data in batches
+    for (let i = 0; i < data.length; i += batchSize) {
+      await queryRunner.startTransaction();
+      try {
         const batch = data.slice(i, i + batchSize);
 
         // Prepare address keys for bulk lookup
@@ -656,14 +702,26 @@ export class CustomerService {
               select: ["address_id"],
             })
           : [];
-        const leadAddressIds = new Set(
-          existingLeads.map((lead) => lead.address_id)
-        );
+        const leadAddressIds = new Set(existingLeads.map((lead) => lead.address_id));
 
         const newAddresses: Address[] = [];
         const addressesToUpdate: Address[] = [];
         const newCustomers: Leads[] = [];
-        const customerToAddressIndex: Map<number, number> = new Map(); // Maps customer index to address index
+        const customerToAddressIndex: Map<number, number> = new Map();
+
+        // Prepare addresses for geocoding
+        const addressesToGeocode: {
+          index: number;
+          address: {
+            street_address: string;
+            postal_code: string;
+            subregion: string;
+            city: string;
+            state: string;
+            region: string;
+            country: string;
+          };
+        }[] = [];
 
         // Process batch
         batch.forEach((row, index) => {
@@ -695,19 +753,14 @@ export class CustomerService {
 
           let address: Address;
           if (existingAddress) {
-            if (
-              addressData.name &&
-              leadAddressIds.has(existingAddress.address_id)
-            ) {
+            if (addressData.name && leadAddressIds.has(existingAddress.address_id)) {
               errors.push(
                 `Duplicate customer: ${addressData.name} at ${addressData.street_address}, ${addressData.postal_code}, ${addressData.subregion}`
               );
               return;
             }
-            existingAddress.comments =
-              addressData.comments || existingAddress.comments;
-            existingAddress.territory_id =
-              territoryId || existingAddress.territory_id;
+            existingAddress.comments = addressData.comments || existingAddress.comments;
+            existingAddress.territory_id = territoryId || existingAddress.territory_id;
             addressesToUpdate.push(existingAddress);
             address = existingAddress;
           } else {
@@ -723,13 +776,25 @@ export class CustomerService {
               state: addressData.state,
               comments: addressData.comments,
               territory_id: territoryId,
-              latitude: 0, // Replace with geocoding if needed
+              latitude: 0, // Will be set after geocoding
               longitude: 0,
               created_by: adminId.toString(),
               updated_by: adminId.toString(),
               is_active: true,
             });
             newAddresses.push(newAddress);
+            addressesToGeocode.push({
+              index: newAddresses.length - 1,
+              address: {
+                street_address: addressData.street_address,
+                postal_code: addressData.postal_code,
+                subregion: addressData.subregion,
+                city: addressData.city,
+                state: addressData.state,
+                region: addressData.region,
+                country: addressData.country,
+              },
+            });
             address = newAddress;
           }
           addresses.push(address);
@@ -748,20 +813,37 @@ export class CustomerService {
               territory_id: territoryId,
             });
             newCustomers.push(customer);
-            customerToAddressIndex.set(
-              newCustomers.length - 1,
-              newAddresses.length - 1
-            );
+            customerToAddressIndex.set(newCustomers.length - 1, newAddresses.length - 1);
           }
         });
 
+        // Geocode new addresses
+        if (addressesToGeocode.length) {
+          const geocodePromises = addressesToGeocode.map(async ({ index, address }) => {
+            const cacheKey = `${address.street_address}|${address.postal_code}|${address.subregion}|${address.country}`;
+            if (geocodeCache.has(cacheKey)) {
+              return { index, coords: geocodeCache.get(cacheKey)! };
+            }
+            try {
+              const coords = await geoCodeingService.getCoordinates(address);
+              geocodeCache.set(cacheKey, coords);
+              return { index, coords };
+            } catch (e) {
+              errors.push(`Geocoding failed for address: ${cacheKey}`);
+              return { index, coords: { latitude: 0, longitude: 0 } };
+            }
+          });
+
+          const geocodeResults = await Promise.all(geocodePromises);
+          geocodeResults.forEach(({ index, coords }) => {
+            newAddresses[index].latitude = coords.latitude;
+            newAddresses[index].longitude = coords.longitude;
+          });
+        }
+
         // Bulk insert new addresses
         if (newAddresses.length) {
-          const savedAddresses = await queryRunner.manager.save(
-            Address,
-            newAddresses
-          );
-          // Update address_id for customers
+          const savedAddresses = await queryRunner.manager.save(Address, newAddresses);
           newCustomers.forEach((customer, customerIndex) => {
             const addressIndex = customerToAddressIndex.get(customerIndex);
             if (addressIndex !== undefined && savedAddresses[addressIndex]) {
@@ -780,10 +862,9 @@ export class CustomerService {
           await queryRunner.manager.save(Address, addressesToUpdate);
         }
 
+        // Assign salesmen
         const territoryIds = [
-          ...new Set(
-            newCustomers.map((c) => c.territory_id).filter((id) => id)
-          ),
+          ...new Set(newCustomers.map((c) => c.territory_id).filter((id) => id)),
         ];
         const territorySalesmen = territoryIds.length
           ? await queryRunner.manager.find(TerritorySalesman, {
@@ -797,48 +878,47 @@ export class CustomerService {
         newCustomers.forEach((customer) => {
           if (customer.territory_id && salesmanMap.has(customer.territory_id)) {
             customer.assigned_rep_id = salesmanMap.get(customer.territory_id)!;
-
             customer.pending_assignment = false;
           }
         });
 
         // Bulk insert new customers
         if (newCustomers.length) {
-          const savedCustomers = await queryRunner.manager.save(
-            Leads,
-            newCustomers
-          );
+          const savedCustomers = await queryRunner.manager.save(Leads, newCustomers);
           customers.push(...savedCustomers);
         }
-      }
 
-      if (errors.length && !addresses.length) {
+        await queryRunner.commitTransaction();
+      } catch (batchError: any) {
         await queryRunner.rollbackTransaction();
-        return {
-          status: httpStatusCodes.BAD_REQUEST,
-          message: "No addresses imported",
-          errors,
-        };
+        errors.push(`Batch ${i / batchSize + 1} failed: ${batchError.message}`);
       }
-
-      await queryRunner.commitTransaction();
-      return {
-        status: httpStatusCodes.OK,
-        data: { addresses, customers },
-        message: "Addresses and customers imported successfully",
-        errors: errors.length ? errors : undefined,
-      };
-    } catch (error: any) {
-      await queryRunner.rollbackTransaction();
-      return {
-        status: httpStatusCodes.INTERNAL_SERVER_ERROR,
-        message: `Failed to import customers: ${error.message}`,
-        data: null,
-      };
-    } finally {
-      await queryRunner.release();
     }
+
+    if (errors.length && !addresses.length) {
+      return {
+        status: httpStatusCodes.BAD_REQUEST,
+        message: "No addresses imported",
+        errors,
+      };
+    }
+
+    return {
+      status: httpStatusCodes.OK,
+      data: { addresses, customers },
+      message: "Addresses and customers imported successfully",
+      errors: errors.length ? errors : undefined,
+    };
+  } catch (error: any) {
+    return {
+      status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+      message: `Failed to import customers: ${error.message}`,
+      data: null,
+    };
+  } finally {
+    await queryRunner.release();
   }
+}
   async assignCustomer(
     customerId: number,
     repId: number,
