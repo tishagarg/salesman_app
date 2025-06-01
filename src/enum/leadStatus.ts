@@ -3,3 +3,8 @@ export enum LeadStatus {
   Active = "Active",
   Blocked = "Blocked",
 }
+export enum DataSource {
+  Manual = "Manual",
+  Excel = "Excel",
+  Email = "Email",
+}
