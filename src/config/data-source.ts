@@ -33,7 +33,7 @@ export const AppDataSource: DataSourceOptions = {
   password: process.env.POSTGRES_PASSWORD,
   database: process.env.POSTGRES_DB_DEVELOPMENT,
   ssl: {
-    rejectUnauthorized: false,
+    rejectUnauthorized: true,
   },
   // process.env.NODE_ENV === "production"
   //   ? { rejectUnauthorized: false }
