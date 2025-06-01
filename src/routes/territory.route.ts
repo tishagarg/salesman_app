@@ -27,12 +27,14 @@ router.delete(
 );
 router.get(
   "/:id",
+  verifyToken,
   // permissionMiddleware("customer_import"),
   territoryController.getTerritoryById
 );
 
 router.get(
   "/",
+  verifyToken,
   // permissionMiddleware("customer_import"),
   territoryController.getAllTerritories
 );
