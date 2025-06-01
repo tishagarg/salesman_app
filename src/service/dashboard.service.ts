@@ -1,4 +1,4 @@
-import dataSource from "../config/data-source";
+import { getDataSource } from "../config/data-source"; // Updated import
 import { Leads } from "../models/Leads.entity";
 import { Visit } from "../models/Visits.entity";
 import httpStatusCodes from "http-status-codes";
@@ -9,6 +9,7 @@ export class DashboardService {
     role: string,
     userId: number
   ): Promise<{ status: number; message: string; data: any }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {

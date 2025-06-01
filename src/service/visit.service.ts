@@ -1,4 +1,4 @@
-import dataSource from "../config/data-source";
+import { getDataSource } from "../config/data-source"; // Updated import
 import { Leads } from "../models/Leads.entity";
 import { Visit } from "../models/Visits.entity";
 import { Route } from "../models/Route.entity";
@@ -20,6 +20,7 @@ export class VisitService {
     data: { lead_id: number; rep_id: number; date: Date },
     managerId: number
   ): Promise<{ status: number; data?: any; message: string }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -60,6 +61,7 @@ export class VisitService {
     notes?: string;
     photo_urls?: string[];
   }): Promise<{ status: number; data?: any; message: string }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -107,10 +109,10 @@ export class VisitService {
     }
   }
 
-  // Generate daily optimized route for a rep using Google Maps Directions API
   async generateDailyRoute(
     repId: number
   ): Promise<{ status: number; data?: any; message: string }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -122,6 +124,7 @@ export class VisitService {
       });
 
       if (existingRoute) {
+        await queryRunner.commitTransaction();
         return {
           status: httpStatusCodes.OK,
           data: existingRoute,
@@ -243,10 +246,10 @@ export class VisitService {
     }
   }
 
-  // Fetch today's route for a rep
   async getDailyRoute(
     repId: number
   ): Promise<{ status: number; data?: any; message: string }> {
+    const dataSource = await getDataSource();
     try {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -275,7 +278,7 @@ export class VisitService {
               name: customer?.name || "Unknown",
               address: customer?.address
                 ? `${customer.address.street_address}, ${customer.address.city}, ${customer.address.state} ${customer.address.postal_code}`
-                : "No address",
+                : undefined,
               eta: item.eta,
               distance: item.distance,
             };
@@ -286,20 +289,19 @@ export class VisitService {
       return {
         status: httpStatusCodes.OK,
         data: routeDetails,
-        message: "Today's route fetched successfully",
+        message: "Retrieved successfully",
       };
     } catch (error: any) {
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
-        message: error.message,
+        message: error.message || "Failed to retrieve daily route",
       };
     }
   }
-
-  // Refresh the daily route (re-generate)
   async refreshDailyRoute(
     repId: number
   ): Promise<{ status: number; data?: any; message: string }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -317,7 +319,7 @@ export class VisitService {
       await queryRunner.rollbackTransaction();
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
-        message: error.message,
+        message: error.message || "Failed to refresh daily route",
       };
     } finally {
       await queryRunner.release();

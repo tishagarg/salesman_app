@@ -1,4 +1,4 @@
-import dataSource from "../config/data-source";
+import { getDataSource } from "../config/data-source";
 import { jwtVerify } from "../config/jwt";
 import httpStatusCodes from "http-status-codes";
 import { User } from "../models";
@@ -14,8 +14,10 @@ export const permissionMiddleware =
     }
 
     try {
-      const payload = jwtVerify(token) as any;
-      const user = await dataSource.createQueryRunner().manager.findOne(User, {
+      const payload = await jwtVerify(token);
+      const dataSource = await getDataSource();
+
+      const user = await dataSource.getRepository(User).findOne({
         where: { user_id: payload.user_id },
         relations: ["role"],
       });
@@ -26,21 +28,20 @@ export const permissionMiddleware =
           .json({ message: "User not found" });
       }
 
-      const hasPermission = await dataSource
-        .createQueryRunner()
-        .manager.findOne(RolePermission, {
-          where: {
-            role_id: user.role.role_id,
-            permission: { permission_name: requiredPermission },
-            is_active: true,
-            org_id: user.role.org_id || 1, // Fallback to org_id=1 if null
-          },
-        });
+      const rolePermission = await dataSource.getRepository(RolePermission).findOne({
+        where: {
+          role_id: user.role.role_id,
+          permission: { permission_name: requiredPermission },
+          is_active: true,
+          org_id: user.role.org_id || 1,
+        },
+        relations: ["permission"],
+      });
 
-      if (!hasPermission) {
+      if (!rolePermission) {
         return res
           .status(httpStatusCodes.FORBIDDEN)
-          .json({ message: `Permission ${requiredPermission} denied` });
+          .json({ message: `Permission '${requiredPermission}' denied` });
       }
       req.user = { ...payload, token };
       next();
