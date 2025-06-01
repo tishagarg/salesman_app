@@ -12,16 +12,19 @@ router.post(
 );
 router.post(
   "/",
+  verifyToken,
   // permissionMiddleware("territory_assign"),
   territoryController.addTerritory
 );
 router.put(
   "/:id",
+  verifyToken,
   // permissionMiddleware("customer_import"),
   territoryController.updateTerritory
 );
 router.delete(
   "/:id",
+  verifyToken,
   // permissionMiddleware("customer_import"),
   territoryController.deleteTerritory
 );
