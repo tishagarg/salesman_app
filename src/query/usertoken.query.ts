@@ -1,6 +1,7 @@
 import { UserToken } from "../models";
 import dataSource from "../config/data-source";
 import { EntityManager } from "typeorm";
+import { RefreshToken } from "../models/RefreshToken.entity";
 export class UserTokenQuery {
   async deleteTokenFromDatabase(input: number | string): Promise<void> {
     const userTokenRepository = dataSource.getRepository(UserToken);
@@ -35,4 +36,11 @@ export class UserTokenQuery {
   ): Promise<UserToken[]> {
     return await manager.getRepository(UserToken).find({ where: { user_id } });
   }
+    async deleteRefreshTokens(
+    manager: EntityManager,
+    id: number
+  ): Promise<void> {
+    await manager.delete(RefreshToken, { user_id: id });
+  }
+
 }
