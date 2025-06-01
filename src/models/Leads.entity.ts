@@ -7,7 +7,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from "typeorm";
-import { LeadStatus } from "../enum/leadStatus";
+import { DataSource, LeadStatus } from "../enum/leadStatus";
 import { User } from "./User.entity";
 import { Address } from "./Address.entity";
 import { Organization } from "./Organisation.entity";
@@ -45,7 +45,7 @@ export class Leads {
   status: LeadStatus;
 
   @Column({ type: "int", nullable: true })
-  territory_id: number;
+  territory_id: number | null;
 
   @Column({ type: "int", nullable: true })
   org_id: number;
@@ -54,7 +54,13 @@ export class Leads {
   is_active: boolean;
   @Column({ type: "boolean", default: false })
   pending_assignment: boolean;
-
+  @Column({
+    type: "enum",
+    enum: DataSource,
+    enumName: "data_source_enum",
+    default: null,
+  })
+  source: DataSource;
   @Column({ type: "char", length: 36, nullable: true })
   created_by: string;
 

@@ -84,8 +84,8 @@ export class UpdateLeadDto {
   contact_phone?: string;
   street_address?: string;
   comments?: string;
-
   postal_code?: string;
+  name?: string;
   area_name?: string;
   subregion?: string;
   region?: string;
@@ -140,7 +140,7 @@ export class AddressDto {
   country?: string;
   latitude?: number;
   longitude?: number;
-  territory_id?: number;
+  territory_id?: number | null;
   polygon_id?: number;
   org_id: number;
 }

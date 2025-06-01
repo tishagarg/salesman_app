@@ -25,9 +25,6 @@ app.use(express.json());
 
 app.use("/api", router);
 app.use(verifyToken);
-app.use("/", (req, res) => {
-  res.send("Welcome to track");
-});
 app.get("/api/user/me", userController.getUserById);
 
 const MAX_RETRIES = 5;
