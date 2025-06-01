@@ -26,7 +26,6 @@ export const verifyToken = async (
         is_active: true,
       },
     });
-    console.log(userToken)
     if (!userToken) {
       return ApiResponse.error(res, 401, "not authorized");
     }

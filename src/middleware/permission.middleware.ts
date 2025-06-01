@@ -15,12 +15,10 @@ export const permissionMiddleware =
 
     try {
       const payload = jwtVerify(token) as any;
-      const user = await dataSource
-        .createQueryRunner()
-        .manager.findOne(User, {
-          where: { user_id: payload.user_id },
-          relations: ["role"],
-        });
+      const user = await dataSource.createQueryRunner().manager.findOne(User, {
+        where: { user_id: payload.user_id },
+        relations: ["role"],
+      });
 
       if (!user) {
         return res
@@ -44,13 +42,12 @@ export const permissionMiddleware =
           .status(httpStatusCodes.FORBIDDEN)
           .json({ message: `Permission ${requiredPermission} denied` });
       }
-
-      req.user = user;
+      req.user = { ...payload, token };
       next();
     } catch (error) {
       console.error(error);
       return res
         .status(httpStatusCodes.UNAUTHORIZED)
-        .json({ message: "Invalid token" });
+        .json({ message: "Invalid token", error });
     }
   };
