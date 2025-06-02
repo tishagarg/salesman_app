@@ -33,9 +33,9 @@ if (!process.env.DATABASE_URL) {
 
 export const dataSourceOptions: DataSourceOptions = {
   type: "postgres",
-  url: process.env.DATABASE_URL, // postgresql://neondb_owner:npg_gfo0iBqteP3D@ep-frosty.us-east-1.aws.neon.tech:5432/salesman_app_dev?sslmode=require
+  url: process.env.DATABASE_URL,
   ssl: {
-    rejectUnauthorized: false, // Neon requires SSL
+    rejectUnauthorized: false,
   },
   synchronize: false,
   logging: process.env.NODE_ENV === "production" ? ["error"] : ["query", "error"],
