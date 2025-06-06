@@ -1,10 +1,11 @@
 import { Request, Response, NextFunction } from "express";
-import dataSource from "../config/data-source";
+import { getDataSource } from "../config/data-source";
 import { jwtVerify } from "../config/jwt";
 import { UserTokenQuery } from "../query/usertoken.query";
 import { UserToken } from "../models/index";
 import { ApiResponse } from "../utils/api.response";
-let userTokenQuery = new UserTokenQuery();
+
+const userTokenQuery = new UserTokenQuery();
 
 export const verifyToken = async (
   req: any,
@@ -13,11 +14,14 @@ export const verifyToken = async (
 ): Promise<any> => {
   const token = req.headers["authorization"]?.split(" ")[1];
   if (!token) {
-    return ApiResponse.error(res, 401, "not token");
+    return ApiResponse.error(res, 401, "Token not provided");
   }
 
   try {
     const decoded = await jwtVerify(token);
+
+    const dataSource = await getDataSource();
+
     const userTokenRepository = dataSource.getRepository(UserToken);
     const userToken = await userTokenRepository.findOne({
       where: {
@@ -27,7 +31,7 @@ export const verifyToken = async (
       },
     });
     if (!userToken) {
-      return ApiResponse.error(res, 401, "not authorized");
+      return ApiResponse.error(res, 401, "Token not authorized");
     }
 
     const currentTime = Date.now() / 1000;
@@ -36,12 +40,11 @@ export const verifyToken = async (
 
     if (currentTime > tokenExpiryTime) {
       await userTokenQuery.deleteTokenFromDatabase(token);
-
-      return ApiResponse.error(res, 401, "not authorized");
+      return ApiResponse.error(res, 401, "Token expired");
     }
     req.user = { ...decoded, token };
     next();
   } catch (error) {
-    return ApiResponse.error(res, 401, "not authorized");
+    return ApiResponse.error(res, 401, "Token not authorized");
   }
 };

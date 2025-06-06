@@ -1,4 +1,4 @@
-import dataSource from "../config/data-source";
+import { getDataSource } from "../config/data-source"; // Updated import
 import { Leads } from "../models/Leads.entity";
 import { Visit } from "../models/Visits.entity";
 import { Route } from "../models/Route.entity";
@@ -16,10 +16,160 @@ if (!GOOGLE_MAPS_API_KEY) {
 }
 
 export class VisitService {
+  async planDailyVisits(
+    repId: number,
+    managerId: number,
+    date: Date = new Date()
+  ): Promise<{ status: number; data?: any; message: string }> {
+    const dataSource = await getDataSource();
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.startTransaction();
+
+    try {
+      // Step 1: Validate rep and fetch assigned leads
+      const customers = await queryRunner.manager.find(Leads, {
+        where: {
+          assigned_rep_id: repId,
+          is_active: true,
+          pending_assignment: false,
+        },
+        relations: ["address"],
+      });
+
+      if (!customers.length) {
+        throw new Error("No active customers assigned to rep");
+      }
+
+      // Step 2: Check for existing visits for the given date
+      const startOfDay = new Date(date);
+      startOfDay.setHours(0, 0, 0, 0);
+      const existingVisits = await queryRunner.manager.find(Visit, {
+        where: {
+          rep_id: repId,
+          check_in_time: MoreThanOrEqual(startOfDay),
+        },
+      });
+
+      if (existingVisits.length > 0) {
+        throw new Error("Visits already planned for this rep today");
+      }
+
+      // Step 3: Prepare waypoints for Google Maps Directions API
+      const validCustomers = customers.filter(
+        (customer) =>
+          customer.address &&
+          customer.address.latitude &&
+          customer.address.longitude
+      );
+
+      if (!validCustomers.length) {
+        throw new Error("No valid customer addresses for visit planning");
+      }
+
+      const waypoints = validCustomers.map(
+        (customer) =>
+          `${customer.address.latitude},${customer.address.longitude}`
+      );
+
+      // Step 4: Mock rep's starting location (replace with GPS in production)
+      const repLocation = { latitude: 60.1695, longitude: 24.9354 }; // Helsinki coordinates
+
+      // Step 5: Call Google Maps Directions API for optimized route
+      const origin = `${repLocation.latitude},${repLocation.longitude}`;
+      const destination = origin; // Return to starting point
+      const directionsResponse = await axios.get(
+        "https://maps.googleapis.com/maps/api/directions/json",
+        {
+          params: {
+            origin,
+            destination,
+            waypoints: `optimize:true|${waypoints.join("|")}`,
+            key: GOOGLE_MAPS_API_KEY,
+            departure_time: "now",
+          },
+        }
+      );
+
+      const directionsData = directionsResponse.data;
+      if (directionsData.status !== "OK") {
+        throw new Error(
+          `Google Maps Directions API error: ${directionsData.status}`
+        );
+      }
+
+      // Step 6: Extract optimized route and plan visits
+      const route = directionsData.routes[0];
+      const waypointOrder = route.waypoint_order;
+
+      let currentTime = new Date(date);
+      const visits = [];
+      const routeOrder = [];
+
+      for (let i = 0; i < waypointOrder.length; i++) {
+        const index = waypointOrder[i];
+        const customer = validCustomers[index];
+        const leg = route.legs[i];
+
+        // Calculate ETA
+        const duration = leg.duration.value / 60; // Convert seconds to minutes
+        currentTime = new Date(currentTime.getTime() + duration * 60000);
+        const eta = currentTime.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
+
+        // Create visit record
+        const visit = await queryRunner.manager.create(Visit, {
+          lead_id: customer.lead_id,
+          rep_id: repId,
+          check_in_time: currentTime,
+          latitude: customer.address.latitude,
+          longitude: customer.address.longitude,
+          created_by: managerId.toString(),
+          is_active: true,
+        });
+        visits.push(visit);
+
+        // Add to route order
+        routeOrder.push({
+          lead_id: customer.lead_id,
+          distance: Number((leg.distance.value / 1000).toFixed(2)), // Convert meters to kilometers
+          eta,
+        });
+      }
+
+      // Step 7: Save visits and route
+      await queryRunner.manager.save(Visit, visits);
+
+      const routeEntity = await queryRunner.manager.save(Route, {
+        rep_id: repId,
+        route_date: startOfDay,
+        route_order: routeOrder,
+        created_by: managerId.toString(),
+      });
+
+      await queryRunner.commitTransaction();
+
+      return {
+        status: httpStatusCodes.OK,
+        data: { visits, route: routeEntity },
+        message: "Daily visits planned successfully",
+      };
+    } catch (error: any) {
+      await queryRunner.rollbackTransaction();
+      return {
+        status: httpStatusCodes.BAD_REQUEST,
+        message: error.message || "Failed to plan daily visits",
+      };
+    } finally {
+      await queryRunner.release();
+    }
+  }
   async planVisit(
     data: { lead_id: number; rep_id: number; date: Date },
     managerId: number
   ): Promise<{ status: number; data?: any; message: string }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -60,6 +210,7 @@ export class VisitService {
     notes?: string;
     photo_urls?: string[];
   }): Promise<{ status: number; data?: any; message: string }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -107,10 +258,10 @@ export class VisitService {
     }
   }
 
-  // Generate daily optimized route for a rep using Google Maps Directions API
   async generateDailyRoute(
     repId: number
   ): Promise<{ status: number; data?: any; message: string }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -122,6 +273,7 @@ export class VisitService {
       });
 
       if (existingRoute) {
+        await queryRunner.commitTransaction();
         return {
           status: httpStatusCodes.OK,
           data: existingRoute,
@@ -243,10 +395,10 @@ export class VisitService {
     }
   }
 
-  // Fetch today's route for a rep
   async getDailyRoute(
     repId: number
   ): Promise<{ status: number; data?: any; message: string }> {
+    const dataSource = await getDataSource();
     try {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
@@ -275,7 +427,7 @@ export class VisitService {
               name: customer?.name || "Unknown",
               address: customer?.address
                 ? `${customer.address.street_address}, ${customer.address.city}, ${customer.address.state} ${customer.address.postal_code}`
-                : "No address",
+                : undefined,
               eta: item.eta,
               distance: item.distance,
             };
@@ -286,20 +438,19 @@ export class VisitService {
       return {
         status: httpStatusCodes.OK,
         data: routeDetails,
-        message: "Today's route fetched successfully",
+        message: "Retrieved successfully",
       };
     } catch (error: any) {
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
-        message: error.message,
+        message: error.message || "Failed to retrieve daily route",
       };
     }
   }
-
-  // Refresh the daily route (re-generate)
   async refreshDailyRoute(
     repId: number
   ): Promise<{ status: number; data?: any; message: string }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
@@ -317,7 +468,7 @@ export class VisitService {
       await queryRunner.rollbackTransaction();
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
-        message: error.message,
+        message: error.message || "Failed to refresh daily route",
       };
     } finally {
       await queryRunner.release();

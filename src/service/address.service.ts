@@ -1,5 +1,5 @@
 import httpStatusCodes from "http-status-codes";
-import dataSource from "../config/data-source";
+import { getDataSource } from "../config/data-source";
 import { Address } from "../models/Address.entity";
 import { GeocodingService } from "../utils/geoCode.service";
 import { TerritoryService } from "./territory.service";
@@ -12,20 +12,25 @@ import { Territory } from "../models/Territory.entity";
 export class AddressService {
   private geocodingService = new GeocodingService();
   private territoryService = new TerritoryService();
+
   async getFinnishRegions(): Promise<string[]> {
+    const dataSource = await getDataSource();
     const regions = await dataSource.manager.find(Region, {
       where: { is_active: true },
       select: ["name"],
     });
     return regions.map((region) => region.name);
   }
+
   async getFinnishSubregions(region: string): Promise<string[]> {
+    const dataSource = await getDataSource();
     const subregions = await dataSource.manager.find(Subregion, {
       where: { region_name: region, is_active: true },
       select: ["name"],
     });
     return subregions.map((subregion) => subregion.name);
   }
+
   async createAddress(
     data: AddressDto,
     userId: number,
@@ -35,12 +40,17 @@ export class AddressService {
     data?: Address;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
+
+    await queryRunner.connect();
     await queryRunner.startTransaction();
+
     try {
       const addressData = new AddressDto();
       Object.assign(addressData, data);
-      const territories = await dataSource.manager.find(Territory, {
+
+      const territories = await queryRunner.manager.find(Territory, {
         where: { org_id, is_active: true },
         select: ["territory_id", "regions", "subregions", "postal_codes"],
       });
@@ -61,19 +71,20 @@ export class AddressService {
           }
           if (territory.subregions) {
             (JSON.parse(territory.subregions) as string[]).forEach(
-              (subregion) =>
-                territoryLookup.set(`subregion:${subregion}`, territoryId)
+              (subregion) => territoryLookup.set(`subregion:${subregion}`, territoryId)
             );
           }
         } catch (e) {
           console.warn(`Malformed JSON in territory ${territoryId}: ${e}`);
         }
       });
+
       const territoryId =
         territoryLookup.get(`postal:${addressData.postal_code}`) ||
         territoryLookup.get(`region:${addressData.region}`) ||
         territoryLookup.get(`subregion:${addressData.subregion}`) ||
         null;
+
       if (!/^\d{5}$/.test(data.postal_code)) {
         await queryRunner.rollbackTransaction();
         return {
@@ -97,6 +108,7 @@ export class AddressService {
           message: "Longitude must be between 19.0 and 31.6",
         };
       }
+
       const existing = await queryRunner.manager.findOne(Address, {
         where: {
           postal_code: data.postal_code,
@@ -106,6 +118,7 @@ export class AddressService {
           territory_id: territoryId || undefined,
         },
       });
+
       if (existing) {
         await queryRunner.rollbackTransaction();
         return {
@@ -126,6 +139,7 @@ export class AddressService {
           country: data.country || "Finland",
         });
       }
+
       const address = new Address();
       address.street_address = data.street_address;
       address.building_unit = data.building_unit ?? "";
@@ -142,7 +156,8 @@ export class AddressService {
       address.updated_by = String(userId);
       address.city = data.subregion;
       address.state = data.region;
-      console.log("addresss inside create ", address);
+
+      console.log("address inside create ", address);
       const savedAddress = await queryRunner.manager.save(Address, address);
       console.log("saved address inside create ", savedAddress);
 
@@ -159,10 +174,12 @@ export class AddressService {
 
       // Start a new transaction for territory assignment
       await queryRunner.startTransaction();
+
       const autoAssignResult = await this.territoryService.autoAssignTerritory(
         savedAddress.address_id,
         data.org_id
       );
+
       // Commit territory assignment
       await queryRunner.commitTransaction();
 
