@@ -16,5 +16,5 @@ router.post(
 );
 router.get("/route/daily", verifyToken, visitController.getDailyRoute);
 router.get("/route/refresh", verifyToken, visitController.refreshDailyRoute);
-
+router.post("/plan-daily-visits", verifyToken,visitController.planDailyVisits);
 export default router;

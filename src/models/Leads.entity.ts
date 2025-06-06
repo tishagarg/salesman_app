@@ -7,7 +7,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from "typeorm";
-import { DataSource, LeadStatus } from "../enum/leadStatus";
+import { Source, LeadStatus } from "../enum/leadStatus";
 import { User } from "./User.entity";
 import { Address } from "./Address.entity";
 import { Organization } from "./Organisation.entity";
@@ -56,11 +56,11 @@ export class Leads {
   pending_assignment: boolean;
   @Column({
     type: "enum",
-    enum: DataSource,
+    enum: Source,
     enumName: "data_source_enum",
     default: null,
   })
-  source: DataSource;
+  source: Source;
   @Column({ type: "char", length: 36, nullable: true })
   created_by: string;
 

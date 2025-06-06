@@ -2,7 +2,7 @@ import { Role } from "../models/Role.entity";
 import { EntityManager, In } from "typeorm";
 import { RolePermission } from "../models/RolePermission.entity";
 import { Permission } from "../models/Permission.entity";
-import dataSource from "../config/data-source";
+import { getDataSource } from "../config/data-source";
 import { Roles } from "../enum/roles";
 
 export class RoleQuery {
@@ -58,18 +58,22 @@ export class RoleQuery {
     role_id: number | undefined,
     manager?: EntityManager
   ): Promise<Role | null> {
-    if (role_id === null) {
+    if (role_id === null || role_id === undefined) {
       return null;
     }
+
     const repo = manager
       ? manager.getRepository(Role)
-      : dataSource.getRepository(Role);
+      : (await getDataSource()).getRepository(Role);
+
     return await repo.findOne({ where: { role_id } });
   }
+
   async getRoleByIdAndOrgId(
     role_id: number,
     org_id: number
   ): Promise<Role | null> {
+    const dataSource = await getDataSource();
     return await dataSource
       .getRepository(Role)
       .findOne({ where: { role_id, org_id } });

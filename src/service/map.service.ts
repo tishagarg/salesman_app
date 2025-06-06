@@ -1,15 +1,14 @@
-import dataSource from "../config/data-source";
-import {  Leads } from "../models/Leads.entity";
+import { getDataSource } from "../config/data-source"; // Updated import
+import { Leads } from "../models/Leads.entity";
 import httpStatusCodes from "http-status-codes";
 
 export class MapService {
   async getCustomerMap(
     repId: number
   ): Promise<{ status: number; message: string; data: any }> {
-    const queryRunner = dataSource.createQueryRunner();
-    await queryRunner.startTransaction();
+    const dataSource = await getDataSource();
     try {
-      const customers = await queryRunner.manager.find(Leads, {
+      const customers = await dataSource.manager.find(Leads, {
         where: { assigned_rep_id: repId, is_active: true },
         relations: ["address"],
       });
@@ -20,21 +19,17 @@ export class MapService {
         latitude: c.address.latitude,
         longitude: c.address.longitude,
       }));
-      await queryRunner.commitTransaction();
       return {
         status: httpStatusCodes.OK,
         data: mapData,
         message: "Customer map retrieved successfully",
       };
     } catch (error: any) {
-      await queryRunner.rollbackTransaction();
       return {
         status: httpStatusCodes.BAD_REQUEST,
         message: error.message,
         data: null,
       };
-    } finally {
-      await queryRunner.release();
     }
   }
 }

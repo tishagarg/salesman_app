@@ -1,5 +1,5 @@
 import { UserQuery } from "../query/user.query";
-import dataSource from "../config/data-source";
+import { getDataSource } from "../config/data-source";
 import bcrypt from "bcrypt";
 import httpStatusCodes from "http-status-codes";
 
@@ -38,11 +38,13 @@ export class UserTeamService {
       body: `Your password is ${password} and email is ${email}. Please reset your password after login.`,
     });
   }
+
   async assignManagerToSalesRep(
     userData: IJwtVerify,
     manager_id: number,
     sales_rep_ids: number[]
   ): Promise<{ status: number; data?: any; message: string }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
 
@@ -57,7 +59,7 @@ export class UserTeamService {
         await queryRunner.rollbackTransaction();
         return { status: 404, message: "Manager not found", data: null };
       }
-      if (manager?.role.role_name != Roles.MANAGER) {
+      if (manager?.role.role_name !== Roles.MANAGER) {
         await queryRunner.rollbackTransaction();
         return { status: 404, message: "User is not a manager", data: null };
       }
@@ -116,8 +118,9 @@ export class UserTeamService {
     message: string;
     total: number;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
-    queryRunner.startTransaction();
+    await queryRunner.startTransaction();
     try {
       const [salesRep, total] = await userQuery.getAllUsersWithRoleName(
         queryRunner.manager,
@@ -139,6 +142,7 @@ export class UserTeamService {
         message: "Users fetched successfully",
       };
     } catch (error) {
+      await queryRunner.rollbackTransaction();
       console.log(error);
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
@@ -146,23 +150,34 @@ export class UserTeamService {
         data: null,
         total: 0,
       };
+    } finally {
+      await queryRunner.release();
     }
   }
+
   async getUserById(userId: number): Promise<{
     status: number;
     data?: any;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
 
     try {
       await queryRunner.startTransaction();
-      // const user = await userQuery.findById(queryRunner.manager, userId);
       const getUserByIdWithOrganization =
         await organizationQuery.getUserByIdWithOrganization(
           queryRunner.manager,
           userId
         );
+
+      if (!getUserByIdWithOrganization) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.NOT_FOUND,
+          message: "User not found",
+        };
+      }
 
       const { password_hash, ...safeUser } = getUserByIdWithOrganization;
       await queryRunner.commitTransaction();
@@ -192,6 +207,7 @@ export class UserTeamService {
     data?: any;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     try {
       await queryRunner.startTransaction();
@@ -272,6 +288,7 @@ export class UserTeamService {
     total?: number;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
 
     try {
@@ -296,7 +313,6 @@ export class UserTeamService {
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
-
       return {
         status: 500,
         message: "Error fetching users",
@@ -314,6 +330,7 @@ export class UserTeamService {
     data?: any;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
 
     try {
@@ -339,7 +356,6 @@ export class UserTeamService {
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
-
       return {
         status: 500,
         message: "Error fetching user",
@@ -358,6 +374,7 @@ export class UserTeamService {
     data?: any;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     try {
       await queryRunner.startTransaction();
@@ -368,7 +385,6 @@ export class UserTeamService {
         org_id,
         user_id
       );
-      console;
 
       if (!existingUser) {
         await queryRunner.rollbackTransaction();
@@ -465,6 +481,7 @@ export class UserTeamService {
     data?: any;
     message: string;
   }> {
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     try {
       await queryRunner.startTransaction();
@@ -530,6 +547,7 @@ export class UserTeamService {
       };
     }
 
+    const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
 
     try {
@@ -631,8 +649,7 @@ export class UserTeamService {
       console.error("Error updating user profile:", error);
       return {
         status: 500,
-        message: `Error updating user profiler"
-        }`,
+        message: "Error updating user profile",
       };
     } finally {
       await queryRunner.release();

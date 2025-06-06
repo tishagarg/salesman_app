@@ -1,13 +1,11 @@
 import { EntityManager } from "typeorm";
-import dataSource from "../config/data-source";
-import {
-  IsaveTokenParams,
-  ISaveUserParams,
-} from "../interfaces/user.interface";
+import { getDataSource } from "../config/data-source";
+import { IsaveTokenParams } from "../interfaces/user.interface";
 import { User, UserToken } from "../models/index";
 import { UserTokenQuery } from "./usertoken.query";
-import { Roles } from "../enum/roles";
+
 const userTokenQuery = new UserTokenQuery();
+
 export class UserQuery {
   async findUserByEmail(
     manager: EntityManager,
@@ -19,18 +17,28 @@ export class UserQuery {
     });
   }
 
-  async findByEmailAndId(email: string, id: number): Promise<User | null> {
-    const dbUser = await dataSource.getRepository(User).findOne({
+  async findByEmailAndId(
+    email: string,
+    id: number,
+    manager?: EntityManager
+  ): Promise<User | null> {
+    const dataSource = manager ? null : await getDataSource();
+    const repository = manager
+      ? manager.getRepository(User)
+      : dataSource!.getRepository(User);
+    return await repository.findOne({
       where: { email, user_id: id },
     });
-    return dbUser;
   }
 
-  async findById(id: number): Promise<User | null> {
-    const dbUser = await dataSource.getRepository(User).findOne({
+  async findById(id: number, manager?: EntityManager): Promise<User | null> {
+    const dataSource = manager ? null : await getDataSource();
+    const repository = manager
+      ? manager.getRepository(User)
+      : dataSource!.getRepository(User);
+    return await repository.findOne({
       where: { user_id: id },
     });
-    return dbUser;
   }
 
   async addUser(
@@ -39,7 +47,6 @@ export class UserQuery {
   ): Promise<User> {
     const userRepo = manager.getRepository(User);
 
-    // Create a new user instance
     const newUser = userRepo.create({
       ...userData,
       created_at: new Date(),
@@ -78,12 +85,16 @@ export class UserQuery {
     return savedToken;
   }
 
-  async findByEmail(email: string): Promise<User | null> {
-    const dbUser = await dataSource.getRepository(User).findOne({
+  async findByEmail(email: string, manager?: EntityManager): Promise<User | null> {
+    const dataSource = manager ? null : await getDataSource();
+    const repository = manager
+      ? manager.getRepository(User)
+      : dataSource!.getRepository(User);
+    return await repository.findOne({
       where: { email },
     });
-    return dbUser;
   }
+
   async createUser(
     manager: EntityManager,
     userData: Partial<User>
@@ -115,6 +126,7 @@ export class UserQuery {
 
     return updatedUser;
   }
+
   async getAllUsersWithRoleName(
     manager: EntityManager,
     org_id: number,
@@ -147,6 +159,7 @@ export class UserQuery {
       .where("user.org_id = :org_id", { org_id })
       .andWhere("user.is_active = :is_active", { is_active: true })
       .andWhere("role.role_name = :role_name", { role_name });
+
     if (search && search.trim() !== "") {
       const searchTerm = `%${search.trim().toLowerCase()}%`;
       query = query.andWhere(
@@ -164,6 +177,7 @@ export class UserQuery {
       .getManyAndCount();
     return [users, total];
   }
+
   async getAllUsersWithRoles(
     manager: EntityManager,
     org_id: number,
@@ -193,6 +207,7 @@ export class UserQuery {
         "role.role_name",
       ])
       .where("user.org_id = :org_id", { org_id });
+
     if (search && search.trim() !== "") {
       const searchTerm = `%${search.trim().toLowerCase()}%`;
       query = query.andWhere(
