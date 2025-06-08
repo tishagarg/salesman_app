@@ -3,11 +3,12 @@ import { Leads } from "../models/Leads.entity";
 import { Visit } from "../models/Visits.entity";
 import { Route } from "../models/Route.entity";
 import httpStatusCodes from "http-status-codes";
-import { MoreThanOrEqual } from "typeorm";
+import { IsNull, MoreThanOrEqual } from "typeorm";
 import axios from "axios";
 import cron from "node-cron";
 import { User } from "../models";
 import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
+import { uploadFileBufferToS3 } from "../aws/aws.service";
 
 require("dotenv").config();
 
@@ -104,13 +105,9 @@ export class VisitService {
         (customer) =>
           `${customer.address.latitude},${customer.address.longitude}`
       );
-
-      // Step 4: Mock rep's starting location (replace with GPS in production)
-      const repLocation = { latitude: 60.1695, longitude: 24.9354 }; // Helsinki coordinates
-
-      // Step 5: Call Google Maps Directions API for optimized route
+      const repLocation = { latitude: 60.1695, longitude: 24.9354 };
       const origin = `${repLocation.latitude},${repLocation.longitude}`;
-      const destination = origin; // Return to starting point
+      const destination = origin;
       const directionsResponse = await axios.get(
         "https://maps.googleapis.com/maps/api/directions/json",
         {
@@ -143,16 +140,12 @@ export class VisitService {
         const index = waypointOrder[i];
         const customer = validCustomers[index];
         const leg = route.legs[i];
-
-        // Calculate ETA
-        const duration = leg.duration.value / 60; // Convert seconds to minutes
+        const duration = leg.duration.value / 60;
         currentTime = new Date(currentTime.getTime() + duration * 60000);
         const eta = currentTime.toLocaleTimeString([], {
           hour: "2-digit",
           minute: "2-digit",
         });
-
-        // Create visit record
         const visit = await queryRunner.manager.create(Visit, {
           lead_id: customer.lead_id,
           rep_id: repId,
@@ -163,18 +156,13 @@ export class VisitService {
           is_active: true,
         });
         visits.push(visit);
-
-        // Add to route order
         routeOrder.push({
           lead_id: customer.lead_id,
-          distance: Number((leg.distance.value / 1000).toFixed(2)), // Convert meters to kilometers
+          distance: Number((leg.distance.value / 1000).toFixed(2)),
           eta,
         });
       }
-
-      // Step 7: Save visits and route
       await queryRunner.manager.save(Visit, visits);
-
       const routeEntity = await queryRunner.manager.save(Route, {
         rep_id: repId,
         route_date: startOfDay,
@@ -236,61 +224,101 @@ export class VisitService {
     }
   }
 
-  async logVisit(data: {
-    lead_id: number;
-    rep_id: number;
-    latitude: number;
-    longitude: number;
-    notes?: string;
-    photo_urls?: string[];
-  }): Promise<{ status: number; data?: any; message: string }> {
-    const dataSource = await getDataSource();
-    const queryRunner = dataSource.createQueryRunner();
-    await queryRunner.startTransaction();
-    try {
-      const customer = await queryRunner.manager.findOne(Leads, {
-        where: { lead_id: data.lead_id, assigned_rep_id: data.rep_id },
-      });
-      if (!customer) {
-        throw new Error("Customer not assigned to rep");
-      }
-      const existingVisit = await queryRunner.manager.findOne(Visit, {
-        where: {
-          lead_id: data.lead_id,
-          check_in_time: MoreThanOrEqual(
-            new Date(new Date().setHours(0, 0, 0, 0))
-          ),
-        },
-      });
-      if (existingVisit) {
-        throw new Error("Duplicate visit for today");
-      }
-      const visit = await queryRunner.manager.save(Visit, {
+ async logVisit(data: {
+  lead_id: number;
+  rep_id: number;
+  latitude: number;
+  longitude: number;
+  notes?: string;
+  photos?: Express.Multer.File[];
+}): Promise<{ status: number; data?: any; message: string }> {
+  const dataSource = await getDataSource();
+  const queryRunner = dataSource.createQueryRunner();
+  await queryRunner.startTransaction();
+  try {
+    const customer = await queryRunner.manager.findOne(Leads, {
+      where: { lead_id: data.lead_id, assigned_rep_id: data.rep_id },
+    });
+    if (!customer) {
+      throw new Error("Customer not assigned to rep");
+    }
+
+    const existingVisit = await queryRunner.manager.findOne(Visit, {
+      where: {
+        lead_id: data.lead_id,
+        check_in_time: MoreThanOrEqual(
+          new Date(new Date().setHours(0, 0, 0, 0))
+        ),
+        check_out_time: IsNull(),
+      },
+    });
+    let photo_urls: string[] = [];
+    // if (data.photos && data.photos.length > 0) {
+    //   photo_urls = await Promise.all(
+    //     data.photos.map(async (file, index) => {
+    //       const fileKey = `visits/${data.rep_id}/${
+    //         data.lead_id
+    //       }/${Date.now()}-${index}-${file.originalname}`;
+    //       await uploadFileBufferToS3(file.buffer, fileKey); 
+    //       const bucketName = process.env.AWS_S3_BUCKET_NAME;
+    //       if (!bucketName) {
+    //         throw new Error("AWS_S3_BUCKET_NAME environment variable is not set");
+    //       }
+    //       return `https://${bucketName}.s3.amazonaws.com/${fileKey}`;
+    //     })
+    //   );
+    // }
+
+    let visit;
+    if (existingVisit) {
+      existingVisit.check_in_time = new Date();
+      existingVisit.latitude = data.latitude;
+      existingVisit.longitude = data.longitude;
+      existingVisit.notes = data.notes || existingVisit.notes;
+      existingVisit.photo_urls = [
+        ...(Array.isArray(existingVisit.photo_urls)
+          ? existingVisit.photo_urls
+          : existingVisit.photo_urls
+          ? JSON.parse(existingVisit.photo_urls)
+          : []),
+        ...photo_urls,
+      ];
+      existingVisit.updated_by = data.rep_id.toString();
+      visit = await queryRunner.manager.save(Visit, existingVisit);
+    } else {
+      // Create a new visit
+      visit = await queryRunner.manager.save(Visit, {
         lead_id: data.lead_id,
         rep_id: data.rep_id,
         check_in_time: new Date(),
         latitude: data.latitude,
         longitude: data.longitude,
         notes: data.notes,
-        photo_urls: JSON.stringify(data.photo_urls || []),
+        photo_urls: photo_urls, // Assign as array, TypeORM will serialize to JSON
         created_by: data.rep_id.toString(),
       });
-      await queryRunner.commitTransaction();
-      return {
-        status: httpStatusCodes.OK,
-        data: visit,
-        message: "Visit logged successfully",
-      };
-    } catch (error: any) {
-      await queryRunner.rollbackTransaction();
-      return {
-        status: httpStatusCodes.BAD_REQUEST,
-        message: error.message,
-      };
-    } finally {
-      await queryRunner.release();
     }
+
+    await dataSource
+      .getRepository(Leads)
+      .update(customer.lead_id, { is_visited: true });
+    await queryRunner.commitTransaction();
+    return {
+      status: httpStatusCodes.OK,
+      data: visit,
+      message: "Visit logged successfully",
+    };
+  } catch (error) {
+    console.error("Error logging visit:", error);
+    await queryRunner.rollbackTransaction();
+    return {
+      status: httpStatusCodes.BAD_REQUEST,
+      message: "Failed to log visit",
+    };
+  } finally {
+    await queryRunner.release();
   }
+}
 
   async generateDailyRoute(
     repId: number

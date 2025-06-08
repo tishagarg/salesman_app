@@ -53,6 +53,8 @@ export class Leads {
   @Column({ type: "boolean", default: true })
   is_active: boolean;
   @Column({ type: "boolean", default: false })
+  is_visited: boolean;
+  @Column({ type: "boolean", default: false })
   pending_assignment: boolean;
   @Column({
     type: "enum",
