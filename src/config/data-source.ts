@@ -38,7 +38,7 @@ export const dataSourceOptions: DataSourceOptions = {
     rejectUnauthorized: false,
   },
   synchronize: false,
-  logging: process.env.NODE_ENV === "production" ? ["error"] : ["query", "error"],
+  logging: process.env.NODE_ENV === "production" ? ["error"] : [ "error"],
   entities: [
     User,
     Organization,

@@ -5,6 +5,10 @@ import { Route } from "../models/Route.entity";
 import httpStatusCodes from "http-status-codes";
 import { MoreThanOrEqual } from "typeorm";
 import axios from "axios";
+import cron from "node-cron";
+import { User } from "../models";
+import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
+
 require("dotenv").config();
 
 const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
@@ -16,6 +20,36 @@ if (!GOOGLE_MAPS_API_KEY) {
 }
 
 export class VisitService {
+  async getRepsToPlanVisits() {
+    const dataSource = await getDataSource();
+    return dataSource.getRepository(User).find({
+      where: {
+        role_id: 9,
+        is_active: true,
+      },
+    });
+  }
+  async getManagerIdForRep(repId: number): Promise<number> {
+    const dataSource = await getDataSource();
+    const rep = await dataSource.getRepository(User).findOne({
+      where: { user_id: repId },
+    });
+
+    if (!rep) {
+      throw new Error(`Rep with id ${repId} not found`);
+    }
+    const manager = await dataSource.getRepository(ManagerSalesRep).findOne({
+      where: {
+        sales_rep_id: repId,
+      },
+    });
+
+    if (!manager) {
+      throw new Error(`No manager found for rep with id ${repId}`);
+    }
+
+    return manager.manager_id;
+  }
   async planDailyVisits(
     repId: number,
     managerId: number,

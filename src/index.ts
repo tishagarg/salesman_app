@@ -6,6 +6,7 @@ import router from "./routes/index.route";
 import cors from "cors";
 import { verifyToken } from "./middleware/auth.middleware";
 import { UserTeamController } from "./controllers/user.controller";
+import { planVisitsTask } from "./service/nodeCron.service";
 
 const PORT = process.env.PORT || 3002;
 
@@ -29,35 +30,46 @@ const PORT = process.env.PORT || 3002;
   app.use("/api", router);
   app.use(verifyToken);
   app.get("/api/user/me", userController.getUserById);
-
   const MAX_RETRIES = 5;
   const INITIAL_RETRY_DELAY = 5000;
 
-const connect = async (retries = 0) => {
-  try {
-    if (!dataSource.isInitialized) {
-      await dataSource.initialize();
-      console.log("Data Source has been initialized!");
-    } else {
-      console.log("Data Source already initialized. Skipping initialization.");
+  const connect = async (retries = 0) => {
+    try {
+      if (!dataSource.isInitialized) {
+        await dataSource.initialize();
+        console.log("Data Source has been initialized!");
+      } else {
+        console.log(
+          "Data Source already initialized. Skipping initialization."
+        );
+      }
+
+      const server = app.listen(PORT, () => {
+        console.log(
+          `Server is running on http://localhost:${
+            (server.address() as any).port
+          }`
+        );
+      });
+    } catch (error) {
+      console.error(
+        `Database connection failed (Attempt ${retries + 1}):`,
+        error
+      );
+
+      if (retries < MAX_RETRIES) {
+        const retryDelay = INITIAL_RETRY_DELAY * Math.pow(2, retries); // exponential backoff
+        console.log(`🔁 Retrying in ${retryDelay / 1000} seconds...`);
+        setTimeout(() => connect(retries + 1), retryDelay);
+      } else {
+        console.log(
+          `The connection to database failed after ${MAX_RETRIES} attempts.`
+        );
+      }
     }
-
-    const server = app.listen(PORT, () => {
-      console.log(`Server is running on http://localhost:${(server.address() as any).port}`);
-    });
-
-  } catch (error) {
-    console.error(`Database connection failed (Attempt ${retries + 1}):`, error);
-
-    if (retries < MAX_RETRIES) {
-      const retryDelay = INITIAL_RETRY_DELAY * Math.pow(2, retries); // exponential backoff
-      console.log(`🔁 Retrying in ${retryDelay / 1000} seconds...`);
-      setTimeout(() => connect(retries + 1), retryDelay);
-    } else {
-      console.log(`The connection to database failed after ${MAX_RETRIES} attempts.`);
-    }
-  }
-};
+  };
 
   connect();
+    planVisitsTask();
+
 })();

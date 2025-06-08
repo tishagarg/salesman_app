@@ -1,4 +1,5 @@
 import { getDataSource } from "../config/data-source"; // Updated import
+import { Role } from "../models";
 import { Leads } from "../models/Leads.entity";
 import { Visit } from "../models/Visits.entity";
 import httpStatusCodes from "http-status-codes";
@@ -6,17 +7,19 @@ import httpStatusCodes from "http-status-codes";
 export class DashboardService {
   async getDashboard(
     orgId: number,
-    role: string,
-    userId: number
+    userId: number,
+    role_id: number
   ): Promise<{ status: number; message: string; data: any }> {
     const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
-      const visitWhere =
-        role === "admin" ? { org_id: orgId } : { rep_id: userId };
+      const role = await dataSource
+        .getRepository(Role)
+        .findOne({ where: { role_id } });
+      const visitWhere = role?.role_name !== "admin" ? { rep_id: userId } : {};
       const customerWhere =
-        role === "admin" ? { org_id: orgId } : { assigned_rep_id: userId };
+        role?.role_name !== "admin" ? { assigned_rep_id: userId } : {};
       const visits = await queryRunner.manager.find(Visit, {
         where: visitWhere,
       });
