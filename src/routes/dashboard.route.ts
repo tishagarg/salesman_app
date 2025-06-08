@@ -3,5 +3,9 @@ import { permissionMiddleware } from "../middleware/permission.middleware";
 const dashboardController = new DashboardController();
 import express from "express";
 const router = express.Router();
-router.post("/", permissionMiddleware(""), dashboardController.getDashboard);
+router.get(
+  "/",
+  permissionMiddleware("customer_import"),
+  dashboardController.getDashboard
+);
 export default router;

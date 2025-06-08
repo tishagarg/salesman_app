@@ -5,11 +5,11 @@ import { ApiResponse } from "../utils/api.response";
 const dashboardService = new DashboardService();
 export class DashboardController {
   async getDashboard(req: any, res: Response): Promise<void> {
-    const { org_id, user_id, role } = req.user;
+    const { org_id, user_id, role_id } = req.user;
     const response = await dashboardService.getDashboard(
       org_id,
       user_id,
-      role.role_name
+      role_id
     );
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);

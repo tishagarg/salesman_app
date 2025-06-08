@@ -640,14 +640,10 @@ export class CustomerService {
       const addresses: Address[] = [];
       const customers: Leads[] = [];
       const errors: string[] = [];
-
-      // Fetch territories once (outside transaction to reduce scope)
       const territories = await dataSource.manager.find(Territory, {
         where: { org_id, is_active: true },
         select: ["territory_id", "regions", "subregions", "postal_codes"],
       });
-
-      // Unified lookup map for territory matching
       const territoryLookup = new Map<string, number>();
       territories.forEach((territory) => {
         const territoryId = territory.territory_id;
@@ -672,28 +668,20 @@ export class CustomerService {
           console.warn(`Malformed JSON in territory ${territoryId}: ${e}`);
         }
       });
-
-      // Cache for geocoding results
       const geocodeCache = new Map<
         string,
         { latitude: number; longitude: number }
       >();
-
-      // Process data in batches
       for (let i = 0; i < data.length; i += batchSize) {
         await queryRunner.startTransaction();
         try {
           const batch = data.slice(i, i + batchSize);
-
-          // Prepare address keys for bulk lookup
           const addressKeys = batch.map((row) => ({
             postal_code: row.postal_code || "00000",
             street_address: row.street_address || "",
             subregion: row.subregion || row.city || "",
             org_id,
           }));
-
-          // Bulk fetch existing addresses
           const existingAddresses = await queryRunner.manager.find(Address, {
             where: addressKeys,
             select: [
