@@ -70,6 +70,6 @@ const PORT = process.env.PORT || 3002;
   };
 
   connect();
-    planVisitsTask();
+    // planVisitsTask();
 
 })();

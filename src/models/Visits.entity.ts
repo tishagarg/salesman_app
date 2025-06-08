@@ -35,8 +35,13 @@ export class Visit {
   @Column({ type: "text", nullable: true })
   notes: string;
 
-  @Column({ type: "text", nullable: true })
-  photo_urls: string;
+  @Column({ type: "jsonb", nullable: true })
+  photo_urls: string[];
+  @Column({ type: "timestamp", nullable: true })
+  next_visit_date: Date;
+  @Column({ type: "varchar", length: "500", nullable: true })
+  action_required: string;
+
   @Column({ type: "boolean", default: true })
   is_active: boolean;
 

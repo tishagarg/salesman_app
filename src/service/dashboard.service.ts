@@ -34,9 +34,7 @@ export class DashboardService {
         },
         leads: {
           total: leads.length,
-          visited: leads.filter((c) =>
-            visits.some((v) => v.lead_id === c.lead_id)
-          ).length,
+          visited: leads.filter((c) => c.is_visited).length,
         },
       };
       await queryRunner.commitTransaction();
