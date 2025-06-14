@@ -241,7 +241,6 @@ export interface IRegion {
 export interface ITeamMember {
   role_name: Roles;
   first_name: string;
-  full_name: string;
   last_name: string;
   email: string;
   phone: string;

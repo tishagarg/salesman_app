@@ -583,10 +583,7 @@ export class TerritoryService {
         updated_by: adminId.toString(),
       });
 
-      const savedTerritory = await queryRunner.manager.save(
-        Territory,
-        territory
-      );
+      let savedTerritory = await queryRunner.manager.save(Territory, territory);
 
       // Handle salesmanIds
       if (data.salesmanIds?.length) {
@@ -597,6 +594,26 @@ export class TerritoryService {
           })
         );
         await queryRunner.manager.save(TerritorySalesman, territorySalesmen);
+      }
+      if (data.manager_id) {
+        await queryRunner.manager.update(
+          Territory,
+          savedTerritory.territory_id,
+          {
+            manager_id: data.manager_id,
+          }
+        );
+        const foundTerritory = await queryRunner.manager.findOne(Territory, {
+          where: { territory_id: savedTerritory.territory_id },
+        });
+        if (!foundTerritory) {
+          await queryRunner.rollbackTransaction();
+          return {
+            status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+            message: "Failed to retrieve the updated territory after manager assignment.",
+          };
+        }
+        savedTerritory = foundTerritory;
       }
 
       await queryRunner.commitTransaction();
