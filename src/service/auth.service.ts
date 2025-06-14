@@ -520,9 +520,9 @@ export class AuthService {
 
       await userTokenQuery.deleteTokenFromDatabase(token);
 
-      await queryRunner.manager.getRepository(RefreshToken).delete({
-        user_id: payload.user_id,
-      });
+      // await queryRunner.manager.getRepository(RefreshToken).delete({
+      //   user_id: payload.user_id,
+      // });
 
       await queryRunner.commitTransaction();
 
@@ -715,21 +715,21 @@ export class AuthService {
     await queryRunner.startTransaction();
 
     try {
-      const decoded = await verifyRefreshToken(refreshToken);
-
       const tokenRecord = await dataSource.manager
         .getRepository(RefreshToken)
         .findOneByOrFail({
-          user_id: decoded.user_id,
           token: refreshToken,
         });
+
       if (!(tokenRecord && tokenRecord.expires_at > new Date())) {
         await queryRunner.rollbackTransaction();
         return {
-          status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+          status: httpStatusCodes.UNAUTHORIZED,
           message: "Token not found or expired",
         };
       }
+      const decoded = await verifyRefreshToken(refreshToken);
+
       const user = await queryRunner.manager.getRepository(User).findOne({
         where: { user_id: decoded.user_id },
       });
@@ -776,6 +776,7 @@ export class AuthService {
         message: "Token refreshed successfully",
       };
     } catch (error) {
+      console.log(error);
       await queryRunner.rollbackTransaction();
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
