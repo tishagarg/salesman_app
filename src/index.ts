@@ -6,7 +6,8 @@ import router from "./routes/index.route";
 import cors from "cors";
 import { verifyToken } from "./middleware/auth.middleware";
 import { UserTeamController } from "./controllers/user.controller";
-import { planVisitsTask } from "./service/nodeCron.service";
+import { schedule } from "node-cron";
+import { runDailyVisitPlanning } from "./service/nodeCron.service";
 
 const PORT = process.env.PORT || 3002;
 
@@ -16,10 +17,11 @@ const PORT = process.env.PORT || 3002;
   const userController = new UserTeamController();
 
   app.use(cors());
+  let isCronInitialized = false;
 
   app.use(
     expressSession({
-      secret: "your-secret-key",
+      secret: process.env.SESSION_SECRET || "your-secret-key",
       resave: false,
       saveUninitialized: false,
     })
@@ -30,6 +32,7 @@ const PORT = process.env.PORT || 3002;
   app.use("/api", router);
   app.use(verifyToken);
   app.get("/api/user/me", userController.getUserById);
+
   const MAX_RETRIES = 5;
   const INITIAL_RETRY_DELAY = 5000;
 
@@ -38,6 +41,12 @@ const PORT = process.env.PORT || 3002;
       if (!dataSource.isInitialized) {
         await dataSource.initialize();
         console.log("Data Source has been initialized!");
+        console.log("Running daily visit planning...");
+        await runDailyVisitPlanning();
+
+       // initializeCronJobs();
+
+        // Run immediate task execution for testing
       } else {
         console.log(
           "Data Source already initialized. Skipping initialization."
@@ -51,6 +60,8 @@ const PORT = process.env.PORT || 3002;
           }`
         );
       });
+              // await runDailyVisitPlanning();
+
     } catch (error) {
       console.error(
         `Database connection failed (Attempt ${retries + 1}):`,
@@ -62,14 +73,33 @@ const PORT = process.env.PORT || 3002;
         console.log(`🔁 Retrying in ${retryDelay / 1000} seconds...`);
         setTimeout(() => connect(retries + 1), retryDelay);
       } else {
-        console.log(
+        console.error(
           `The connection to database failed after ${MAX_RETRIES} attempts.`
         );
+        process.exit(1);
       }
     }
   };
 
-  connect();
-    // planVisitsTask();
+  function initializeCronJobs() {
+    if (isCronInitialized) {
+      console.log("Cron job already initialized. Skipping.");
+      return;
+    }
 
+    schedule(
+      "0 7 * * *",
+      async () => {
+        await runDailyVisitPlanning();
+        console.log("Running daily visit planning...");
+      },
+      {
+        timezone: "Asia/Kolkata",
+      }
+    );
+
+    isCronInitialized = true;
+  }
+
+  await connect();
 })();

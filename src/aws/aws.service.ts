@@ -10,7 +10,6 @@ import path from 'path';
 import dotenv from 'dotenv';
 
 dotenv.config();
-console.log(process.env.AWS_ACCESS_KEY, " ",process.env.AWS_SECRET_KEY )
 // Ensure AWS credentials and bucket name are set
 if (
   !process.env.AWS_ACCESS_KEY ||

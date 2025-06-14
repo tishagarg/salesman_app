@@ -1,32 +1,61 @@
-import cron from "node-cron";
+
+import { v4 as uuidv4 } from "uuid";
+import { In } from "typeorm";
+import { getDataSource } from "../config/data-source";
+import { User } from "../models";
+import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
 import { VisitService } from "./visit.service";
-
 const visitService = new VisitService();
-
-// Define the task logic as a reusable function
-export const planVisitsTask = async () => {
-  console.log("Running daily visit planning...");
+export async function runDailyVisitPlanning() {
+  const dataSource = await getDataSource();
+  const queryRunner = dataSource.createQueryRunner();
+  await queryRunner.startTransaction();
 
   try {
-    const reps = await visitService.getRepsToPlanVisits();
-    for (const rep of reps) {
-      const managerId = await visitService.getManagerIdForRep(rep.user_id);
-      console.log("managerId ", managerId);
-      const response = await visitService.planDailyVisits(
-        rep.user_id,
+    // Fetch all active sales reps
+    const reps = await queryRunner.manager.find(User, {
+      where: { is_active: true, role_id: 9 },
+      select: ["user_id"],
+    });
+    const repIds = reps.map((rep:any) => rep.user_id);
+    console.log(`Planning visits for reps: ${repIds.join(", ")}`);
+
+    // Fetch manager assignments for all repIds
+    const managerAssignments = await queryRunner.manager.find(ManagerSalesRep, {
+      where: { sales_rep_id: In(repIds) },
+      select: ["manager_id", "sales_rep_id"],
+    });
+
+    // Create a map of repId to managerId for quick lookup
+    const repToManagerMap = new Map<number, number>();
+    managerAssignments.forEach((assignment) => {
+      repToManagerMap.set(assignment.sales_rep_id, assignment.manager_id);
+    });
+
+    for (const repId of repIds) {
+      const managerId = repToManagerMap.get(repId);
+      if (!managerId) {
+        console.warn(`No manager assigned for repId: ${repId}, skipping...`);
+        continue;
+      }
+
+      const idempotencyKey = uuidv4();
+      // console.log(
+      //   `Planning visits for repId: ${repId}, managerId: ${managerId}, idempotencyKey: ${idempotencyKey}`
+      // );
+      const result = await visitService.planDailyVisits(
+        repId,
         managerId,
-        new Date()
-      );
-      console.log(
-        `Planned for rep ${rep.user_id}: ${response.status} - ${response.message}`
+        new Date(),
+        idempotencyKey
       );
     }
-  } catch (error) {
-    console.error("Error during scheduled visit planning:", error);
+
+    await queryRunner.commitTransaction();
+  } catch (error: any) {
+    await queryRunner.rollbackTransaction();
+    console.error(`Error during scheduled visit planning: ${error.message}`);
+  } finally {
+    await queryRunner.release();
   }
-};
-
-// Schedule the task to run daily at 7:00 AM
-const job = cron.schedule("0 7 * * *", planVisitsTask);
-
-// Run the task immediately
+}
