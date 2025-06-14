@@ -242,7 +242,6 @@ export class UserTeamService {
         };
       }
       const newUser = await userQuery.createUser(queryRunner.manager, {
-        full_name: params.full_name,
         role_id: role_id,
         email: params.email,
         org_id,

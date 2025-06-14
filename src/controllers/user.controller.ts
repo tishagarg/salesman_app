@@ -51,8 +51,7 @@ export class UserTeamController {
     const { org_id, user_id } = req.user;
     const params: ITeamMemberBody = req.body;
     const response = await userTeamService.addTeamMember(org_id, user_id, {
-      ...params,
-      full_name: params.first_name + " " + params.last_name,
+      ...params
     });
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);

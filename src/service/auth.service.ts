@@ -129,7 +129,10 @@ export class AuthService {
         user.user_id
       );
       if (existingToken) {
-        await userTokenQuery.deleteUserTokens(queryRunner.manager, user.user_id);
+        await userTokenQuery.deleteUserTokens(
+          queryRunner.manager,
+          user.user_id
+        );
       }
       await userQuery.saveToken(queryRunner.manager, {
         id: token,
@@ -143,15 +146,18 @@ export class AuthService {
       const existingRefreshToken = await dataSource
         .getRepository(RefreshToken)
         .findOne({ where: { user_id: user.user_id } });
-      if (existingRefreshToken) {
-        await userTokenQuery.deleteRefreshTokens(queryRunner.manager, user.user_id);
+      let refreshToken;
+      if (!existingRefreshToken) {
+        const newRefreshToken = await generateRefreshToken(user.user_id);
+        const newTokenData = await this.saveRefreshToken(
+          queryRunner.manager,
+          user.user_id,
+          newRefreshToken
+        );
+        refreshToken = newTokenData.token;
+      } else {
+        refreshToken = existingRefreshToken.token;
       }
-      const refreshToken = await generateRefreshToken(user.user_id);
-      await this.saveRefreshToken(
-        queryRunner.manager,
-        user.user_id,
-        refreshToken
-      );
       const getUserByIdWithOrganization =
         await organizationQuery.getUserByIdWithOrganization(
           queryRunner.manager,
