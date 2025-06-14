@@ -32,7 +32,7 @@ export class VisitController {
   async logVisit(req: any, res: Response): Promise<void> {
     const { lead_id, latitude, longitude, notes } = req.body;
     const rep_id = req.user.user_id;
-    const files = req.files as Express.Multer.File[]; 
+    const files = req.files as Express.Multer.File[];
     if (!lead_id || !latitude || !longitude) {
       return ApiResponse.error(
         res,
@@ -64,7 +64,6 @@ export class VisitController {
     );
   }
   async getDailyRoute(req: any, res: Response): Promise<void> {
-    console.log(req.user);
     const rep_id = req.user.user_id;
 
     const response = await visitService.getDailyRoute(rep_id);
@@ -83,7 +82,18 @@ export class VisitController {
 
   async refreshDailyRoute(req: any, res: Response): Promise<void> {
     const rep_id = req.user.user_id;
-    const response = await visitService.refreshDailyRoute(rep_id);
+    const { latitude, longitude } = req.query;
+    console.log("Query params:", { latitude, longitude });
+
+    const parsedLatitude =
+      typeof latitude === "string" ? parseFloat(latitude) : Number(latitude);
+    const parsedLongitude =
+      typeof longitude === "string" ? parseFloat(longitude) : Number(longitude);
+    const response = await visitService.refreshDailyRoute(
+      rep_id,
+      parsedLatitude,
+      parsedLongitude
+    );
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
     }
@@ -98,7 +108,7 @@ export class VisitController {
   }
   async getDailyRouteAdmin(req: any, res: Response): Promise<void> {
     const managerId = req.user.user_id;
-    const roleId = req.user.role_id; // Get the user's role_id
+    const roleId = req.user.role_id;
     const repId = req.query.rep_id ? parseInt(req.query.rep_id) : null;
     const date = req.query.date ? new Date(req.query.date) : new Date();
     date.setHours(0, 0, 0, 0);
@@ -242,5 +252,5 @@ export class VisitController {
         error.message || "Failed to retrieve daily routes and visits"
       );
     }
-  } // async getDailyRouteAdmin(req:any, res:Response):Promise<void>{}
+  }
 }

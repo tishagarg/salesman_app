@@ -156,11 +156,7 @@ export class AddressService {
       address.updated_by = String(userId);
       address.city = data.subregion;
       address.state = data.region;
-
-      console.log("address inside create ", address);
       const savedAddress = await queryRunner.manager.save(Address, address);
-      console.log("saved address inside create ", savedAddress);
-
       if (!savedAddress.address_id) {
         await queryRunner.rollbackTransaction();
         return {

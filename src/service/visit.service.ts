@@ -1,474 +1,671 @@
-import { getDataSource } from "../config/data-source"; // Updated import
+import { getDataSource } from "../config/data-source";
 import { Leads } from "../models/Leads.entity";
 import { Visit } from "../models/Visits.entity";
 import { Route } from "../models/Route.entity";
-import httpStatusCodes from "http-status-codes";
-import { IsNull, MoreThanOrEqual } from "typeorm";
-import axios from "axios";
-import cron from "node-cron";
-import { User } from "../models";
 import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
-import { uploadFileBufferToS3 } from "../aws/aws.service";
+import { Idempotency } from "../models/Idempotency";
+import httpStatusCodes from "http-status-codes";
+import {
+  Between,
+  Double,
+  Equal,
+  IsNull,
+  LessThan,
+  MoreThanOrEqual,
+  QueryRunner,
+} from "typeorm";
+import axios from "axios";
+import { v4 as uuidv4 } from "uuid";
 
 require("dotenv").config();
 
-const GOOGLE_MAPS_API_KEY = process.env.GOOGLE_MAPS_API_KEY;
+interface RouteOrderItem {
+  lead_id: number;
+  latitude?: number;
+  longitude?: number;
+  distance: number;
+  eta: string;
+}
 
-if (!GOOGLE_MAPS_API_KEY) {
-  throw new Error(
-    "Google Maps API key is not defined in environment variables"
-  );
+interface VisitData {
+  lead_id: number;
+  rep_id: number;
+  check_in_time: Date;
+  latitude?: number;
+  longitude?: number;
+  created_by: string;
+  is_active?: boolean;
+  notes?: string;
+  photo_urls?: string[];
+}
+
+interface DirectionsResult {
+  route: any;
+  waypointOrder: number[];
 }
 
 export class VisitService {
-  async getRepsToPlanVisits() {
+  private async withTransaction<T>(
+    operation: (queryRunner: QueryRunner) => Promise<T>
+  ): Promise<T> {
     const dataSource = await getDataSource();
-    return dataSource.getRepository(User).find({
-      where: {
-        role_id: 9,
-        is_active: true,
-      },
-    });
-  }
-  async getManagerIdForRep(repId: number): Promise<number> {
-    const dataSource = await getDataSource();
-    const rep = await dataSource.getRepository(User).findOne({
-      where: { user_id: repId },
-    });
-
-    if (!rep) {
-      throw new Error(`Rep with id ${repId} not found`);
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.startTransaction("SERIALIZABLE");
+    try {
+      const result = await operation(queryRunner);
+      await queryRunner.commitTransaction();
+      return result;
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      throw error;
+    } finally {
+      await queryRunner.release();
     }
-    const manager = await dataSource.getRepository(ManagerSalesRep).findOne({
-      where: {
-        sales_rep_id: repId,
-      },
-    });
-
-    if (!manager) {
-      throw new Error(`No manager found for rep with id ${repId}`);
-    }
-
-    return manager.manager_id;
   }
+
+  private handleError(
+    error: any,
+    defaultMessage: string
+  ): { status: number; message: string } {
+    if (error.code === "40001") {
+      return {
+        status: httpStatusCodes.CONFLICT,
+        message: "Concurrent transaction conflict, please retry",
+      };
+    }
+    if (error.code === "23505") {
+      return { status: httpStatusCodes.BAD_REQUEST, message: error.message };
+    }
+    return {
+      status: httpStatusCodes.BAD_REQUEST,
+      message: error.message || defaultMessage,
+    };
+  }
+
+  private getStartOfDay(date: Date = new Date()): Date {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0); // Midnight IST
+    return startOfDay;
+  }
+
+  private async logQuery(queryBuilder: any): Promise<void> {
+    const sql = await queryBuilder.getSql();
+  }
+
+  private async getOptimizedRoute(
+    origin: string,
+    waypoints: string[]
+  ): Promise<DirectionsResult> {
+    const destination = origin;
+    const response = await axios.get(
+      "https://maps.googleapis.com/maps/api/directions/json",
+      {
+        params: {
+          origin,
+          destination,
+          waypoints: `optimize:true|${waypoints.join("|")}`,
+          key: process.env.GOOGLE_MAPS_API_KEY,
+          departure_time: "now",
+        },
+      }
+    );
+    const data = response.data;
+    if (data.status !== "OK") {
+      throw new Error(
+        data.status === "ZERO_RESULTS"
+          ? "No valid route found. Check waypoint distances or coordinates."
+          : `Google Maps Directions API error: ${data.status}`
+      );
+    }
+    return {
+      route: data.routes[0],
+      waypointOrder: data.routes[0].waypoint_order,
+    };
+  }
+
+  private async handleVisit(
+    queryRunner: QueryRunner,
+    visitData: VisitData,
+    uncompletedVisit?: Visit
+  ): Promise<Visit> {
+    if (uncompletedVisit) {
+      uncompletedVisit.check_in_time = visitData.check_in_time;
+      if (visitData.latitude !== undefined) {
+        uncompletedVisit.latitude = visitData.latitude;
+      }
+      if (visitData.longitude !== undefined) {
+        uncompletedVisit.longitude = visitData.longitude;
+      }
+      uncompletedVisit.created_by = visitData.created_by;
+      if (visitData.notes) uncompletedVisit.notes = visitData.notes;
+      if (visitData.photo_urls) {
+        uncompletedVisit.photo_urls = [
+          ...(Array.isArray(uncompletedVisit.photo_urls)
+            ? uncompletedVisit.photo_urls
+            : uncompletedVisit.photo_urls
+            ? JSON.parse(uncompletedVisit.photo_urls)
+            : []),
+          ...visitData.photo_urls,
+        ];
+      }
+      const visit = await queryRunner.manager.save(Visit, uncompletedVisit);
+      return visit;
+    }
+    const visit = await queryRunner.manager.save(Visit, {
+      ...visitData,
+      is_active: true,
+    });
+    return visit;
+  }
+
   async planDailyVisits(
     repId: number,
     managerId: number,
-    date: Date = new Date()
+    date: Date = new Date(),
+    idempotencyKey: string = uuidv4()
   ): Promise<{ status: number; data?: any; message: string }> {
-    const dataSource = await getDataSource();
-    const queryRunner = dataSource.createQueryRunner();
-    await queryRunner.startTransaction();
-
-    try {
-      // Step 1: Validate rep and fetch assigned leads
-      const customers = await queryRunner.manager.find(Leads, {
-        where: {
-          assigned_rep_id: repId,
-          is_active: true,
-          pending_assignment: false,
-        },
-        relations: ["address"],
-      });
-
-      if (!customers.length) {
-        throw new Error("No active customers assigned to rep");
-      }
-
-      // Step 2: Check for existing visits for the given date
-      const startOfDay = new Date(date);
-      startOfDay.setHours(0, 0, 0, 0);
-      const existingVisits = await queryRunner.manager.find(Visit, {
-        where: {
-          rep_id: repId,
-          check_in_time: MoreThanOrEqual(startOfDay),
-        },
-      });
-
-      if (existingVisits.length > 0) {
-        throw new Error("Visits already planned for this rep today");
-      }
-
-      // Step 3: Prepare waypoints for Google Maps Directions API
-      const validCustomers = customers.filter(
-        (customer) =>
-          customer.address &&
-          customer.address.latitude &&
-          customer.address.longitude
-      );
-
-      if (!validCustomers.length) {
-        throw new Error("No valid customer addresses for visit planning");
-      }
-
-      const waypoints = validCustomers.map(
-        (customer) =>
-          `${customer.address.latitude},${customer.address.longitude}`
-      );
-      const repLocation = { latitude: 60.1695, longitude: 24.9354 };
-      const origin = `${repLocation.latitude},${repLocation.longitude}`;
-      const destination = origin;
-      const directionsResponse = await axios.get(
-        "https://maps.googleapis.com/maps/api/directions/json",
-        {
-          params: {
-            origin,
-            destination,
-            waypoints: `optimize:true|${waypoints.join("|")}`,
-            key: GOOGLE_MAPS_API_KEY,
-            departure_time: "now",
-          },
+    return await this.withTransaction(async (queryRunner) => {
+      try {
+        const startOfDay = this.getStartOfDay(date);
+        const existingIdempotency = await queryRunner.manager.findOne(
+          Idempotency,
+          {
+            where: { key: idempotencyKey },
+          }
+        );
+        if (existingIdempotency) {
+          return {
+            status: httpStatusCodes.OK,
+            data: existingIdempotency.result,
+            message: "Request already processed",
+          };
         }
-      );
 
-      const directionsData = directionsResponse.data;
-      if (directionsData.status !== "OK") {
-        throw new Error(
-          `Google Maps Directions API error: ${directionsData.status}`
-        );
-      }
-
-      // Step 6: Extract optimized route and plan visits
-      const route = directionsData.routes[0];
-      const waypointOrder = route.waypoint_order;
-
-      let currentTime = new Date(date);
-      const visits = [];
-      const routeOrder = [];
-
-      for (let i = 0; i < waypointOrder.length; i++) {
-        const index = waypointOrder[i];
-        const customer = validCustomers[index];
-        const leg = route.legs[i];
-        const duration = leg.duration.value / 60;
-        currentTime = new Date(currentTime.getTime() + duration * 60000);
-        const eta = currentTime.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        });
-        const visit = await queryRunner.manager.create(Visit, {
-          lead_id: customer.lead_id,
-          rep_id: repId,
-          check_in_time: currentTime,
-          latitude: customer.address.latitude,
-          longitude: customer.address.longitude,
-          created_by: managerId.toString(),
-          is_active: true,
-        });
-        visits.push(visit);
-        routeOrder.push({
-          lead_id: customer.lead_id,
-          distance: Number((leg.distance.value / 1000).toFixed(2)),
-          eta,
-        });
-      }
-      await queryRunner.manager.save(Visit, visits);
-      const routeEntity = await queryRunner.manager.save(Route, {
-        rep_id: repId,
-        route_date: startOfDay,
-        route_order: routeOrder,
-        created_by: managerId.toString(),
-      });
-
-      await queryRunner.commitTransaction();
-
-      return {
-        status: httpStatusCodes.OK,
-        data: { visits, route: routeEntity },
-        message: "Daily visits planned successfully",
-      };
-    } catch (error: any) {
-      await queryRunner.rollbackTransaction();
-      return {
-        status: httpStatusCodes.BAD_REQUEST,
-        message: error.message || "Failed to plan daily visits",
-      };
-    } finally {
-      await queryRunner.release();
-    }
-  }
-  async planVisit(
-    data: { lead_id: number; rep_id: number; date: Date },
-    managerId: number
-  ): Promise<{ status: number; data?: any; message: string }> {
-    const dataSource = await getDataSource();
-    const queryRunner = dataSource.createQueryRunner();
-    await queryRunner.startTransaction();
-    try {
-      const customer = await queryRunner.manager.findOne(Leads, {
-        where: { lead_id: data.lead_id, assigned_rep_id: data.rep_id },
-      });
-      if (!customer) {
-        throw new Error("Customer not assigned to rep");
-      }
-      const visit = await queryRunner.manager.save(Visit, {
-        lead_id: data.lead_id,
-        rep_id: data.rep_id,
-        check_in_time: data.date,
-        created_by: managerId.toString(),
-      });
-      await queryRunner.commitTransaction();
-      return {
-        status: httpStatusCodes.OK,
-        data: visit,
-        message: "Visit planned successfully",
-      };
-    } catch (error: any) {
-      await queryRunner.rollbackTransaction();
-      return {
-        status: httpStatusCodes.BAD_REQUEST,
-        message: error.message,
-      };
-    } finally {
-      await queryRunner.release();
-    }
-  }
-
- async logVisit(data: {
-  lead_id: number;
-  rep_id: number;
-  latitude: number;
-  longitude: number;
-  notes?: string;
-  photos?: Express.Multer.File[];
-}): Promise<{ status: number; data?: any; message: string }> {
-  const dataSource = await getDataSource();
-  const queryRunner = dataSource.createQueryRunner();
-  await queryRunner.startTransaction();
-  try {
-    const customer = await queryRunner.manager.findOne(Leads, {
-      where: { lead_id: data.lead_id, assigned_rep_id: data.rep_id },
-    });
-    if (!customer) {
-      throw new Error("Customer not assigned to rep");
-    }
-
-    const existingVisit = await queryRunner.manager.findOne(Visit, {
-      where: {
-        lead_id: data.lead_id,
-        check_in_time: MoreThanOrEqual(
-          new Date(new Date().setHours(0, 0, 0, 0))
-        ),
-        check_out_time: IsNull(),
-      },
-    });
-    let photo_urls: string[] = [];
-    // if (data.photos && data.photos.length > 0) {
-    //   photo_urls = await Promise.all(
-    //     data.photos.map(async (file, index) => {
-    //       const fileKey = `visits/${data.rep_id}/${
-    //         data.lead_id
-    //       }/${Date.now()}-${index}-${file.originalname}`;
-    //       await uploadFileBufferToS3(file.buffer, fileKey); 
-    //       const bucketName = process.env.AWS_S3_BUCKET_NAME;
-    //       if (!bucketName) {
-    //         throw new Error("AWS_S3_BUCKET_NAME environment variable is not set");
-    //       }
-    //       return `https://${bucketName}.s3.amazonaws.com/${fileKey}`;
-    //     })
-    //   );
-    // }
-
-    let visit;
-    if (existingVisit) {
-      existingVisit.check_in_time = new Date();
-      existingVisit.latitude = data.latitude;
-      existingVisit.longitude = data.longitude;
-      existingVisit.notes = data.notes || existingVisit.notes;
-      existingVisit.photo_urls = [
-        ...(Array.isArray(existingVisit.photo_urls)
-          ? existingVisit.photo_urls
-          : existingVisit.photo_urls
-          ? JSON.parse(existingVisit.photo_urls)
-          : []),
-        ...photo_urls,
-      ];
-      existingVisit.updated_by = data.rep_id.toString();
-      visit = await queryRunner.manager.save(Visit, existingVisit);
-    } else {
-      // Create a new visit
-      visit = await queryRunner.manager.save(Visit, {
-        lead_id: data.lead_id,
-        rep_id: data.rep_id,
-        check_in_time: new Date(),
-        latitude: data.latitude,
-        longitude: data.longitude,
-        notes: data.notes,
-        photo_urls: photo_urls, // Assign as array, TypeORM will serialize to JSON
-        created_by: data.rep_id.toString(),
-      });
-    }
-
-    await dataSource
-      .getRepository(Leads)
-      .update(customer.lead_id, { is_visited: true });
-    await queryRunner.commitTransaction();
-    return {
-      status: httpStatusCodes.OK,
-      data: visit,
-      message: "Visit logged successfully",
-    };
-  } catch (error) {
-    console.error("Error logging visit:", error);
-    await queryRunner.rollbackTransaction();
-    return {
-      status: httpStatusCodes.BAD_REQUEST,
-      message: "Failed to log visit",
-    };
-  } finally {
-    await queryRunner.release();
-  }
-}
-
-  async generateDailyRoute(
-    repId: number
-  ): Promise<{ status: number; data?: any; message: string }> {
-    const dataSource = await getDataSource();
-    const queryRunner = dataSource.createQueryRunner();
-    await queryRunner.startTransaction();
-    try {
-      // Check if a route already exists for today
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const existingRoute = await queryRunner.manager.findOne(Route, {
-        where: { rep_id: repId, route_date: today },
-      });
-
-      if (existingRoute) {
-        await queryRunner.commitTransaction();
-        return {
-          status: httpStatusCodes.OK,
-          data: existingRoute,
-          message: "Route already generated for today",
-        };
-      }
-
-      // Fetch customers assigned to the rep
-      const customers = await queryRunner.manager.find(Leads, {
-        where: { assigned_rep_id: repId, is_active: true },
-        relations: ["address"],
-      });
-
-      if (!customers.length) {
-        throw new Error("No customers assigned to rep");
-      }
-
-      // Mock current location of the rep (in a real app, fetch from GPS)
-      const repLocation = { latitude: 40.7128, longitude: -74.006 }; // New York coordinates
-
-      // Prepare waypoints for Google Maps Directions API
-      const waypoints = customers
-        .filter(
-          (customer) =>
-            customer.address &&
-            customer.address.latitude &&
-            customer.address.longitude
-        )
-        .map(
-          (customer) =>
-            `${customer.address.latitude},${customer.address.longitude}`
-        );
-
-      if (waypoints.length === 0) {
-        throw new Error("No valid customer addresses for route optimization");
-      }
-
-      // Call Google Maps Directions API with waypoint optimization
-      const origin = `${repLocation.latitude},${repLocation.longitude}`;
-      const destination = origin; // Assuming the rep returns to the starting point
-      const directionsResponse = await axios.get(
-        "https://maps.googleapis.com/maps/api/directions/json",
-        {
-          params: {
-            origin,
-            destination,
-            waypoints: `optimize:true|${waypoints.join("|")}`,
-            key: GOOGLE_MAPS_API_KEY,
-            departure_time: "now", // For traffic-aware ETA
+        // Validate no existing visits or route
+        const existingVisits = await queryRunner.manager.find(Visit, {
+          where: {
+            rep_id: Equal(repId),
+            check_in_time: MoreThanOrEqual(startOfDay),
+            is_active: true,
           },
+        });
+        if (existingVisits.length) {
+          throw new Error("Visits already planned for this rep today");
         }
-      );
+        const existingRoute = await queryRunner.manager.findOne(Route, {
+          where: { rep_id: Equal(repId), route_date: Equal(startOfDay) },
+          lock: { mode: "pessimistic_write" },
+        });
+        if (existingRoute) {
+          throw new Error(
+            `A route already exists for rep ${repId} on ${startOfDay.toISOString()}`
+          );
+        }
 
-      const directionsData = directionsResponse.data;
-      if (directionsData.status !== "OK") {
-        throw new Error(
-          `Google Maps Directions API error: ${directionsData.status}`
+        // Fetch uncompleted visits
+        await this.logQuery(
+          queryRunner.manager
+            .createQueryBuilder(Visit, "visit")
+            .leftJoinAndSelect("visit.lead", "lead")
+            .leftJoinAndSelect("lead.address", "address")
+            .where("visit.rep_id = :repId", { repId })
+            .andWhere("visit.check_in_time < :startOfDay", { startOfDay })
+            .andWhere("visit.check_out_time IS NULL")
+            .andWhere("visit.is_active = :isActive", { isActive: true })
         );
-      }
+        const uncompletedVisits = await queryRunner.manager.find(Visit, {
+          where: {
+            rep_id: Equal(repId),
+            check_in_time: LessThan(startOfDay),
+            check_out_time: IsNull(),
+            is_active: true,
+          },
+          relations: ["lead", "lead.address"],
+        });
+        const uncompletedLeads = uncompletedVisits
+          .map((visit) => visit.lead)
+          .filter(
+            (lead) =>
+              lead &&
+              lead.is_active &&
+              !lead.pending_assignment &&
+              lead.address?.latitude &&
+              lead.address?.longitude
+          );
 
-      // Extract the optimized waypoint order
-      const route = directionsData.routes[0];
-      const waypointOrder = route.waypoint_order; // Array of indices in the optimized order
+        // Fetch all assigned leads
+        const allCustomers = await queryRunner.manager.find(Leads, {
+          where: {
+            assigned_rep_id: Equal(repId),
+            is_active: true,
+            pending_assignment: false,
+          },
+          relations: ["address"],
+          order: { created_at: "ASC" },
+        });
+        const validCustomers = allCustomers.filter(
+          (customer) =>
+            customer.address?.latitude && customer.address?.longitude
+        );
 
-      // Map the optimized order back to customer IDs, distances, and ETAs
-      let currentTime = new Date();
-      const routeOrder = waypointOrder.map(
-        (index: number, position: number) => {
-          const customer = customers[index];
-          const leg = route.legs[position]; // Legs are in order of travel
+        if (!validCustomers.length && !uncompletedLeads.length) {
+          throw new Error("No valid customer addresses for visit planning");
+        }
 
-          // Extract distance and duration from the API response
-          const distance = leg.distance.value / 1609.34; // Convert meters to miles
-          const duration = leg.duration.value / 60; // Convert seconds to minutes
+        // Combine leads
+        const leadIdsToExclude = uncompletedLeads.map((lead) => lead.lead_id);
+        const newLeads = validCustomers.filter(
+          (customer) => !leadIdsToExclude.includes(customer.lead_id)
+        );
+        const maxLeadsPerDay = 5;
+        const leadsToPlan = [
+          ...uncompletedLeads,
+          ...newLeads.slice(0, maxLeadsPerDay - uncompletedLeads.length),
+        ].slice(0, maxLeadsPerDay);
 
-          // Calculate ETA
+        if (!leadsToPlan.length) {
+          throw new Error("No leads available for visit planning");
+        }
+        const leadIds = leadsToPlan.map((lead) => lead.lead_id);
+        if (new Set(leadIds).size !== leadIds.length) {
+          throw new Error("Duplicate leads detected in visit planning");
+        }
+
+        // Get optimized route
+        const waypoints = leadsToPlan.map(
+          (lead) => `${lead.address.latitude},${lead.address.longitude}`
+        );
+        const repLocation = { latitude: 60.1695, longitude: 24.9354 };
+        const origin = `${repLocation.latitude},${repLocation.longitude}`;
+        const { route, waypointOrder } = await this.getOptimizedRoute(
+          origin,
+          waypoints
+        );
+
+        // Plan visits
+        let currentTime = new Date(date);
+        currentTime.setHours(9, 0, 0, 0);
+        const uncompletedVisitsMap = new Map(
+          uncompletedVisits.map((visit) => [visit.lead_id, visit])
+        );
+        const routeOrder: RouteOrderItem[] = [];
+        const visits: Visit[] = [];
+
+        for (let i = 0; i < waypointOrder.length; i++) {
+          const index = waypointOrder[i];
+          const lead = leadsToPlan[index];
+          const leg = route.legs[i];
+          const duration = leg.duration.value / 60;
           currentTime = new Date(currentTime.getTime() + duration * 60000);
           const eta = currentTime.toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",
           });
 
-          return {
-            lead_id: customer.lead_id,
-            distance: Number(distance.toFixed(2)),
+          const visitData: VisitData = {
+            lead_id: lead.lead_id,
+            rep_id: repId,
+            check_in_time: currentTime,
+            latitude: lead.address.latitude,
+            longitude: lead.address.longitude,
+            created_by: managerId.toString(),
+          };
+          const visit = await this.handleVisit(
+            queryRunner,
+            visitData,
+            uncompletedVisitsMap.get(lead.lead_id) ?? undefined
+          );
+          visits.push(visit);
+
+          routeOrder.push({
+            lead_id: lead.lead_id,
+            latitude: lead.address.latitude,
+            longitude: lead.address.longitude,
+            distance: Number((leg.distance.value / 1000).toFixed(2)),
             eta,
+          });
+        }
+
+        // Save route
+        const routeEntity = await queryRunner.manager.save(Route, {
+          rep_id: repId,
+          route_date: startOfDay,
+          route_order: routeOrder,
+          created_by: managerId.toString(),
+        });
+
+        // Save idempotency
+        await queryRunner.manager.save(Idempotency, {
+          key: idempotencyKey,
+          result: { visits, route: routeEntity },
+        });
+
+        return {
+          status: httpStatusCodes.OK,
+          data: { visits, route: routeEntity },
+          message: "Daily visits planned successfully",
+        };
+      } catch (error: any) {
+        throw this.handleError(error, "Failed to plan daily visits");
+      }
+    });
+  }
+
+  async planVisit(
+    data: { lead_id: number; rep_id: number; date: Date },
+    managerId: number
+  ): Promise<{ status: number; data?: any; message: string }> {
+    return await this.withTransaction(async (queryRunner) => {
+      try {
+        const customer = await queryRunner.manager.findOne(Leads, {
+          where: {
+            lead_id: Equal(data.lead_id),
+            assigned_rep_id: Equal(data.rep_id),
+          },
+          relations: ["address"],
+        });
+        if (!customer) {
+          throw new Error("Customer not assigned to rep");
+        }
+
+        // Check uncompleted visit
+        await this.logQuery(
+          queryRunner.manager
+            .createQueryBuilder(Visit, "visit")
+            .leftJoinAndSelect("visit.lead", "lead")
+            .where("visit.lead_id = :leadId", { leadId: data.lead_id })
+            .andWhere("visit.rep_id = :repId", { repId: data.rep_id })
+            .andWhere("visit.check_out_time IS NULL")
+            .andWhere("visit.is_active = :isActive", { isActive: true })
+        );
+        const uncompletedVisit = await queryRunner.manager.findOne(Visit, {
+          where: {
+            lead_id: Equal(data.lead_id),
+            rep_id: Equal(data.rep_id),
+            check_out_time: IsNull(),
+            is_active: true,
+          },
+          relations: ["lead", "lead.address"],
+        });
+
+        const visitData: VisitData = {
+          lead_id: data.lead_id,
+          rep_id: data.rep_id,
+          check_in_time: data.date,
+          latitude: customer.address?.latitude,
+          longitude: customer.address?.longitude,
+          created_by: managerId.toString(),
+        };
+        const visit = await this.handleVisit(
+          queryRunner,
+          visitData,
+          uncompletedVisit ?? undefined
+        );
+
+        return {
+          status: httpStatusCodes.OK,
+          data: visit,
+          message: "Visit planned successfully",
+        };
+      } catch (error: any) {
+        throw this.handleError(error, "Failed to plan visit");
+      }
+    });
+  }
+
+  async logVisit(data: {
+    lead_id: number;
+    rep_id: number;
+    latitude: number;
+    longitude: number;
+    notes?: string;
+    photos?: Express.Multer.File[];
+  }): Promise<{ status: number; data?: any; message: string }> {
+    return await this.withTransaction(async (queryRunner) => {
+      try {
+        const customer = await queryRunner.manager.findOne(Leads, {
+          where: {
+            lead_id: Equal(data.lead_id),
+            assigned_rep_id: Equal(data.rep_id),
+          },
+        });
+        if (!customer) {
+          return {
+            data: null,
+            status: 404,
+            message: "Customer not assigned to rep",
           };
         }
+
+        // Check existing visit
+        const existingVisit = await queryRunner.manager.findOne(Visit, {
+          where: {
+            lead_id: Equal(data.lead_id),
+            check_in_time: MoreThanOrEqual(this.getStartOfDay()),
+            check_out_time: IsNull(),
+          },
+        });
+
+        const visitData: VisitData = {
+          lead_id: data.lead_id,
+          rep_id: data.rep_id,
+          check_in_time: new Date(),
+          latitude: data.latitude,
+          longitude: data.longitude,
+          notes: data.notes,
+          created_by: data.rep_id.toString(),
+          photo_urls: [],
+        };
+        const visit = await this.handleVisit(
+          queryRunner,
+          visitData,
+          existingVisit ?? undefined
+        );
+        await queryRunner.manager.update(
+          Leads,
+          { lead_id: customer.lead_id },
+          { is_visited: true }
+        );
+
+        return {
+          status: httpStatusCodes.OK,
+          data: visit,
+          message: "Visit logged successfully",
+        };
+      } catch (error: any) {
+        console.log(error);
+        throw this.handleError(error, "Failed to log visit");
+      }
+    });
+  }
+  private isValidCoordinate(value: any, type: string): boolean {
+    if (typeof value !== "number" || isNaN(value)) {
+      return false;
+    }
+    const absValue = Math.abs(value);
+    return type === "latitude" ? absValue <= 90 : absValue <= 180;
+  }
+  private getToday(): Date {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); // Midnight IST
+    return today;
+  }
+  private async getManagerAssignment(
+    repId: number
+  ): Promise<ManagerSalesRep | null> {
+    const dataSource = await getDataSource();
+    return dataSource.manager.findOne(ManagerSalesRep, {
+      where: { sales_rep_id: repId },
+      select: ["manager_id"],
+    });
+  }
+
+  private async deleteRoute(repId: number, today: Date): Promise<void> {
+    const dataSource = await getDataSource();
+    await dataSource.manager.delete(Route, {
+      rep_id: repId,
+      route_date: today,
+    });
+  }
+  private async getVisitsForToday(
+    repId: number,
+    today: Date
+  ): Promise<Visit[]> {
+    const dataSource = await getDataSource();
+    return dataSource.manager.find(Visit, {
+      where: {
+        rep_id: Equal(repId),
+        check_in_time: Between(
+          today,
+          new Date(today.getTime() + 24 * 60 * 60 * 1000)
+        ),
+        is_active: true,
+      },
+      relations: ["lead", "lead.address"],
+    });
+  }
+  private async saveRoute(
+    repId: number,
+    today: Date,
+    routeOrder: RouteOrderItem[],
+    createdBy: string
+  ): Promise<any> {
+    const dataSource = await getDataSource();
+    const existingRoute = await dataSource.manager.findOne(Route, {
+      where: { rep_id: Equal(repId), route_date: Equal(today) },
+    });
+    return dataSource.manager.save(Route, {
+      ...existingRoute,
+      rep_id: repId,
+      route_date: today,
+      route_order: routeOrder,
+      created_by: createdBy,
+      updated_at: existingRoute ? new Date() : undefined,
+    });
+  }
+
+  async generateDailyRoute(
+    repId: number,
+    repLatitude: number,
+    repLongitude: number,
+    managerId: number
+  ): Promise<{ status: number; data?: any; message: string }> {
+    try {
+      // Parse and validate inputs
+      const latitude = parseFloat(String(repLatitude));
+      const longitude = parseFloat(String(repLongitude));
+      const today = this.getToday();
+      const visits = await this.getVisitsForToday(repId, today);
+      if (!visits.length) {
+        return {
+          status: httpStatusCodes.OK,
+          message: "No visits assigned for today to optimize",
+          data: [],
+        };
+      }
+
+      const validVisits = visits.filter(
+        (visit) =>
+          visit.lead?.address?.latitude && visit.lead?.address?.longitude
       );
+      if (!validVisits.length) {
+        throw new Error("No valid visit addresses for route optimization");
+      }
+      const origin = `${latitude},${longitude}`;
+      const waypoints = validVisits.map(
+        (visit) =>
+          `${visit.lead.address.latitude},${visit.lead.address.longitude}`
+      );
+      const { route: routeData, waypointOrder } = await this.getOptimizedRoute(
+        origin,
+        waypoints
+      );
+      let currentTime = new Date(today);
+      currentTime.setHours(9, 0, 0, 0);
+      const routeOrder: RouteOrderItem[] = [];
 
-      // Add the final leg back to the starting point
-      const finalLeg = route.legs[route.legs.length - 1];
-      const finalDistance = finalLeg.distance.value / 1609.34;
-      const finalDuration = finalLeg.duration.value / 60;
-      currentTime = new Date(currentTime.getTime() + finalDuration * 60000);
+      for (let i = 0; i < waypointOrder.length; i++) {
+        const index = waypointOrder[i];
+        const visit = validVisits[index];
+        const leg = routeData.legs[i];
+        if (!leg?.distance?.value || !leg?.duration?.value) {
+          throw new Error(`Invalid route leg at index ${i}`);
+        }
+        const distance = leg.distance.value / 1000;
+        const duration = leg.duration.value / 60;
+        currentTime = new Date(currentTime.getTime() + duration * 60000);
+        const eta = currentTime.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        });
 
-      // Save the optimized route
-      const newRoute = await queryRunner.manager.save(Route, {
-        rep_id: repId,
-        route_date: today,
-        route_order: routeOrder,
-        created_by: repId.toString(),
-      });
-
-      await queryRunner.commitTransaction();
+        routeOrder.push({
+          lead_id: visit.lead_id,
+          latitude: visit.latitude,
+          longitude: visit.longitude,
+          distance: Number(distance.toFixed(2)),
+          eta,
+        });
+      }
+      const route = await this.saveRoute(
+        repId,
+        today,
+        routeOrder,
+        String(managerId)
+      );
       return {
         status: httpStatusCodes.OK,
-        data: newRoute,
-        message: "Daily route generated successfully",
+        data: route,
+        message: "Daily route optimized successfully",
       };
     } catch (error: any) {
-      await queryRunner.rollbackTransaction();
-      return {
-        status: httpStatusCodes.BAD_REQUEST,
-        message: error.message,
-      };
-    } finally {
-      await queryRunner.release();
+      return this.handleError(error, "Failed to optimize daily route");
     }
   }
 
+  async refreshDailyRoute(
+    repId: number,
+    latitude: number,
+    longitude: number
+  ): Promise<{ status: number; data?: any; message: string }> {
+    try {
+      if (!this.isValidCoordinate(latitude, "latitude")) {
+        throw new Error(`Invalid latitude: ${latitude}`);
+      }
+      if (!this.isValidCoordinate(longitude, "longitude")) {
+        throw new Error(`Invalid longitude: ${longitude}`);
+      }
+
+      const today = this.getToday();
+      const managerAssignment = await this.getManagerAssignment(repId);
+      if (
+        !managerAssignment ||
+        !Number.isInteger(managerAssignment.manager_id)
+      ) {
+        throw new Error(`No valid manager assigned for repId: ${repId}`);
+      }
+      const managerId = managerAssignment.manager_id;
+      await this.deleteRoute(repId, today);
+      return await this.generateDailyRoute(
+        repId,
+        latitude,
+        longitude,
+        managerId
+      );
+    } catch (error: any) {
+      return this.handleError(error, "Failed to refresh daily route");
+    }
+  }
   async getDailyRoute(
     repId: number
   ): Promise<{ status: number; data?: any; message: string }> {
     const dataSource = await getDataSource();
     try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
+      const today = this.getStartOfDay();
       const route = await dataSource.manager.findOne(Route, {
-        where: { rep_id: repId, route_date: today },
+        where: { rep_id: Equal(repId), route_date: Equal(today) },
         relations: ["rep"],
       });
-
       if (!route) {
         return {
           status: httpStatusCodes.NOT_FOUND,
@@ -476,25 +673,28 @@ export class VisitService {
         };
       }
 
-      // Fetch customer details for the route
       const routeDetails = await Promise.all(
-        route.route_order.map(
-          async (item: { lead_id: number; eta: string; distance: number }) => {
-            const customer = await dataSource.manager.findOne(Leads, {
-              where: { lead_id: item.lead_id },
-              relations: ["address"],
-            });
-            return {
-              lead_id: item.lead_id,
-              name: customer?.name || "Unknown",
-              address: customer?.address
-                ? `${customer.address.street_address}, ${customer.address.city}, ${customer.address.state} ${customer.address.postal_code}`
-                : undefined,
-              eta: item.eta,
-              distance: item.distance,
-            };
-          }
-        )
+        route.route_order.map(async (item: RouteOrderItem) => {
+          const customer = await dataSource.manager.findOne(Leads, {
+            where: { lead_id: Equal(item.lead_id) },
+            relations: ["address"],
+          });
+          return {
+            lead_id: item.lead_id,
+            name: customer?.name || "anonymous",
+            latitude: customer?.address?.latitude,
+            longitude: customer?.address?.longitude,
+            address: customer?.address
+              ? `${customer.address.street_address || ""}, ${
+                  customer.address.city || ""
+                }, ${customer.address.state || ""} ${
+                  customer.address.postal_code || ""
+                }`
+              : null,
+            eta: item.eta,
+            distance: item.distance,
+          };
+        })
       );
 
       return {
@@ -503,37 +703,7 @@ export class VisitService {
         message: "Retrieved successfully",
       };
     } catch (error: any) {
-      return {
-        status: httpStatusCodes.INTERNAL_SERVER_ERROR,
-        message: error.message || "Failed to retrieve daily route",
-      };
-    }
-  }
-  async refreshDailyRoute(
-    repId: number
-  ): Promise<{ status: number; data?: any; message: string }> {
-    const dataSource = await getDataSource();
-    const queryRunner = dataSource.createQueryRunner();
-    await queryRunner.startTransaction();
-    try {
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      await queryRunner.manager.delete(Route, {
-        rep_id: repId,
-        route_date: today,
-      });
-      await queryRunner.commitTransaction();
-
-      // Re-generate the route
-      return await this.generateDailyRoute(repId);
-    } catch (error: any) {
-      await queryRunner.rollbackTransaction();
-      return {
-        status: httpStatusCodes.INTERNAL_SERVER_ERROR,
-        message: error.message || "Failed to refresh daily route",
-      };
-    } finally {
-      await queryRunner.release();
+      return this.handleError(error, "Failed to retrieve daily route");
     }
   }
 }

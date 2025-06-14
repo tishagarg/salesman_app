@@ -23,6 +23,7 @@ import { RefreshToken } from "../models/RefreshToken.entity";
 import { Route } from "../models/Route.entity";
 import { TerritorySalesman } from "../models/TerritorySalesMan.entity";
 import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
+import { Idempotency } from "../models/Idempotency";
 
 dotenv.config();
 
@@ -38,7 +39,7 @@ export const dataSourceOptions: DataSourceOptions = {
     rejectUnauthorized: false,
   },
   synchronize: false,
-  logging: process.env.NODE_ENV === "production" ? ["error"] : [ "error"],
+  logging: process.env.NODE_ENV === "production" ? ["error"] : ["error"],
   entities: [
     User,
     Organization,
@@ -55,6 +56,7 @@ export const dataSourceOptions: DataSourceOptions = {
     AuditLog,
     Permission,
     Polygon,
+    Idempotency,
     RolePermission,
     Region,
     Subregion,
@@ -86,7 +88,11 @@ export const getDataSource = async (): Promise<DataSource> => {
     return dataSource;
   } catch (error) {
     console.error("Failed to initialize DataSource:", error);
-    throw new Error(`DataSource initialization failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+    throw new Error(
+      `DataSource initialization failed: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
   }
 };
 
@@ -100,6 +106,10 @@ export const destroyDataSource = async (): Promise<void> => {
     }
   } catch (error) {
     console.error("Failed to destroy DataSource:", error);
-    throw new Error(`DataSource destruction failed: ${error instanceof Error ? error.message : "Unknown error"}`);
+    throw new Error(
+      `DataSource destruction failed: ${
+        error instanceof Error ? error.message : "Unknown error"
+      }`
+    );
   }
 };
