@@ -40,9 +40,9 @@ export async function runDailyVisitPlanning() {
       }
 
       const idempotencyKey = uuidv4();
-      // console.log(
-      //   `Planning visits for repId: ${repId}, managerId: ${managerId}, idempotencyKey: ${idempotencyKey}`
-      // );
+      console.log(
+        `Planning visits for repId: ${repId}, managerId: ${managerId}, idempotencyKey: ${idempotencyKey}`
+      );
       const result = await visitService.planDailyVisits(
         repId,
         managerId,
@@ -54,6 +54,7 @@ export async function runDailyVisitPlanning() {
     await queryRunner.commitTransaction();
   } catch (error: any) {
     await queryRunner.rollbackTransaction();
+    console.log(error)
     console.error(`Error during scheduled visit planning: ${error.message}`);
   } finally {
     await queryRunner.release();
