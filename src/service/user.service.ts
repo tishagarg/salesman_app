@@ -414,8 +414,6 @@ export class UserTeamService {
         }
       }
 
-      updateData.full_name = `${updateData.first_name} ${updateData.last_name}`;
-
       // Remove non-user columns from updateData
       const { role_name, ...updatedFields } = updateData;
 

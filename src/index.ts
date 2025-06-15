@@ -43,7 +43,7 @@ const PORT = process.env.PORT || 3002;
         console.log("Data Source has been initialized!");
         console.log("Running daily visit planning...");
 
-       initializeCronJobs();
+        initializeCronJobs();
       } else {
         console.log(
           "Data Source already initialized. Skipping initialization."
@@ -51,14 +51,8 @@ const PORT = process.env.PORT || 3002;
       }
 
       const server = app.listen(PORT, () => {
-        console.log(
-          `Server is running on http://localhost:${
-            (server.address() as any).port
-          }`
-        );
+        console.log(`Server is running on http://localhost:${PORT}`);
       });
-              // await runDailyVisitPlanning();
-
     } catch (error) {
       console.error(
         `Database connection failed (Attempt ${retries + 1}):`,
