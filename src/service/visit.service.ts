@@ -25,6 +25,7 @@ interface RouteOrderItem {
   longitude?: number;
   distance: number;
   eta: string;
+  visit_id: number;
 }
 
 interface VisitData {
@@ -190,16 +191,29 @@ export class VisitService {
           },
         });
         if (existingVisits.length) {
-          throw new Error("Visits already planned for this rep today");
+          return {
+            status: httpStatusCodes.OK,
+            data: null,
+            message: "Skipping as visits already exist",
+          };
         }
         const existingRoute = await queryRunner.manager.findOne(Route, {
           where: { rep_id: Equal(repId), route_date: Equal(startOfDay) },
           lock: { mode: "pessimistic_write" },
         });
         if (existingRoute) {
-          throw new Error(
-            `A route already exists for rep ${repId} on ${startOfDay.toISOString()}`
-          );
+          // Delete existing visits for the day
+          await queryRunner.manager.delete(Visit, {
+            rep_id: repId,
+            check_in_time: MoreThanOrEqual(startOfDay),
+            is_active: true,
+          });
+
+          // Delete existing route
+          await queryRunner.manager.delete(Route, {
+            rep_id: repId,
+            route_date: startOfDay,
+          });
         }
 
         // Fetch uncompleted visits
@@ -249,7 +263,11 @@ export class VisitService {
         );
 
         if (!validCustomers.length && !uncompletedLeads.length) {
-          throw new Error("No valid customer addresses for visit planning");
+          return {
+            status: httpStatusCodes.OK,
+            data: null,
+            message: "No valid customer addresses for visit planning",
+          };
         }
 
         // Combine leads
@@ -264,11 +282,19 @@ export class VisitService {
         ].slice(0, maxLeadsPerDay);
 
         if (!leadsToPlan.length) {
-          throw new Error("No leads available for visit planning");
+          return {
+            status: httpStatusCodes.OK,
+            data: null,
+            message: "No leads available for visit planning",
+          };
         }
         const leadIds = leadsToPlan.map((lead) => lead.lead_id);
         if (new Set(leadIds).size !== leadIds.length) {
-          throw new Error("Duplicate leads detected in visit planning");
+          return {
+            status: httpStatusCodes.OK,
+            data: null,
+            message: "Duplicate leads detected in visit planning",
+          };
         }
 
         // Get optimized route
@@ -319,6 +345,7 @@ export class VisitService {
 
           routeOrder.push({
             lead_id: lead.lead_id,
+            visit_id: visit.visit_id,
             latitude: lead.address.latitude,
             longitude: lead.address.longitude,
             distance: Number((leg.distance.value / 1000).toFixed(2)),
@@ -603,6 +630,7 @@ export class VisitService {
           lead_id: visit.lead_id,
           latitude: visit.latitude,
           longitude: visit.longitude,
+          visit_id: visit.visit_id,
           distance: Number(distance.toFixed(2)),
           eta,
         });
@@ -674,7 +702,7 @@ export class VisitService {
       }
 
       const routeDetails = await Promise.all(
-        route.route_order.map(async (item: RouteOrderItem) => {
+        (route.route_order as RouteOrderItem[]).map(async (item) => {
           const customer = await dataSource.manager.findOne(Leads, {
             where: { lead_id: Equal(item.lead_id) },
             relations: ["address"],
@@ -683,6 +711,7 @@ export class VisitService {
             lead_id: item.lead_id,
             name: customer?.name || "anonymous",
             latitude: customer?.address?.latitude,
+            visit_id: item.visit_id,
             longitude: customer?.address?.longitude,
             address: customer?.address
               ? `${customer.address.street_address || ""}, ${

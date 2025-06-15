@@ -42,11 +42,8 @@ const PORT = process.env.PORT || 3002;
         await dataSource.initialize();
         console.log("Data Source has been initialized!");
         console.log("Running daily visit planning...");
-        await runDailyVisitPlanning();
 
-       // initializeCronJobs();
-
-        // Run immediate task execution for testing
+       initializeCronJobs();
       } else {
         console.log(
           "Data Source already initialized. Skipping initialization."
