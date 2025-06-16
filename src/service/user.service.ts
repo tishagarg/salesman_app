@@ -22,6 +22,7 @@ import { TerritoryService } from "./territory.service";
 import { Territory } from "../models/Territory.entity";
 import { In } from "typeorm";
 import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
+import { GeocodingService } from "../utils/geoCode.service";
 
 const userQuery = new UserQuery();
 const roleQuery = new RoleQuery();
@@ -30,6 +31,7 @@ const organizationQuery = new OrganizationQuery();
 const addressQuery = new AddressQuery();
 const territoryService = new TerritoryService();
 
+const geocodingService = new GeocodingService();
 export class UserTeamService {
   async SendEmailNotification(email: string, password: string) {
     await sendEmail({
@@ -582,6 +584,21 @@ export class UserTeamService {
             existingUser.address_id
           );
         } else if (hasAddressFields) {
+          let coords = {
+            latitude: addressData.latitude,
+            longitude: addressData.longitude,
+          };
+          if (!addressData.latitude || !addressData.longitude) {
+            coords = await geocodingService.getCoordinates({
+              street_address: addressData.street_address,
+              postal_code: addressData.postal_code,
+              subregion: addressData.subregion,
+              region: addressData.region,
+              city: addressData.city,
+              state: addressData.state,
+              country: addressData.country || "Finland",
+            });
+          }
           const newAddressData: AddressDto = {
             street_address: addressData.street_address || "",
             postal_code: addressData.postal_code || "",
@@ -591,6 +608,8 @@ export class UserTeamService {
             country: addressData.country || "",
             org_id: org_id,
             city: addressData.city || "",
+            latitude:coords.latitude,
+            longitude:coords.longitude,
             state: addressData.state || "",
             comments: addressData.comments || "",
           };
@@ -612,12 +631,6 @@ export class UserTeamService {
 
         delete updateData.address;
       }
-      if (updateData.first_name || updateData.last_name) {
-        updateData.full_name = `${
-          updateData.first_name || existingUser.first_name
-        } ${updateData.last_name || existingUser.last_name}`.trim();
-      }
-
       const { role_name, ...updatedFields } = updateData;
       const updatedUser = await userQuery.updateUser(
         queryRunner.manager,

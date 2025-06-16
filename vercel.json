@@ -1,15 +1,11 @@
 {
   "version": 2,
-  "builds": [
-    { "src": "api/index.ts", "use": "@vercel/node" }
-  ],
-  "routes": [
-    { "src": "/(.*)", "dest": "/api/index.ts" }
-  ], "cron": [
+  "builds": [{ "src": "api/index.ts", "use": "@vercel/node" }],
+  "routes": [{ "src": "/(.*)", "dest": "/api/index.ts" }],
+  "crons": [
     {
       "path": "/api/cron/daily-visit",
-      "schedule": "45 23 * * *" 
+      "schedule": "55 23 * * *"
     }
   ]
 }
-
