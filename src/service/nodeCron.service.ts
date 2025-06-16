@@ -12,21 +12,16 @@ export async function runDailyVisitPlanning() {
   await queryRunner.startTransaction();
 
   try {
-    // Fetch all active sales reps
     const reps = await queryRunner.manager.find(User, {
       where: { is_active: true, role_id: 9 },
       select: ["user_id"],
     });
     const repIds = reps.map((rep:any) => rep.user_id);
     console.log(`Planning visits for reps: ${repIds.join(", ")}`);
-
-    // Fetch manager assignments for all repIds
     const managerAssignments = await queryRunner.manager.find(ManagerSalesRep, {
       where: { sales_rep_id: In(repIds) },
       select: ["manager_id", "sales_rep_id"],
     });
-
-    // Create a map of repId to managerId for quick lookup
     const repToManagerMap = new Map<number, number>();
     managerAssignments.forEach((assignment) => {
       repToManagerMap.set(assignment.sales_rep_id, assignment.manager_id);

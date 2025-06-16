@@ -5,5 +5,11 @@
   ],
   "routes": [
     { "src": "/(.*)", "dest": "/api/index.ts" }
+  ], "cron": [
+    {
+      "path": "/api/cron/daily-visit",
+      "schedule": "45 23 * * *" 
+    }
   ]
 }
+
