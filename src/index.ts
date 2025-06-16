@@ -6,7 +6,6 @@ import router from "./routes/index.route";
 import cors from "cors";
 import { verifyToken } from "./middleware/auth.middleware";
 import { UserTeamController } from "./controllers/user.controller";
-import { schedule } from "node-cron";
 import { runDailyVisitPlanning } from "./service/nodeCron.service";
 
 const PORT = process.env.PORT || 3002;
@@ -17,8 +16,6 @@ const PORT = process.env.PORT || 3002;
   const userController = new UserTeamController();
 
   app.use(cors());
-  let isCronInitialized = false;
-
   app.use(
     expressSession({
       secret: process.env.SESSION_SECRET || "your-secret-key",
@@ -41,13 +38,11 @@ const PORT = process.env.PORT || 3002;
       if (!dataSource.isInitialized) {
         await dataSource.initialize();
         console.log("Data Source has been initialized!");
-        console.log("Running daily visit planning...");
-
-        initializeCronJobs();
       } else {
         console.log(
           "Data Source already initialized. Skipping initialization."
         );
+        // await runDailyVisitPlanning()
       }
 
       const server = app.listen(PORT, () => {
@@ -71,26 +66,5 @@ const PORT = process.env.PORT || 3002;
       }
     }
   };
-
-  function initializeCronJobs() {
-    if (isCronInitialized) {
-      console.log("Cron job already initialized. Skipping.");
-      return;
-    }
-
-    schedule(
-      "0 7 * * *",
-      async () => {
-        await runDailyVisitPlanning();
-        console.log("Running daily visit planning...");
-      },
-      {
-        timezone: "Asia/Kolkata",
-      }
-    );
-
-    isCronInitialized = true;
-  }
-
   await connect();
 })();

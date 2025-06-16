@@ -168,12 +168,15 @@ export class VisitService {
     return await this.withTransaction(async (queryRunner) => {
       try {
         const startOfDay = this.getStartOfDay(date);
+
+        // Check idempotency
         const existingIdempotency = await queryRunner.manager.findOne(
           Idempotency,
           {
             where: { key: idempotencyKey },
           }
         );
+
         if (existingIdempotency) {
           return {
             status: httpStatusCodes.OK,
@@ -182,7 +185,7 @@ export class VisitService {
           };
         }
 
-        // Validate no existing visits or route
+        // Get existing visits and route
         const existingVisits = await queryRunner.manager.find(Visit, {
           where: {
             rep_id: Equal(repId),
@@ -190,43 +193,13 @@ export class VisitService {
             is_active: true,
           },
         });
-        if (existingVisits.length) {
-          return {
-            status: httpStatusCodes.OK,
-            data: null,
-            message: "Skipping as visits already exist",
-          };
-        }
+
         const existingRoute = await queryRunner.manager.findOne(Route, {
           where: { rep_id: Equal(repId), route_date: Equal(startOfDay) },
           lock: { mode: "pessimistic_write" },
         });
-        if (existingRoute) {
-          // Delete existing visits for the day
-          await queryRunner.manager.delete(Visit, {
-            rep_id: repId,
-            check_in_time: MoreThanOrEqual(startOfDay),
-            is_active: true,
-          });
-
-          // Delete existing route
-          await queryRunner.manager.delete(Route, {
-            rep_id: repId,
-            route_date: startOfDay,
-          });
-        }
 
         // Fetch uncompleted visits
-        await this.logQuery(
-          queryRunner.manager
-            .createQueryBuilder(Visit, "visit")
-            .leftJoinAndSelect("visit.lead", "lead")
-            .leftJoinAndSelect("lead.address", "address")
-            .where("visit.rep_id = :repId", { repId })
-            .andWhere("visit.check_in_time < :startOfDay", { startOfDay })
-            .andWhere("visit.check_out_time IS NULL")
-            .andWhere("visit.is_active = :isActive", { isActive: true })
-        );
         const uncompletedVisits = await queryRunner.manager.find(Visit, {
           where: {
             rep_id: Equal(repId),
@@ -236,6 +209,7 @@ export class VisitService {
           },
           relations: ["lead", "lead.address"],
         });
+
         const uncompletedLeads = uncompletedVisits
           .map((visit) => visit.lead)
           .filter(
@@ -257,6 +231,7 @@ export class VisitService {
           relations: ["address"],
           order: { created_at: "ASC" },
         });
+
         const validCustomers = allCustomers.filter(
           (customer) =>
             customer.address?.latitude && customer.address?.longitude
@@ -270,11 +245,11 @@ export class VisitService {
           };
         }
 
-        // Combine leads
         const leadIdsToExclude = uncompletedLeads.map((lead) => lead.lead_id);
         const newLeads = validCustomers.filter(
           (customer) => !leadIdsToExclude.includes(customer.lead_id)
         );
+
         const maxLeadsPerDay = 5;
         const leadsToPlan = [
           ...uncompletedLeads,
@@ -288,6 +263,7 @@ export class VisitService {
             message: "No leads available for visit planning",
           };
         }
+
         const leadIds = leadsToPlan.map((lead) => lead.lead_id);
         if (new Set(leadIds).size !== leadIds.length) {
           return {
@@ -297,7 +273,7 @@ export class VisitService {
           };
         }
 
-        // Get optimized route
+        // Generate optimized route
         const waypoints = leadsToPlan.map(
           (lead) => `${lead.address.latitude},${lead.address.longitude}`
         );
@@ -311,9 +287,14 @@ export class VisitService {
         // Plan visits
         let currentTime = new Date(date);
         currentTime.setHours(9, 0, 0, 0);
+
         const uncompletedVisitsMap = new Map(
-          uncompletedVisits.map((visit) => [visit.lead_id, visit])
+          [...uncompletedVisits, ...existingVisits].map((visit) => [
+            visit.lead_id,
+            visit,
+          ])
         );
+
         const routeOrder: RouteOrderItem[] = [];
         const visits: Visit[] = [];
 
@@ -336,6 +317,7 @@ export class VisitService {
             longitude: lead.address.longitude,
             created_by: managerId.toString(),
           };
+
           const visit = await this.handleVisit(
             queryRunner,
             visitData,
@@ -353,15 +335,23 @@ export class VisitService {
           });
         }
 
-        // Save route
-        const routeEntity = await queryRunner.manager.save(Route, {
-          rep_id: repId,
-          route_date: startOfDay,
-          route_order: routeOrder,
-          created_by: managerId.toString(),
-        });
+        // Upsert route
+        let routeEntity;
+        if (existingRoute) {
+          existingRoute.route_order = routeOrder;
+          existingRoute.updated_by = managerId.toString();
+          existingRoute.updated_at = new Date();
+          routeEntity = await queryRunner.manager.save(existingRoute);
+        } else {
+          routeEntity = await queryRunner.manager.save(Route, {
+            rep_id: repId,
+            route_date: startOfDay,
+            route_order: routeOrder,
+            created_by: managerId.toString(),
+          });
+        }
 
-        // Save idempotency
+        // Save idempotency record
         await queryRunner.manager.save(Idempotency, {
           key: idempotencyKey,
           result: { visits, route: routeEntity },
