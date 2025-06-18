@@ -4,7 +4,7 @@
   "routes": [{ "src": "/(.*)", "dest": "/api/index.ts" }],
   "crons": [
     {
-      "path": "/api/cron/daily-visit",
+      "path": "/api/cron/daily-visit?secret=your-secret-token",
       "schedule": "32 23 * * *"
     }
   ]
