@@ -12,6 +12,20 @@ import { Roles } from "../enum/roles";
 
 const userTeamService = new UserTeamService();
 export class UserTeamController {
+  async getSalesRepManagaerList(req: any, res: Response): Promise<void> {
+    let { user_id } = req.user as IJwtVerify;
+    const response = await userTeamService.getSalesRepManagaerList();
+    if (response.status >= 400) {
+      return ApiResponse.error(res, response.status, response.message);
+    }
+    return ApiResponse.result(
+      res,
+      response.data,
+      response.status,
+      null,
+      response.message
+    );
+  }
   async getUserById(req: any, res: Response): Promise<void> {
     let { user_id } = req.user as IJwtVerify;
     const response = await userTeamService.getUserById(user_id);

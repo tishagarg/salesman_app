@@ -13,7 +13,7 @@ export class AddressController {
       return res.status(httpStatusCodes.UNAUTHORIZED).json({ message: "User not authenticated" });
     }
 
-    const result = await this.addressService.createAddress(data, userId);
+    const result = await this.addressService.createAddress(data, userId,req.user.org_id);
     res.status(result.status).json(result);
   }
 }
