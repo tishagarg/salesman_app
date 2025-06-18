@@ -61,7 +61,7 @@ export class UserTeamService {
         await queryRunner.rollbackTransaction();
         return { status: 404, message: "Manager not found", data: null };
       }
-      if (manager?.role.role_name !== Roles.MANAGER) {
+      if (manager?.role?.role_name !== Roles.MANAGER) {
         await queryRunner.rollbackTransaction();
         return { status: 404, message: "User is not a manager", data: null };
       }

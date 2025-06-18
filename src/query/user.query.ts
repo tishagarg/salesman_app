@@ -233,7 +233,7 @@ export class UserQuery {
   ): Promise<User | null> {
     return await manager
       .getRepository(User)
-      .findOne({ where: { is_active: true, user_id, org_id } });
+      .findOne({ where: { is_active: true, user_id, org_id } ,relations:{role:true}});
   }
 
   async getUserByIdAllStatus(

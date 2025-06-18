@@ -153,7 +153,26 @@ export class VisitController {
     console.log(today);
     return today;
   };
+  async getAllVisits(req: any, res: Response): Promise<void> {
+   try {
+     const dataSource = await getDataSource();
 
+    const response = await dataSource.getRepository(Visit).find();
+    return ApiResponse.result(
+        res,
+        response ?? null,
+        200,
+        null,
+        "Visit hostory"
+      );
+   } catch (error) {
+    return ApiResponse.error(
+        res,
+        500,
+        "Failed to retrieve visits"
+      );
+   }
+  }
   async getDailyRouteAdmin(req: any, res: Response): Promise<void> {
     const roleId = req.user.role_id;
     try {
