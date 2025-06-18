@@ -110,6 +110,31 @@ export class UserTeamService {
     }
   }
 
+  async getSalesRepManagaerList(
+  
+  ): Promise<{
+    status: number;
+    data?: any;
+    message: string;
+  }> {
+    try {
+      const dataSource = await getDataSource();
+      const repData = await dataSource
+        .getRepository(ManagerSalesRep)
+        .find({ relations: { manager: true, sales_rep: true } });
+        return{
+          data:repData,
+          status:200,
+          message:"Data fetched successfully"
+        }
+    } catch (error) {
+       return{
+          data:null,
+          status:500,
+          message:"Error fetching data"
+        }
+    }
+  }
   async getUsersByRole(
     org_id: number,
     role: Roles,
@@ -608,8 +633,8 @@ export class UserTeamService {
             country: addressData.country || "",
             org_id: org_id,
             city: addressData.city || "",
-            latitude:coords.latitude,
-            longitude:coords.longitude,
+            latitude: coords.latitude,
+            longitude: coords.longitude,
             state: addressData.state || "",
             comments: addressData.comments || "",
           };
