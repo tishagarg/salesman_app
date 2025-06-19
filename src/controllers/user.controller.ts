@@ -12,6 +12,21 @@ import { Roles } from "../enum/roles";
 
 const userTeamService = new UserTeamService();
 export class UserTeamController {
+  async getAllRoles(req: any, res: Response): Promise<void> {
+    const { org_id } = req.user;
+    const response = await userTeamService.getAllRoles(org_id);
+    if (response.status >= 400) {
+      return ApiResponse.error(res, response.status, response.message);
+    }
+
+    return ApiResponse.result(
+      res,
+      response.data,
+      response.status,
+      null,
+      response.message
+    );
+  }
   async getSalesRepManagaerList(req: any, res: Response): Promise<void> {
     let { user_id } = req.user as IJwtVerify;
     const response = await userTeamService.getSalesRepManagaerList();
@@ -205,14 +220,11 @@ export class UserTeamController {
     const limit = parseInt(req.query.limit as string) || 10;
     const skip = (page - 1) * limit;
     const search = req.query.search as string;
-    const response = await userTeamService.getUnassignedSalesRep(
-      org_id,
-      {
-        limit,
-        skip,
-        search,
-      }
-    );
+    const response = await userTeamService.getUnassignedSalesRep(org_id, {
+      limit,
+      skip,
+      search,
+    });
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
     }

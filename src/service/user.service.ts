@@ -41,7 +41,44 @@ export class UserTeamService {
       body: `Your password is ${password} and email is ${email}. Please reset your password after login.`,
     });
   }
+  async getAllRoles(
+    org_id: number
+  ): Promise<{ status: number; data?: any; message: string }> {
+    const dataSource = await getDataSource();
+    const queryRunner = await dataSource.createQueryRunner();
+    await queryRunner.startTransaction();
+    try {
+     const roleData = await queryRunner.manager.getRepository(Role).find({
+  where: [
+    { org_id: org_id },
+    { role_name: Roles.ADMIN },
+  ],
+});
 
+
+      if (!roleData) {
+        return {
+          data: null,
+          status: 404,
+          message: "Roles not found",
+        };
+      }
+      return {
+        data: roleData,
+        status: 200,
+        message: "Roles fetched successfully",
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      return {
+        data: null,
+        status: 500,
+        message: "Error fetcing roles",
+      };
+    } finally {
+      await queryRunner.release();
+    }
+  }
   async assignManagerToSalesRep(
     userData: IJwtVerify,
     manager_id: number,
@@ -111,44 +148,45 @@ export class UserTeamService {
     }
   }
 
-async getSalesRepManagaerList(): Promise<{
-  status: number;
-  data?: any;
-  message: string;
-}> {
-  try {
-    const dataSource = await getDataSource();
-    const repData = await dataSource
-      .getRepository(ManagerSalesRep)
-      .find({ relations: { manager: true, sales_rep: true } });
+  async getSalesRepManagaerList(): Promise<{
+    status: number;
+    data?: any;
+    message: string;
+  }> {
+    try {
+      const dataSource = await getDataSource();
+      const repData = await dataSource
+        .getRepository(ManagerSalesRep)
+        .find({ relations: { manager: true, sales_rep: true } });
 
-    // Grouping sales reps by manager
-    const groupedData: Record<number, { manager: any; sales_reps: any[] }> = {};
+      // Grouping sales reps by manager
+      const groupedData: Record<number, { manager: any; sales_reps: any[] }> =
+        {};
 
-    for (const entry of repData) {
-      const managerId = entry.manager.user_id;
-      if (!groupedData[managerId]) {
-        groupedData[managerId] = {
-          manager: entry.manager,
-          sales_reps: [],
-        };
+      for (const entry of repData) {
+        const managerId = entry.manager.user_id;
+        if (!groupedData[managerId]) {
+          groupedData[managerId] = {
+            manager: entry.manager,
+            sales_reps: [],
+          };
+        }
+        groupedData[managerId].sales_reps.push(entry.sales_rep);
       }
-      groupedData[managerId].sales_reps.push(entry.sales_rep);
-    }
 
-    return {
-      data: Object.values(groupedData),
-      status: 200,
-      message: "Data fetched and grouped successfully",
-    };
-  } catch (error) {
-    return {
-      data: null,
-      status: 500,
-      message: "Error fetching data",
-    };
+      return {
+        data: Object.values(groupedData),
+        status: 200,
+        message: "Data fetched and grouped successfully",
+      };
+    } catch (error) {
+      return {
+        data: null,
+        status: 500,
+        message: "Error fetching data",
+      };
+    }
   }
-}
 
   async getUnassignedSalesRep(
     org_id: number,

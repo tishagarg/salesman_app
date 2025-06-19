@@ -147,7 +147,10 @@ export class AuthService {
         .getRepository(RefreshToken)
         .findOne({ where: { user_id: user.user_id } });
       let refreshToken;
-      if (!existingRefreshToken || existingRefreshToken.expires_at.getTime() >= Date.now()) {
+      if (
+        !existingRefreshToken ||
+        existingRefreshToken.expires_at.getTime() >= Date.now()
+      ) {
         const newRefreshToken = await generateRefreshToken(user.user_id);
         const newTokenData = await this.saveRefreshToken(
           queryRunner.manager,
