@@ -1,7 +1,7 @@
 import { getDataSource } from "../config/data-source";
 import { jwtVerify } from "../config/jwt";
 import httpStatusCodes from "http-status-codes";
-import { User } from "../models";
+import { User } from "../models/User.entity";
 import { RolePermission } from "../models/RolePermission.entity";
 
 export const permissionMiddleware =

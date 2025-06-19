@@ -7,7 +7,7 @@ import messageRoute from "./message.route";
 import mapRoute from "./mapNRoute.route";
 import territoryRoute from "./territory.route";
 import adminRoute from "./adminManager.routes";
-
+import contractRouter from "./contract.route";
 import express from "express";
 const router = express.Router();
 router.use("/auth", authRoute);
@@ -19,5 +19,6 @@ router.use("/dashboard", dashboardRoute);
 router.use("/message", messageRoute);
 router.use("/territory", territoryRoute);
 router.use("/admin", adminRoute);
+router.use("/contract",contractRouter)
 
 export default router;

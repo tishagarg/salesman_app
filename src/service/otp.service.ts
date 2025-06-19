@@ -10,7 +10,8 @@ import { UserQuery } from "../query/user.query";
 import { getDataSource } from "../config/data-source"; // Updated import
 import httpStatusCodes from "http-status-codes";
 import { OtpType } from "../enum/otpType";
-import { OtpVerification, User } from "../models/index";
+import { User } from "../models/User.entity";
+import { OtpVerification } from "../models/OTPVerification.entity";
 import { EntityManager } from "typeorm";
 import { sendEmail } from "./email.service";
 

@@ -21,7 +21,7 @@ import { getDataSource } from "../config/data-source"; // Updated import
 import { OrganizationQuery } from "../query/organization.query";
 import { OtpMedium } from "../enum/otpMedium";
 import { OtpType } from "../enum/otpType";
-import { User } from "../models/index";
+import { User } from "../models/User.entity";
 import { RoleQuery } from "../query/role.query";
 import { sendEmail } from "./email.service";
 import { Roles } from "../enum/roles";

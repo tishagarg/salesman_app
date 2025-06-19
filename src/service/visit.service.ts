@@ -16,6 +16,9 @@ import {
 } from "typeorm";
 import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
+import { Contract } from "../models/Contracts.entity";
+import { ContractTemplate } from "../models/ContractTemplate.entity";
+import { renderContract } from "../utils/renderContracts";
 
 require("dotenv").config();
 
@@ -85,14 +88,83 @@ export class VisitService {
 
   private getStartOfDay(date: Date = new Date()): Date {
     const startOfDay = new Date(date);
-    startOfDay.setHours(0, 0, 0, 0); // Midnight IST
+    startOfDay.setHours(0, 0, 0, 0);
     return startOfDay;
   }
 
   private async logQuery(queryBuilder: any): Promise<void> {
     const sql = await queryBuilder.getSql();
   }
+  async submitVisitWithContract(payload: {
+    visit_id: number;
+    contract_template_id: number;
+    metadata: Record<string, string>;
+  }): Promise<{ data: any; status: number; message: string }> {
+    const dataSource = await getDataSource();
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.startTransaction();
 
+    try {
+      const dataSource = await getDataSource();
+      const visitRepo = dataSource.getRepository(Visit);
+      const contractRepo = dataSource.getRepository(Contract);
+      const templateRepo = dataSource.getRepository(ContractTemplate);
+      const visit = await visitRepo.findOneBy({ visit_id: payload.visit_id });
+      if (!visit) {
+        await queryRunner.rollbackTransaction();
+        return {
+          data: null,
+          message: "Visit not found",
+          status: 404,
+        };
+      }
+      if (visit.contract !== null) {
+        return {
+          data: null,
+          message: "Contract already signed",
+          status: 200,
+        };
+      }
+      const template = await templateRepo.findOneBy({
+        id: payload.contract_template_id,
+      });
+      if (!template) {
+        await queryRunner.rollbackTransaction();
+
+        return {
+          data: null,
+          message: "Contract template not found",
+          status: 404,
+        };
+      }
+      const renderedHtml = renderContract(template.content, payload.metadata);
+      const contract = contractRepo.create({
+        contract_template_id: template.id,
+        visit_id: visit.visit_id,
+        rendered_html: renderedHtml,
+        metadata: payload.metadata,
+      });
+      await contractRepo.save(contract);
+      visit.contract = contract;
+      await visitRepo.save(visit);
+      await queryRunner.commitTransaction();
+
+      return {
+        data: contract,
+        message: "Contract signed successfully",
+        status: 200,
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      return {
+        data: null,
+        message: "Error signing the contract",
+        status: 500,
+      };
+    } finally {
+      await queryRunner.release();
+    }
+  }
   private async getOptimizedRoute(
     origin: string,
     waypoints: string[]
@@ -384,8 +456,6 @@ export class VisitService {
         if (!customer) {
           throw new Error("Customer not assigned to rep");
         }
-
-        // Check uncompleted visit
         await this.logQuery(
           queryRunner.manager
             .createQueryBuilder(Visit, "visit")

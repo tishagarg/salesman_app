@@ -1,5 +1,5 @@
 import { EntityManager } from "typeorm";
-import { OtpVerification } from "../models";
+import { OtpVerification } from "../models/OTPVerification.entity";
 import { getDataSource } from "../config/data-source";
 import { IOtpResponse } from "../interfaces/user.interface";
 import { OtpType } from "../enum/otpType";

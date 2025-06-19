@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import { getDataSource } from "../config/data-source";
 import { jwtVerify } from "../config/jwt";
 import { UserTokenQuery } from "../query/usertoken.query";
-import { UserToken } from "../models/index";
+import { UserToken } from "../models/UserToken.entity";
 import { ApiResponse } from "../utils/api.response";
 import { runDailyVisitPlanning } from "../service/nodeCron.service";
 

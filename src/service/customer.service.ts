@@ -5,7 +5,8 @@ import {
   AddressDto,
   UpdateLeadDto,
 } from "../interfaces/common.interface";
-import { Role, User } from "../models";
+import {  User } from "../models/User.entity";
+import { Role } from "../models/Role.entity";
 import { Leads } from "../models/Leads.entity";
 import { Address } from "../models/Address.entity";
 import httpStatusCodes from "http-status-codes";

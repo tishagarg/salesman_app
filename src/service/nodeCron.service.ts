@@ -2,7 +2,7 @@
 import { v4 as uuidv4 } from "uuid";
 import { In } from "typeorm";
 import { getDataSource } from "../config/data-source";
-import { User } from "../models";
+import { User } from "../models/User.entity";
 import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
 import { VisitService } from "./visit.service";
 const visitService = new VisitService();

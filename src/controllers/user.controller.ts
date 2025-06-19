@@ -184,6 +184,7 @@ export class UserTeamController {
     );
   }
 
+
   async activeDeactive(req: any, res: Response): Promise<void> {
     const { org_id, user_id } = req.user as IJwtVerify;
     const { status, id }: activeDeactiveI = req.body;

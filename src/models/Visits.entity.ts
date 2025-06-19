@@ -4,11 +4,13 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
+  OneToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from "typeorm";
 import { User } from "./User.entity";
 import { Leads } from "./Leads.entity";
+import { Contract } from "./Contracts.entity";
 @Entity("visit")
 export class Visit {
   @PrimaryGeneratedColumn()
@@ -60,6 +62,8 @@ export class Visit {
   @ManyToOne(() => Leads, { onDelete: "CASCADE" })
   @JoinColumn({ name: "lead_id" })
   lead: Leads;
+  @OneToOne(() => Contract, (contract) => contract.visit, { cascade: true })
+  contract: Contract;
 
   @ManyToOne(() => User, { onDelete: "SET NULL" })
   @JoinColumn({ name: "rep_id" })

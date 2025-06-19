@@ -1,5 +1,5 @@
 import { getDataSource } from "../config/data-source"; // Updated import
-import { Role } from "../models";
+import { Role } from "../models/Role.entity";
 import { Leads } from "../models/Leads.entity";
 import { Visit } from "../models/Visits.entity";
 import httpStatusCodes from "http-status-codes";
