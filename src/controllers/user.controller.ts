@@ -12,6 +12,20 @@ import { Roles } from "../enum/roles";
 
 const userTeamService = new UserTeamService();
 export class UserTeamController {
+  async getDashboard(req: any, res: Response): Promise<void> {
+    const response = await userTeamService.getDashboard();
+    if (response.status >= 400) {
+      return ApiResponse.error(res, response.status, response.message);
+    }
+
+    return ApiResponse.result(
+      res,
+      response.data,
+      response.status,
+      null,
+      response.message
+    );
+  }
   async getAllRoles(req: any, res: Response): Promise<void> {
     const { org_id } = req.user;
     const response = await userTeamService.getAllRoles(org_id);

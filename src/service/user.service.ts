@@ -20,10 +20,13 @@ import { AddressQuery } from "../query/address.query";
 import { AddressDto } from "../interfaces/common.interface";
 import { TerritoryService } from "./territory.service";
 import { Territory } from "../models/Territory.entity";
-import { In } from "typeorm";
+import { In, IsNull, Not } from "typeorm";
 import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
 import { GeocodingService } from "../utils/geoCode.service";
 import { Role, User } from "../models";
+import { Leads } from "../models/Leads.entity";
+import { Visit } from "../models/Visits.entity";
+import { Route } from "../models/Route.entity";
 
 const userQuery = new UserQuery();
 const roleQuery = new RoleQuery();
@@ -48,13 +51,9 @@ export class UserTeamService {
     const queryRunner = await dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
-     const roleData = await queryRunner.manager.getRepository(Role).find({
-  where: [
-    { org_id: org_id },
-    { role_name: Roles.ADMIN },
-  ],
-});
-
+      const roleData = await queryRunner.manager.getRepository(Role).find({
+        where: [{ org_id: org_id }, { role_name: Roles.ADMIN }],
+      });
 
       if (!roleData) {
         return {
@@ -65,6 +64,69 @@ export class UserTeamService {
       }
       return {
         data: roleData,
+        status: 200,
+        message: "Roles fetched successfully",
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      return {
+        data: null,
+        status: 500,
+        message: "Error fetcing roles",
+      };
+    } finally {
+      await queryRunner.release();
+    }
+  }
+  async getDashboard(): Promise<{
+    status: number;
+    data?: any;
+    message: string;
+  }> {
+    const dataSource = await getDataSource();
+    const queryRunner = await dataSource.createQueryRunner();
+    await queryRunner.startTransaction();
+    try {
+      const leadsCount = await queryRunner.manager.getRepository(Leads).count();
+      const closedVisitsCount = await queryRunner.manager
+        .getRepository(Visit)
+        .countBy({ check_out_time: Not(IsNull()) });
+      const pendingVisitsCount = await queryRunner.manager
+        .getRepository(Visit)
+        .countBy({ check_out_time: IsNull() });
+      const salesRepCount = await queryRunner.manager
+        .getRepository(User)
+        .countBy({ role: { role_name: Roles.SALES_REP } });
+      const managerCount = await queryRunner.manager
+        .getRepository(User)
+        .countBy({ role: { role_name: Roles.MANAGER } });
+      const liveRoutesCount = await queryRunner.manager
+        .getRepository(Route)
+        .countBy({ is_active: true });
+      const totalTerritoryCount = await queryRunner.manager
+        .getRepository(Territory)
+        .count();
+      const totalAddressCount = await queryRunner.manager
+        .getRepository(Address)
+        .count();
+      const totalUsersCount = await queryRunner.manager
+        .getRepository(User)
+        .count();
+      const activeUsersCount = await queryRunner.manager
+        .getRepository(User)
+        .countBy({ is_active: true });
+      return {
+        data: {
+          totalUsersCount,
+          activeUsersCount,
+          pendingVisitsCount,
+          managerCount,
+          salesRepCount,
+          closedVisitsCount,
+          leadsCount,
+          totalTerritoryCount,
+          totalAddressCount,liveRoutesCount
+        },
         status: 200,
         message: "Roles fetched successfully",
       };
