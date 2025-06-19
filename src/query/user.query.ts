@@ -85,7 +85,10 @@ export class UserQuery {
     return savedToken;
   }
 
-  async findByEmail(email: string, manager?: EntityManager): Promise<User | null> {
+  async findByEmail(
+    email: string,
+    manager?: EntityManager
+  ): Promise<User | null> {
     const dataSource = manager ? null : await getDataSource();
     const repository = manager
       ? manager.getRepository(User)
@@ -183,7 +186,9 @@ export class UserQuery {
     org_id: number,
     limit: number,
     skip: number,
-    search: string
+    search: string,
+    role?: string,
+    status?: string
   ): Promise<[any[], number]> {
     let query = await manager
       .createQueryBuilder(User, "user")
@@ -218,6 +223,17 @@ export class UserQuery {
         { searchTerm }
       );
     }
+    if (role && role.trim() !== "") {
+      query = query.andWhere("LOWER(role.role_name) = :role", {
+        role: role.toLowerCase(),
+      });
+      console.log(query)
+    }
+    if (status && (status === "active" || status === "inactive")) {
+      const isActive = status === "active";
+      query = query.andWhere("user.is_active = :isActive", { isActive });
+    }
+
     const [users, total] = await query
       .orderBy("user.user_id", "ASC")
       .take(limit)
@@ -231,9 +247,10 @@ export class UserQuery {
     org_id: number,
     user_id: number
   ): Promise<User | null> {
-    return await manager
-      .getRepository(User)
-      .findOne({ where: { is_active: true, user_id, org_id } ,relations:{role:true}});
+    return await manager.getRepository(User).findOne({
+      where: { is_active: true, user_id, org_id },
+      relations: { role: true },
+    });
   }
 
   async getUserByIdAllStatus(
