@@ -94,9 +94,15 @@ export class UserTeamService {
       const pendingVisitsCount = await queryRunner.manager
         .getRepository(Visit)
         .countBy({ check_out_time: IsNull() });
+      const assignedSalesRepsCount = await queryRunner.manager
+        .getRepository(ManagerSalesRep)
+        .count();
+
       const salesRepCount = await queryRunner.manager
         .getRepository(User)
         .countBy({ role: { role_name: Roles.SALES_REP } });
+      const unassignedSalesRepsCount = salesRepCount - assignedSalesRepsCount;
+
       const managerCount = await queryRunner.manager
         .getRepository(User)
         .countBy({ role: { role_name: Roles.MANAGER } });
@@ -125,7 +131,9 @@ export class UserTeamService {
           closedVisitsCount,
           leadsCount,
           totalTerritoryCount,
-          totalAddressCount,liveRoutesCount
+          totalAddressCount,
+          liveRoutesCount,
+          unassignedSalesRepsCount,
         },
         status: 200,
         message: "Roles fetched successfully",
