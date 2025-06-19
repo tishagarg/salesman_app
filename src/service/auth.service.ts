@@ -752,18 +752,18 @@ export class AuthService {
         user.is_admin
       );
 
-      const newRefreshToken = await generateRefreshToken(user.user_id);
+      // const newRefreshToken = await generateRefreshToken(user.user_id);
 
-      await this.saveRefreshToken(
-        queryRunner.manager,
-        user.user_id,
-        newRefreshToken
-      );
+      // await this.saveRefreshToken(
+      //   queryRunner.manager,
+      //   user.user_id,
+      //   newRefreshToken
+      // );
 
-      await queryRunner.manager.getRepository(RefreshToken).delete({
-        user_id: user.user_id,
-        token: refreshToken,
-      });
+      // await queryRunner.manager.getRepository(RefreshToken).delete({
+      //   user_id: user.user_id,
+      //   token: refreshToken,
+      // });
 
       await queryRunner.commitTransaction();
 
@@ -771,7 +771,7 @@ export class AuthService {
         status: httpStatusCodes.OK,
         data: {
           token: newAccessToken,
-          refreshToken: newRefreshToken,
+          refreshToken: tokenRecord,
         },
         message: "Token refreshed successfully",
       };
