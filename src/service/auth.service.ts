@@ -155,7 +155,7 @@ export class AuthService {
           newRefreshToken
         );
         refreshToken = newTokenData.token;
-      } else() {
+      } else {
         refreshToken = existingRefreshToken.token;
       }
       const getUserByIdWithOrganization =
