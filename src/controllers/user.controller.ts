@@ -114,11 +114,15 @@ export class UserTeamController {
     const limit = parseInt(req.query.limit as string) || 10;
     const skip = (page - 1) * limit;
     const search = req.query.search as string;
+    const role = req.query.role as string;
+    const status = req.query.status as string;
     const response = await userTeamService.getAllTeamMember(org_id, {
       page,
       limit,
       skip,
       search,
+      role,
+      status,
     });
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);

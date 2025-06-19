@@ -495,7 +495,14 @@ export class UserTeamService {
 
   async getAllTeamMember(
     org_id: number,
-    pagination: { page: number; limit: number; skip: number; search: string }
+    pagination: {
+      page: number;
+      limit: number;
+      skip: number;
+      search: string;
+      role?: string;
+      status?: string;
+    }
   ): Promise<{
     status: number;
     data?: any;
@@ -512,7 +519,9 @@ export class UserTeamService {
         org_id,
         pagination.limit,
         pagination.skip,
-        pagination.search
+        pagination.search,
+        pagination.role,
+        pagination.status
       );
       await queryRunner.commitTransaction();
 
