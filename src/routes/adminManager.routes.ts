@@ -11,4 +11,5 @@ router.use(verifyToken);
 router.get("/daily-routes", visitController.getDailyRouteAdmin)
 router.get("/visit/history", visitController.getAllVisits)
 router.get("/rep-manager", userController.getSalesRepManagaerList)
+
 export default router;

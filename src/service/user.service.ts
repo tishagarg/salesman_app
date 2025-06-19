@@ -23,6 +23,7 @@ import { Territory } from "../models/Territory.entity";
 import { In } from "typeorm";
 import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
 import { GeocodingService } from "../utils/geoCode.service";
+import { Role, User } from "../models";
 
 const userQuery = new UserQuery();
 const roleQuery = new RoleQuery();
@@ -110,31 +111,110 @@ export class UserTeamService {
     }
   }
 
-  async getSalesRepManagaerList(
-  
+async getSalesRepManagaerList(): Promise<{
+  status: number;
+  data?: any;
+  message: string;
+}> {
+  try {
+    const dataSource = await getDataSource();
+    const repData = await dataSource
+      .getRepository(ManagerSalesRep)
+      .find({ relations: { manager: true, sales_rep: true } });
+
+    // Grouping sales reps by manager
+    const groupedData: Record<number, { manager: any; sales_reps: any[] }> = {};
+
+    for (const entry of repData) {
+      const managerId = entry.manager.user_id;
+      if (!groupedData[managerId]) {
+        groupedData[managerId] = {
+          manager: entry.manager,
+          sales_reps: [],
+        };
+      }
+      groupedData[managerId].sales_reps.push(entry.sales_rep);
+    }
+
+    return {
+      data: Object.values(groupedData),
+      status: 200,
+      message: "Data fetched and grouped successfully",
+    };
+  } catch (error) {
+    return {
+      data: null,
+      status: 500,
+      message: "Error fetching data",
+    };
+  }
+}
+
+  async getUnassignedSalesRep(
+    org_id: number,
+    { limit, skip, search }: { limit: number; skip: number; search?: string }
   ): Promise<{
     status: number;
     data?: any;
     message: string;
+    total: number;
   }> {
+    const dataSource = await getDataSource();
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.startTransaction();
+
     try {
-      const dataSource = await getDataSource();
-      const repData = await dataSource
-        .getRepository(ManagerSalesRep)
-        .find({ relations: { manager: true, sales_rep: true } });
-        return{
-          data:repData,
-          status:200,
-          message:"Data fetched successfully"
-        }
+      const role = await queryRunner.manager.findOneByOrFail(Role, {
+        role_name: Roles.SALES_REP,
+      });
+
+      const query = queryRunner.manager
+        .getRepository(User)
+        .createQueryBuilder("user")
+        .leftJoin(ManagerSalesRep, "msr", "msr.sales_rep_id = user.user_id")
+        .where("user.role_id = :roleId", { roleId: role.role_id })
+        .andWhere("user.org_id = :orgId", { orgId: org_id })
+        .andWhere("msr.sales_rep_id IS NULL")
+        .andWhere("user.is_active = true");
+      if (search && search.trim() !== "") {
+        const searchTerm = `%${search.trim().toLowerCase()}%`;
+        query.andWhere(
+          `(LOWER(COALESCE(user.email, '')) LIKE :searchTerm
+          OR LOWER(COALESCE(user.full_name, '')) LIKE :searchTerm
+          OR LOWER(COALESCE(user.first_name, '')) LIKE :searchTerm
+          OR LOWER(COALESCE(user.last_name, '')) LIKE :searchTerm)`,
+          { searchTerm }
+        );
+      }
+
+      const [users, total] = await query
+        .orderBy("user.user_id", "ASC")
+        .skip(skip)
+        .take(limit)
+        .getManyAndCount();
+
+      await queryRunner.commitTransaction();
+
+      return {
+        status: 200,
+        data: users.map(({ password_hash, ...safeUser }) => safeUser),
+        total,
+        message: "Unassigned managers fetched successfully",
+      };
     } catch (error) {
-       return{
-          data:null,
-          status:500,
-          message:"Error fetching data"
-        }
+      await queryRunner.rollbackTransaction();
+      console.error(error);
+      return {
+        status: 500,
+        data: null,
+        total: 0,
+        message: "Failed to fetch unassigned managers.",
+      };
+    } finally {
+      await queryRunner.release();
     }
   }
+
   async getUsersByRole(
     org_id: number,
     role: Roles,
