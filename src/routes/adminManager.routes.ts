@@ -12,5 +12,5 @@ router.get("/roles", userController.getAllRoles)
 router.get("/daily-routes", visitController.getDailyRouteAdmin)
 router.get("/visit/history", visitController.getAllVisits)
 router.get("/rep-manager", userController.getSalesRepManagaerList)
-
+router.get("/dashboard", userController.getDashboard);
 export default router;
