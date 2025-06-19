@@ -23,11 +23,13 @@ import { Territory } from "../models/Territory.entity";
 import { In, IsNull, Not } from "typeorm";
 import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
 import { GeocodingService } from "../utils/geoCode.service";
-import {  User } from "../models/User.entity";
-import {  Role } from "../models/Role.entity";
+import { User } from "../models/User.entity";
+import { Role } from "../models/Role.entity";
 import { Leads } from "../models/Leads.entity";
 import { Visit } from "../models/Visits.entity";
 import { Route } from "../models/Route.entity";
+import { Contract } from "../models/Contracts.entity";
+import { ContractTemplate } from "../models/ContractTemplate.entity";
 
 const userQuery = new UserQuery();
 const roleQuery = new RoleQuery();
@@ -98,7 +100,12 @@ export class UserTeamService {
       const assignedSalesRepsCount = await queryRunner.manager
         .getRepository(ManagerSalesRep)
         .count();
-
+      const totalSignedContracts = await queryRunner.manager
+        .getRepository(Contract)
+        .count();
+      const totalContractTemplates = await queryRunner.manager
+        .getRepository(ContractTemplate)
+        .count();
       const salesRepCount = await queryRunner.manager
         .getRepository(User)
         .countBy({ role: { role_name: Roles.SALES_REP } });
@@ -122,6 +129,10 @@ export class UserTeamService {
       const activeUsersCount = await queryRunner.manager
         .getRepository(User)
         .countBy({ is_active: true });
+    const assignedManagerCount = await queryRunner.query(`
+  SELECT COUNT(DISTINCT manager_id) as count 
+  FROM contract_template_managers
+`);
       return {
         data: {
           totalUsersCount,
@@ -135,16 +146,20 @@ export class UserTeamService {
           totalAddressCount,
           liveRoutesCount,
           unassignedSalesRepsCount,
+          totalSignedContracts,
+          totalContractTemplates,
+          assignedManagerCount:assignedManagerCount.count,
         },
         status: 200,
-        message: "Roles fetched successfully",
+        message: "Analytics fetched successfully",
       };
     } catch (error) {
+      console.log(error)
       await queryRunner.rollbackTransaction();
       return {
         data: null,
         status: 500,
-        message: "Error fetcing roles",
+        message: "Error fetcing dashboard results",
       };
     } finally {
       await queryRunner.release();
