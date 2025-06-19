@@ -2,7 +2,7 @@ import { Response } from "express";
 import { VisitService } from "../service/visit.service";
 import { ApiResponse } from "../utils/api.response";
 import { Leads } from "../models/Leads.entity";
-import { In, MoreThanOrEqual } from "typeorm";
+import { Between, In, MoreThanOrEqual } from "typeorm";
 import { Visit } from "../models/Visits.entity";
 import { Route } from "../models/Route.entity";
 import { Role, User } from "../models";
@@ -154,25 +154,72 @@ export class VisitController {
     return today;
   };
   async getAllVisits(req: any, res: Response): Promise<void> {
-   try {
-     const dataSource = await getDataSource();
+    try {
+      const dataSource = await getDataSource();
+      const visitRepo = dataSource.getRepository(Visit);
 
-    const response = await dataSource.getRepository(Visit).find();
-    return ApiResponse.result(
+      const {
+        salesRepId,
+        managerId,
+        visitDate,
+        sortBy = "check_in_time",
+        sortOrder = "DESC",
+      } = req.query;
+
+      const where: any = {};
+
+      if (salesRepId) {
+        where.rep = { user_id: +salesRepId };
+      }
+
+      if (managerId) {
+        where.rep = {
+          ...where.rep,
+          manager: { user_id: +managerId },
+        };
+      }
+
+      if (visitDate) {
+        const date = new Date(visitDate);
+        const nextDate = new Date(visitDate);
+        nextDate.setDate(nextDate.getDate() + 1);
+
+        where.check_in_time = Between(date, nextDate);
+      }
+      const order: any = {};
+      if (
+        sortBy === "check_in_time" ||
+        sortBy === "lead_id" ||
+        sortBy === "sales_rep"
+      ) {
+        order[sortBy === "sales_rep" ? "rep" : sortBy] =
+          sortOrder.toUpperCase();
+      } else {
+        order.check_in_time = "DESC";
+      }
+
+      const visits = await visitRepo.find({
+        where,
+        relations: {
+          lead: true,
+          rep: true,
+        },
+        order,
+      });
+
+      return ApiResponse.result(
         res,
-        response ?? null,
+        visits ?? null,
         200,
         null,
-        "Visit hostory"
+        "Visit history"
       );
-   } catch (error) {
-    return ApiResponse.error(
-        res,
-        500,
-        "Failed to retrieve visits"
-      );
-   }
+    } catch (error) {
+      console.error(error);
+      return ApiResponse.error(res, 500, "Failed to retrieve visits");
+    }
   }
+
   async getDailyRouteAdmin(req: any, res: Response): Promise<void> {
     const roleId = req.user.role_id;
     try {
