@@ -5,6 +5,7 @@ import { verifyToken } from "../middleware/auth.middleware";
 const userTeamController = new UserTeamController();
 const router = Router();
 router.get("/sales-rep", verifyToken, userTeamController.getSalesRep);
+router.get("/unassigned-sales-rep", verifyToken, userTeamController.getUnassignedSalesRep);
 router.post("/", verifyToken, userTeamController.addTeamMember);
 router.get("/", verifyToken, userTeamController.getAllTeamMember);
 router.get("/manager", verifyToken, userTeamController.getAllManagers);
