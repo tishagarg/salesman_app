@@ -5,10 +5,11 @@ import { Leads } from "../models/Leads.entity";
 import { Between, In, MoreThanOrEqual } from "typeorm";
 import { Visit } from "../models/Visits.entity";
 import { Route } from "../models/Route.entity";
-import { Role, User } from "../models";
 import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
 import { getDataSource } from "../config/data-source";
 import { Roles } from "../enum/roles";
+import { Role } from "../models/Role.entity";
+import { User } from "../models/User.entity";
 
 const visitService = new VisitService();
 
@@ -28,6 +29,20 @@ export class VisitController {
       null,
       response.message
     );
+  }
+
+  async submitVisitWithContract(req: any, res: Response): Promise<void> {
+    const { visit_id, contract_template_id, metadata } = req.body;
+
+    const contract = await visitService.submitVisitWithContract({
+      visit_id,
+      contract_template_id,
+      metadata,
+    });
+    if (contract.status >= 400) {
+      ApiResponse.error(res, contract.status, contract.message);
+    }
+    ApiResponse.result(res, contract, contract.status, null, contract.message);
   }
 
   async logVisit(req: any, res: Response): Promise<void> {
@@ -124,8 +139,6 @@ export class VisitController {
   async refreshDailyRoute(req: any, res: Response): Promise<void> {
     const rep_id = req.user.user_id;
     const { latitude, longitude } = req.query;
-    console.log("Query params:", { latitude, longitude });
-
     const parsedLatitude =
       typeof latitude === "string" ? parseFloat(latitude) : Number(latitude);
     const parsedLongitude =

@@ -1,13 +1,6 @@
 import "reflect-metadata";
 import { DataSource, DataSourceOptions } from "typeorm";
 import dotenv from "dotenv";
-import {
-  Organization,
-  OtpVerification,
-  Role,
-  User,
-  UserToken,
-} from "../models/index";
 import { Address } from "../models/Address.entity";
 import { Leads } from "../models/Leads.entity";
 import { Visit } from "../models/Visits.entity";
@@ -24,6 +17,13 @@ import { Route } from "../models/Route.entity";
 import { TerritorySalesman } from "../models/TerritorySalesMan.entity";
 import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
 import { Idempotency } from "../models/Idempotency";
+import { Contract } from "../models/Contracts.entity";
+import { ContractTemplate } from "../models/ContractTemplate.entity";
+import { User } from "../models/User.entity";
+import { Organization } from "../models/Organisation.entity";
+import { Role } from "../models/Role.entity";
+import { OtpVerification } from "../models/OTPVerification.entity";
+import { UserToken } from "../models/UserToken.entity";
 
 dotenv.config();
 
@@ -46,6 +46,8 @@ export const dataSourceOptions: DataSourceOptions = {
     Role,
     TerritorySalesman,
     OtpVerification,
+    Contract,
+    ContractTemplate,
     ManagerSalesRep,
     UserToken,
     Address,

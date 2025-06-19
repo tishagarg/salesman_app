@@ -1,4 +1,6 @@
-import { Organization, User } from "../models";
+import { Organization } from "../models/Organisation.entity";
+import { User } from "../models/User.entity";
+
 import { EntityManager } from "typeorm";
 
 export class OrganizationQuery {
@@ -13,7 +15,9 @@ export class OrganizationQuery {
     const organization = manager
       .getRepository(Organization)
       .create({ org_name });
-    const dbResponse = await manager.getRepository(Organization).save(organization);
+    const dbResponse = await manager
+      .getRepository(Organization)
+      .save(organization);
     return dbResponse;
   }
 

@@ -1,8 +1,9 @@
 import { EntityManager } from "typeorm";
 import { getDataSource } from "../config/data-source";
 import { IsaveTokenParams } from "../interfaces/user.interface";
-import { User, UserToken } from "../models/index";
 import { UserTokenQuery } from "./usertoken.query";
+import { User } from "../models/User.entity";
+import { UserToken } from "../models/UserToken.entity";
 
 const userTokenQuery = new UserTokenQuery();
 

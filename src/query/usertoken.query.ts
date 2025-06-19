@@ -1,4 +1,4 @@
-import { UserToken } from "../models";
+import { UserToken } from "../models/UserToken.entity";
 import { EntityManager } from "typeorm";
 import { RefreshToken } from "../models/RefreshToken.entity";
 import { getDataSource } from "../config/data-source";
