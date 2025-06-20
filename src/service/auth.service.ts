@@ -90,10 +90,7 @@ export class AuthService {
       const user = await userQuery.findUserByEmail(queryRunner.manager, email);
       if (!user) {
         await queryRunner.rollbackTransaction();
-        return {
-          status: httpStatusCodes.NOT_FOUND,
-          message: "User not found",
-        };
+        return { status: httpStatusCodes.NOT_FOUND, message: "User not found" };
       }
 
       if (!user.is_active) {
@@ -124,11 +121,17 @@ export class AuthService {
         user.is_super_admin,
         user.is_admin
       );
-      const existingToken = await userTokenQuery.findTokenById(
+      const getUserByIdWithOrganization =
+        await organizationQuery.getUserByIdWithOrganization(
+          queryRunner.manager,
+          user.user_id
+        );
+
+      const existingTokens = await userTokenQuery.findTokenById(
         queryRunner.manager,
         user.user_id
       );
-      if (existingToken) {
+      if (existingTokens.length) {
         await userTokenQuery.deleteUserTokens(
           queryRunner.manager,
           user.user_id
@@ -143,30 +146,25 @@ export class AuthService {
         active: 1,
       });
 
-      const existingRefreshToken = await dataSource
-        .getRepository(RefreshToken)
-        .findOne({ where: { user_id: user.user_id } });
-      let refreshToken;
-      if (
-        !existingRefreshToken ||
-        existingRefreshToken.expires_at.getTime() >= Date.now()
-      ) {
-        const newRefreshToken = await generateRefreshToken(user.user_id);
-        const newTokenData = await this.saveRefreshToken(
-          queryRunner.manager,
-          user.user_id,
-          newRefreshToken
-        );
-        refreshToken = newTokenData.token;
-      } else {
-        refreshToken = existingRefreshToken.token;
-      }
-      const getUserByIdWithOrganization =
-        await organizationQuery.getUserByIdWithOrganization(
+      const existingRefreshToken = await userTokenQuery.findRefreshTokenById(
+        queryRunner.manager,
+        user.user_id
+      );
+      if (existingRefreshToken) {
+        await userTokenQuery.deleteRefreshTokens(
           queryRunner.manager,
           user.user_id
         );
-      const { password_hash, ...safeUser } = getUserByIdWithOrganization;
+      }
+
+      const newRefreshToken = generateRefreshToken(user.user_id);
+      const refreshToken = await this.saveRefreshToken(
+        queryRunner.manager,
+        user.user_id,
+        newRefreshToken
+      );
+
+      const { password_hash, ...safeUser } = user;
 
       if (user.is_active && !user.is_email_verified) {
         await queryRunner.commitTransaction();
@@ -204,7 +202,7 @@ export class AuthService {
       await queryRunner.rollbackTransaction();
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
-        message: error?.message ? error?.message : "Internal server error",
+        message: error?.message || "Internal server error",
       };
     } finally {
       await queryRunner.release();
@@ -513,33 +511,47 @@ export class AuthService {
     }
   }
 
-  async logout(token: string) {
+  async logout(accessToken: string): Promise<{
+    status: number;
+    message: string;
+    data: null;
+  }> {
     const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
 
     try {
-      const payload = await jwtVerify(token);
+      const payload = await jwtVerify(accessToken);
 
-      await userTokenQuery.deleteTokenFromDatabase(token);
+      const user = await queryRunner.manager.getRepository(User).findOne({
+        where: { user_id: payload.user_id },
+      });
 
-      // await queryRunner.manager.getRepository(RefreshToken).delete({
-      //   user_id: payload.user_id,
-      // });
+      if (!user) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.NOT_FOUND,
+          message: "User not found",
+          data: null,
+        };
+      }
+
+      await userTokenQuery.deleteTokenFromDatabase(accessToken);
+      await queryRunner.manager.getRepository(RefreshToken).delete({
+        user_id: payload.user_id,
+      });
 
       await queryRunner.commitTransaction();
-
       return {
-        status: 200,
+        status: httpStatusCodes.OK,
         message: "Logout successful",
         data: null,
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
-      console.error("Error during logout:", error);
       return {
-        status: 500,
-        message: "Internal server error during logout",
+        status: httpStatusCodes.UNAUTHORIZED,
+        message: "Invalid or expired token",
         data: null,
       };
     } finally {
@@ -708,29 +720,27 @@ export class AuthService {
     }
   }
 
-  async refreshToken(refreshToken: string): Promise<{
-    status: number;
-    data?: any;
-    message: string;
-  }> {
+  async refreshToken(
+    refreshToken: string
+  ): Promise<{ data: any | null; status: number; message: string }> {
     const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
 
     try {
-      const tokenRecord = await dataSource.manager
+      const tokenRecord = await queryRunner.manager
         .getRepository(RefreshToken)
-        .findOneByOrFail({
-          token: refreshToken,
-        });
+        .findOneByOrFail({ token: refreshToken });
 
-      if (!(tokenRecord && tokenRecord.expires_at > new Date())) {
+      if (tokenRecord.expires_at < new Date()) {
         await queryRunner.rollbackTransaction();
         return {
+          data: null,
           status: httpStatusCodes.UNAUTHORIZED,
-          message: "Token not found or expired",
+          message: "Token is expired",
         };
       }
+
       const decoded = await verifyRefreshToken(refreshToken);
 
       const user = await queryRunner.manager.getRepository(User).findOne({
@@ -742,10 +752,19 @@ export class AuthService {
         return {
           status: httpStatusCodes.NOT_FOUND,
           message: "User not found",
+          data: null,
         };
       }
 
-      // Generate new access token
+      if (!user.is_active) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.UNAUTHORIZED,
+          message: "User inactive",
+          data: null,
+        };
+      }
+
       const newAccessToken = jwtSign(
         user.user_id,
         user.org_id,
@@ -755,33 +774,35 @@ export class AuthService {
         user.is_admin
       );
 
-      // const newRefreshToken = await generateRefreshToken(user.user_id);
-
-      // await this.saveRefreshToken(
-      //   queryRunner.manager,
-      //   user.user_id,
-      //   newRefreshToken
-      // );
-
-      // await queryRunner.manager.getRepository(RefreshToken).delete({
-      //   user_id: user.user_id,
-      //   token: refreshToken,
-      // });
+      await userQuery.saveToken(queryRunner.manager, {
+        id: newAccessToken,
+        userId: user.user_id,
+        ttl: this.ttl,
+        scopes: "user",
+        status: 1,
+        active: 1,
+      });
+      await queryRunner.manager
+        .getRepository(RefreshToken)
+        .delete({ token: refreshToken });
+      const newRefreshToken = generateRefreshToken(user.user_id);
+      const savedRefreshToken = await this.saveRefreshToken(
+        queryRunner.manager,
+        user.user_id,
+        newRefreshToken
+      );
 
       await queryRunner.commitTransaction();
 
       return {
         status: httpStatusCodes.OK,
-        data: {
-          token: newAccessToken,
-          refreshToken: tokenRecord,
-        },
+        data: { token: newAccessToken, refreshToken: savedRefreshToken },
         message: "Token refreshed successfully",
       };
     } catch (error) {
-      console.log(error);
       await queryRunner.rollbackTransaction();
       return {
+        data: null,
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: "Internal server error",
       };

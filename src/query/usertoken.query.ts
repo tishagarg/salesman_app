@@ -29,10 +29,21 @@ export class UserTokenQuery {
     await manager.delete(UserToken, { user_id: id });
   }
 
-  async findTokenById(manager: EntityManager, user_id: number): Promise<UserToken[]> {
+  async findTokenById(
+    manager: EntityManager,
+    user_id: number
+  ): Promise<UserToken[]> {
     return await manager.getRepository(UserToken).find({ where: { user_id } });
   }
 
+  async findRefreshTokenById(
+    manager: EntityManager,
+    user_id: number
+  ): Promise<RefreshToken[]> {
+    return await manager
+      .getRepository(RefreshToken)
+      .find({ where: { user_id } });
+  }
   async deleteRefreshTokens(manager: EntityManager, id: number): Promise<void> {
     await manager.delete(RefreshToken, { user_id: id });
   }

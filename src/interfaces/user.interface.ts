@@ -1,7 +1,7 @@
 import { OtpMedium } from "../enum/otpMedium";
 import { OtpType } from "../enum/otpType";
 import { Roles } from "../enum/roles";
-import { Organization } from "../models";
+import { Organization } from "../models/Organisation.entity";
 import { Address } from "../models/Address.entity";
 
 export interface ILoginUser {
@@ -38,6 +38,7 @@ export interface IloginResponse {
   token: string;
   refreshToken: string;
   user: any;
+  organization: Organization | null;
 }
 
 export interface ISignUpResponse {
@@ -152,8 +153,8 @@ export interface IgoogleLoginBody {
 }
 
 export interface IloginResponse {
-  user: IUser | any;
-  organization: Organization;
+  // user: IUser | any;
+  // organization: Organization;
 }
 
 export interface ISignUpResponse {
