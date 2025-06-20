@@ -800,6 +800,7 @@ export class AuthService {
         message: "Token refreshed successfully",
       };
     } catch (error) {
+      console.log(error)
       await queryRunner.rollbackTransaction();
       return {
         data: null,
