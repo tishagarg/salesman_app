@@ -796,7 +796,7 @@ export class AuthService {
 
       return {
         status: httpStatusCodes.OK,
-        data: { token: newAccessToken, refreshToken: savedRefreshToken },
+        data: { token: newAccessToken, refreshToken: savedRefreshToken.token },
         message: "Token refreshed successfully",
       };
     } catch (error) {
