@@ -180,6 +180,7 @@ export class VisitService {
           waypoints: `optimize:true|${waypoints.join("|")}`,
           key: process.env.GOOGLE_MAPS_API_KEY,
           departure_time: "now",
+          timestamp: Date.now(),
         },
       }
     );
@@ -579,7 +580,7 @@ export class VisitService {
   }
   private getToday(): Date {
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Midnight IST
+    today.setHours(0, 0, 0, 0);
     return today;
   }
   private async getManagerAssignment(
@@ -671,7 +672,8 @@ export class VisitService {
         origin,
         waypoints
       );
-      let currentTime = new Date(today);
+      let currentTime = new Date();
+
       const routeOrder: RouteOrderItem[] = [];
       for (let i = 0; i < waypointOrder.length; i++) {
         ("inside the waypoints for loop");
@@ -753,9 +755,10 @@ export class VisitService {
     try {
       const today = this.getStartOfDay();
       const route = await dataSource.manager.findOne(Route, {
-        where: { rep_id: Equal(repId), route_date: Equal(today) },
-        relations: ["rep"],
+        where: { rep_id: repId, route_date: today },
+        relations: { rep: true },
       });
+      console.log(route);
       if (!route) {
         return {
           status: httpStatusCodes.NOT_FOUND,

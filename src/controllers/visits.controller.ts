@@ -81,48 +81,7 @@ export class VisitController {
   }
   async getDailyRoute(req: any, res: Response): Promise<void> {
     const rep_id = req.user.user_id;
-    // const response = {
-    //   status: 200,
-    //   success: true,
-    //   data: [
-    //     {
-    //       lead_id: 19,
-    //       name: "John Doe w23",
-    //       latitude: 61.18156080000001,
-    //       visit_id: 223,
-    //       longitude: 28.7483584,
-    //       address: "Anninkuja 12, IMATRA,  55120",
-    //       eta: "12:00 PM",
-    //       distance: 257.33,
-    //     },
-    //     {
-    //       lead_id: 36,
-    //       visit_id: 218,
-    //       latitude: 60.5715457,
-    //       longitude: 27.145331,
-    //       distance: 143.49,
-    //       eta: "10:40 AM",
-    //     },
-    //     {
-    //       lead_id: 25,
-    //       visit_id: 219,
-    //       latitude: 60.5711244,
-    //       longitude: 27.1454998,
-    //       distance: 0.28,
-    //       eta: "10:41 AM",
-    //     },
-    //     {
-    //       lead_id: 28,
-    //       visit_id: 220,
-    //       latitude: 60.5776285,
-    //       longitude: 27.1430465,
-    //       distance: 0.88,
-    //       eta: "10:43 AM",
-    //     },
-    //   ],
-    //   message: "Retrieved successfully",
-    // };
-    const response = await visitService.getDailyRoute(rep_id);
+   const response = await visitService.getDailyRoute(rep_id);
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
     }
