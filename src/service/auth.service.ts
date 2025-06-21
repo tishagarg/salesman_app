@@ -57,7 +57,9 @@ export class AuthService {
       expires_at: expiresAt,
       created_at: new Date(),
     });
-    const savedData = await manager.getRepository(RefreshToken).save(refreshTokenEntity);
+    const savedData = await manager
+      .getRepository(RefreshToken)
+      .save(refreshTokenEntity);
 
     return savedData.token;
   }
@@ -800,7 +802,7 @@ export class AuthService {
         message: "Token refreshed successfully",
       };
     } catch (error) {
-      console.log(error)
+      console.log(error);
       await queryRunner.rollbackTransaction();
       return {
         data: null,
