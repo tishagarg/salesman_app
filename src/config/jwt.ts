@@ -16,7 +16,7 @@ export const jwtSign = (
     { user_id, org_id, email, role_id, is_super_admin, is_admin },
     SECRET_KEY,
     {
-      expiresIn: "2m",
+      expiresIn: "1d",
     }
   );
 };

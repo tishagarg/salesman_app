@@ -171,13 +171,12 @@ export class VisitService {
     origin: string,
     waypoints: string[]
   ): Promise<DirectionsResult> {
-    const destination = origin;
     const response = await axios.get(
       "https://maps.googleapis.com/maps/api/directions/json",
       {
         params: {
           origin,
-          destination,
+          destination: waypoints[waypoints.length - 1],
           waypoints: `optimize:true|${waypoints.join("|")}`,
           key: process.env.GOOGLE_MAPS_API_KEY,
           departure_time: "now",
@@ -308,7 +307,6 @@ export class VisitService {
           relations: ["address"],
           order: { created_at: "ASC" },
         });
-
         const validCustomers = allCustomers.filter(
           (customer) =>
             customer.address?.latitude && customer.address?.longitude
@@ -326,8 +324,7 @@ export class VisitService {
         const newLeads = validCustomers.filter(
           (customer) => !leadIdsToExclude.includes(customer.lead_id)
         );
-
-        const maxLeadsPerDay = 5;
+        const maxLeadsPerDay = 10;
         const leadsToPlan = [
           ...uncompletedLeads,
           ...newLeads.slice(0, maxLeadsPerDay - uncompletedLeads.length),
@@ -354,7 +351,10 @@ export class VisitService {
         const waypoints = leadsToPlan.map(
           (lead) => `${lead.address.latitude},${lead.address.longitude}`
         );
-        const repLocation = { latitude: repAddress?.address.latitude, longitude: repAddress?.address.longitude};
+        const repLocation = {
+          latitude: repAddress?.address.latitude,
+          longitude: repAddress?.address.longitude,
+        };
         const origin = `${repLocation.latitude},${repLocation.longitude}`;
         const { route, waypointOrder } = await this.getOptimizedRoute(
           origin,
@@ -655,7 +655,6 @@ export class VisitService {
           data: [],
         };
       }
-
       const validVisits = visits.filter(
         (visit) =>
           visit.lead?.address?.latitude && visit.lead?.address?.longitude
@@ -668,18 +667,17 @@ export class VisitService {
         (visit) =>
           `${visit.lead.address.latitude},${visit.lead.address.longitude}`
       );
-      const { route: routeData, waypointOrder } = await this.getOptimizedRoute(
+      const { route, waypointOrder } = await this.getOptimizedRoute(
         origin,
         waypoints
       );
       let currentTime = new Date(today);
-      currentTime.setHours(9, 0, 0, 0);
       const routeOrder: RouteOrderItem[] = [];
-
       for (let i = 0; i < waypointOrder.length; i++) {
+        ("inside the waypoints for loop");
         const index = waypointOrder[i];
         const visit = validVisits[index];
-        const leg = routeData.legs[i];
+        const leg = route.legs[i];
         if (!leg?.distance?.value || !leg?.duration?.value) {
           throw new Error(`Invalid route leg at index ${i}`);
         }
@@ -690,7 +688,6 @@ export class VisitService {
           hour: "2-digit",
           minute: "2-digit",
         });
-
         routeOrder.push({
           lead_id: visit.lead_id,
           latitude: visit.latitude,
@@ -700,7 +697,7 @@ export class VisitService {
           eta,
         });
       }
-      const route = await this.saveRoute(
+      const routes = await this.saveRoute(
         repId,
         today,
         routeOrder,
@@ -708,7 +705,7 @@ export class VisitService {
       );
       return {
         status: httpStatusCodes.OK,
-        data: route,
+        data: routes,
         message: "Daily route optimized successfully",
       };
     } catch (error: any) {
