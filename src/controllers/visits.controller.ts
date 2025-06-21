@@ -81,7 +81,7 @@ export class VisitController {
   }
   async getDailyRoute(req: any, res: Response): Promise<void> {
     const rep_id = req.user.user_id;
-   const response = await visitService.getDailyRoute(rep_id);
+    const response = await visitService.getDailyRoute(rep_id);
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
     }
@@ -125,11 +125,12 @@ export class VisitController {
     console.log(today);
     return today;
   };
+
   async getAllVisits(req: any, res: Response): Promise<void> {
     try {
       const dataSource = await getDataSource();
       const visitRepo = dataSource.getRepository(Visit);
-
+      const managerSalesRepRepo = dataSource.getRepository(ManagerSalesRep);
       const {
         salesRepId,
         managerId,
@@ -141,37 +142,53 @@ export class VisitController {
       } = req.query;
 
       const where: any = {};
-
       if (salesRepId) {
         where.rep = { user_id: +salesRepId };
       }
-
       if (managerId) {
+        const salesReps = await managerSalesRepRepo.find({
+          where: { manager_id: +managerId },
+          select: ["sales_rep_id"],
+        });
+        const salesRepIds = salesReps.map((rep) => rep.sales_rep_id);
+
+        if (salesRepIds.length === 0) {
+          return ApiResponse.result(
+            res,
+            {
+              data: [],
+              total: 0,
+              page: +page,
+              limit: +limit,
+              totalPages: 0,
+            },
+            200,
+            null,
+            "No visits found for manager"
+          );
+        }
         where.rep = {
           ...where.rep,
-          manager: { user_id: +managerId },
+          user_id: In(salesRepIds),
         };
       }
-
       if (visitDate) {
         const date = new Date(visitDate);
         const nextDate = new Date(visitDate);
         nextDate.setDate(nextDate.getDate() + 1);
         where.check_in_time = Between(date, nextDate);
       }
-
       const order: any = {};
       if (
         sortBy === "check_in_time" ||
         sortBy === "lead_id" ||
         sortBy === "sales_rep"
       ) {
-        order[sortBy === "sales_rep" ? "rep" : sortBy] =
+        order[sortBy === "sales_rep" ? "rep.user_id" : sortBy] =
           sortOrder.toUpperCase();
       } else {
         order.check_in_time = "DESC";
       }
-
       const [visits, total] = await visitRepo.findAndCount({
         where,
         relations: {
