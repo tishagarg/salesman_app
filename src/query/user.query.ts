@@ -15,6 +15,7 @@ export class UserQuery {
     const userRepo = manager.getRepository(User);
     return await userRepo.findOne({
       where: { email },
+      relations: { address: true },
     });
   }
 
@@ -29,6 +30,7 @@ export class UserQuery {
       : dataSource!.getRepository(User);
     return await repository.findOne({
       where: { email, user_id: id },
+      relations: { address: true },
     });
   }
 
@@ -39,6 +41,7 @@ export class UserQuery {
       : dataSource!.getRepository(User);
     return await repository.findOne({
       where: { user_id: id },
+      relations: { address: true },
     });
   }
 
@@ -66,6 +69,7 @@ export class UserQuery {
     const userRepo = manager.getRepository(User);
     return await userRepo.findOne({
       where: { google_oauth_id: googleId },
+      relations: { address: true },
     });
   }
 
@@ -96,6 +100,7 @@ export class UserQuery {
       : dataSource!.getRepository(User);
     return await repository.findOne({
       where: { email },
+      relations: { address: true },
     });
   }
 
@@ -228,7 +233,7 @@ export class UserQuery {
       query = query.andWhere("LOWER(role.role_name) = :role", {
         role: role.toLowerCase(),
       });
-      console.log(query)
+      console.log(query);
     }
     if (status && (status === "active" || status === "inactive")) {
       const isActive = status === "active";

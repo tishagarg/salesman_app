@@ -19,6 +19,8 @@ import { v4 as uuidv4 } from "uuid";
 import { Contract } from "../models/Contracts.entity";
 import { ContractTemplate } from "../models/ContractTemplate.entity";
 import { renderContract } from "../utils/renderContracts";
+import { Address } from "../models/Address.entity";
+import { User } from "../models/User.entity";
 
 require("dotenv").config();
 
@@ -265,6 +267,9 @@ export class VisitService {
             is_active: true,
           },
         });
+        const repAddress = await queryRunner.manager
+          .getRepository(User)
+          .findOne({ where: { user_id: repId }, relations: { address: true } });
 
         const existingRoute = await queryRunner.manager.findOne(Route, {
           where: { rep_id: Equal(repId), route_date: Equal(startOfDay) },
@@ -349,7 +354,7 @@ export class VisitService {
         const waypoints = leadsToPlan.map(
           (lead) => `${lead.address.latitude},${lead.address.longitude}`
         );
-        const repLocation = { latitude: 60.1695, longitude: 24.9354 };
+        const repLocation = { latitude: repAddress?.address.latitude, longitude: repAddress?.address.longitude};
         const origin = `${repLocation.latitude},${repLocation.longitude}`;
         const { route, waypointOrder } = await this.getOptimizedRoute(
           origin,
