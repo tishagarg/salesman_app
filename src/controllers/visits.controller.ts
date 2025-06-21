@@ -177,6 +177,8 @@ export class VisitController {
         visitDate,
         sortBy = "check_in_time",
         sortOrder = "DESC",
+        page = 1,
+        limit = 10,
       } = req.query;
 
       const where: any = {};
@@ -196,9 +198,9 @@ export class VisitController {
         const date = new Date(visitDate);
         const nextDate = new Date(visitDate);
         nextDate.setDate(nextDate.getDate() + 1);
-
         where.check_in_time = Between(date, nextDate);
       }
+
       const order: any = {};
       if (
         sortBy === "check_in_time" ||
@@ -211,18 +213,26 @@ export class VisitController {
         order.check_in_time = "DESC";
       }
 
-      const visits = await visitRepo.find({
+      const [visits, total] = await visitRepo.findAndCount({
         where,
         relations: {
           lead: true,
           rep: true,
         },
         order,
+        skip: (+page - 1) * +limit,
+        take: +limit,
       });
 
       return ApiResponse.result(
         res,
-        visits ?? null,
+        {
+          data: visits,
+          total,
+          page: +page,
+          limit: +limit,
+          totalPages: Math.ceil(total / +limit),
+        },
         200,
         null,
         "Visit history"

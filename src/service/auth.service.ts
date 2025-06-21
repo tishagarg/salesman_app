@@ -57,8 +57,9 @@ export class AuthService {
       expires_at: expiresAt,
       created_at: new Date(),
     });
+    const savedData = await manager.getRepository(RefreshToken).save(refreshTokenEntity);
 
-    return await manager.getRepository(RefreshToken).save(refreshTokenEntity);
+    return savedData.token;
   }
 
   async sendPasswordResetNotification(email: string, resetLink: string) {
@@ -187,7 +188,6 @@ export class AuthService {
       }
 
       await queryRunner.commitTransaction();
-
       return {
         status: httpStatusCodes.OK,
         data: {
