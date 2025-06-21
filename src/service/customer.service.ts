@@ -5,7 +5,7 @@ import {
   AddressDto,
   UpdateLeadDto,
 } from "../interfaces/common.interface";
-import {  User } from "../models/User.entity";
+import { User } from "../models/User.entity";
 import { Role } from "../models/Role.entity";
 import { Leads } from "../models/Leads.entity";
 import { Address } from "../models/Address.entity";
@@ -120,7 +120,7 @@ export class CustomerService {
       customer.address_id = address.address_id;
       customer.assigned_rep_id = userId;
       customer.status = LeadStatus.Prospect;
-      customer.pending_assignment = true;
+      customer.pending_assignment = false;
       customer.is_active = true;
       customer.source = Source.Manual;
       customer.created_by = userId.toString();
@@ -446,94 +446,108 @@ export class CustomerService {
     }
   }
 
-  async getAllCustomers(
-    filters: {
-      page: number;
-      limit: number;
-      skip: number;
-      search?: string;
-      source?: string;
-    },
-    userId: number,
-    role: string
-  ): Promise<{
-    status: number;
-    data?: any[] | null;
-    message: string;
-    total?: number;
-  }> {
-    const dataSource = await getDataSource();
-    try {
-      const search = filters.search?.trim().toLowerCase();
-      const source = filters.source?.trim() || undefined;
+async getAllCustomers(
+  filters: {
+    page: number;
+    limit: number;
+    skip: number;
+    search?: string;
+    source?: string;
+  },
+  userId: number
+): Promise<{
+  status: number;
+  data?: any[] | null;
+  message: string;
+  total?: number;
+}> {
+  const dataSource = await getDataSource();
+  try {
+    const search = filters.search?.trim().toLowerCase();
+    const source = filters.source?.trim() || undefined;
 
-      const where: any = { is_active: true };
-      if (role === Roles.SALES_REP) {
-        where.assigned_rep_id = userId;
-      }
-
-      const query = dataSource.manager
-        .createQueryBuilder(Leads, "leads")
-        .leftJoinAndSelect("leads.address", "address")
-        .where("leads.is_active = :isActive", { isActive: true });
-
-      if (role === Roles.SALES_REP) {
-        query.andWhere("leads.assigned_rep_id = :userId", { userId });
-      }
-
-      if (search) {
-        query.andWhere(
-          new Brackets((qb) => {
-            qb.where("LOWER(leads.name) LIKE :search", { search: `%${search}%` })
-              .orWhere("LOWER(leads.contact_name) LIKE :search", {
-                search: `%${search}%`,
-              })
-              .orWhere("LOWER(leads.contact_email) LIKE :search", {
-                search: `%${search}%`,
-              })
-              .orWhere("LOWER(address.street_address) LIKE :search", {
-                search: `%${search}%`,
-              })
-              .orWhere("LOWER(address.country) LIKE :search", {
-                search: `%${search}%`,
-              })
-              .orWhere("LOWER(address.city) LIKE :search", {
-                search: `%${search}%`,
-              })
-              .orWhere("LOWER(address.postal_code) LIKE :search", {
-                search: `%${search}%`,
-              });
-          })
-        );
-      }
-
-      if (source) {
-        query.andWhere("leads.source = :source", { source });
-      }
-
-      query
-        .skip(filters.skip)
-        .take(filters.limit)
-        .orderBy("leads.created_at", "DESC");
-
-      const [customers, total] = await query.getManyAndCount();
-
+    // Fetch user with their role
+    const user = await dataSource
+      .getRepository(User)
+      .findOne({ where: { user_id: userId }, relations: { role: true } });
+    if (!user) {
       return {
-        status: httpStatusCodes.OK,
-        data: customers,
-        message: "Customers retrieved successfully",
-        total,
-      };
-    } catch (error: any) {
-      console.error("Error retrieving customers:", error);
-      return {
-        status: httpStatusCodes.INTERNAL_SERVER_ERROR,
-        message: `Failed to retrieve customers: ${error.message}`,
+        status: httpStatusCodes.NOT_FOUND,
+        message: "User not found",
         data: null,
         total: 0,
       };
     }
+
+    // Build query
+    const query = dataSource.manager
+      .createQueryBuilder(Leads, "leads")
+      .leftJoinAndSelect("leads.address", "address")
+      .where("leads.is_active = :isActive", { isActive: true });
+
+    // Filter leads for SALES_REP
+    if (user.role.role_name === Roles.SALES_REP) {
+      query.andWhere("leads.assigned_rep_id = :userId", { userId });
+    }
+
+    // Apply search filters
+    if (search) {
+      query.andWhere(
+        new Brackets((qb) => {
+          qb.where("LOWER(leads.name) LIKE :search", {
+            search: `%${search}%`,
+          })
+            .orWhere("LOWER(leads.contact_name) LIKE :search", {
+              search: `%${search}%`,
+            })
+            .orWhere("LOWER(leads.contact_email) LIKE :search", {
+              search: `%${search}%`,
+            })
+            .orWhere("LOWER(address.street_address) LIKE :search", {
+              search: `%${search}%`,
+            })
+            .orWhere("LOWER(address.country) LIKE :search", {
+              search: `%${search}%`,
+            })
+            .orWhere("LOWER(address.city) LIKE :search", {
+              search: `%${search}%`,
+            })
+            .orWhere("LOWER(address.postal_code) LIKE :search", {
+              search: `%${search}%`,
+            });
+        })
+      );
+    }
+
+    // Apply source filter
+    if (source) {
+      query.andWhere("leads.source = :source", { source });
+    }
+
+    // Apply pagination and sorting
+    query
+      .skip(filters.skip)
+      .take(filters.limit)
+      .orderBy("leads.created_at", "DESC");
+
+    const [customers, total] = await query.getManyAndCount();
+
+    return {
+      status: httpStatusCodes.OK,
+      data: customers,
+      message: "Customers retrieved successfully",
+      total,
+    };
+  } catch (error: any) {
+    console.error("Error retrieving customers:", error);
+    return {
+      status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+      message: `Failed to retrieve customers: ${error.message}`,
+      data: null,
+      total: 0,
+    };
   }
+}
 
   async bulkAssignCustomers(
     customerIds: number[],

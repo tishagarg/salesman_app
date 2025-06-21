@@ -130,12 +130,9 @@ export class LeadsController {
     const search = req.query.search as string;
     const filters = { page, limit, skip, search, source };
     const userId = parseInt(req.user.user_id);
-    const role = req.user.role;
-
     const response = await customerService.getAllCustomers(
       filters,
       userId,
-      role
     );
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
