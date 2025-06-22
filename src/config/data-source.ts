@@ -24,6 +24,8 @@ import { Organization } from "../models/Organisation.entity";
 import { Role } from "../models/Role.entity";
 import { OtpVerification } from "../models/OTPVerification.entity";
 import { UserToken } from "../models/UserToken.entity";
+import { FollowUp } from "../models/FollowUp.entity";
+import { FollowUpVisit } from "../models/FollowUpVisit.entity";
 
 dotenv.config();
 
@@ -45,6 +47,8 @@ export const dataSourceOptions: DataSourceOptions = {
     Organization,
     Role,
     TerritorySalesman,
+    FollowUp,
+    FollowUpVisit,
     OtpVerification,
     Contract,
     ContractTemplate,
