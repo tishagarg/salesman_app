@@ -57,10 +57,14 @@ export const ContractTemplateService = {
     status?: string;
     search?: string;
     sortBy?: "signedCount" | "title" | "date";
+    skip?: number;
+    limit?: number;
+    page?: number;
   }): Promise<{
     data: Contract[] | null;
     status: number;
     message: string;
+    total: number;
   }> {
     const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
@@ -75,6 +79,7 @@ export const ContractTemplateService = {
         .leftJoinAndSelect("contract.visit", "visit")
         .leftJoinAndSelect("visit.rep", "rep")
         .leftJoinAndSelect("visit.lead", "lead");
+
       if (filters.managerId) {
         query = query
           .leftJoin("template.assigned_managers", "manager")
@@ -82,16 +87,19 @@ export const ContractTemplateService = {
             managerId: filters.managerId,
           });
       }
+
       if (filters.status) {
         query = query.andWhere("template.status = :status", {
           status: filters.status,
         });
       }
+
       if (filters.search) {
         query = query.andWhere("LOWER(template.title) ILIKE :search", {
           search: `%${filters.search.toLowerCase()}%`,
         });
       }
+
       if (filters.sortBy === "signedCount") {
         query = query.orderBy("template.total_signed", "DESC");
       } else if (filters.sortBy === "title") {
@@ -99,8 +107,10 @@ export const ContractTemplateService = {
       } else {
         query = query.orderBy("contract.signed_at", "DESC");
       }
-
-      const contracts = await query.getMany();
+      const [contracts, total] = await query
+        .skip(filters.skip || 0)
+        .take(filters.limit || 10)
+        .getManyAndCount();
 
       await queryRunner.commitTransaction();
 
@@ -108,6 +118,7 @@ export const ContractTemplateService = {
         data: contracts,
         status: 200,
         message: "Contracts fetched successfully",
+        total,
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -115,12 +126,12 @@ export const ContractTemplateService = {
         data: null,
         status: 500,
         message: "Error fetching contracts",
+        total: 0,
       };
     } finally {
       await queryRunner.release();
     }
   },
-
   async listContractTemplates(): Promise<{
     data: ContractTemplate[] | null;
     status: number;
@@ -132,7 +143,7 @@ export const ContractTemplateService = {
     try {
       const contractRepo = dataSource.getRepository(ContractTemplate);
       const contracts = await contractRepo.find({
-        relations: ["assigned_managers"],
+        relations: { assigned_managers: true },
         order: { updated_at: "DESC" },
       });
       await queryRunner.commitTransaction();
