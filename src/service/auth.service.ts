@@ -513,7 +513,6 @@ export class AuthService {
         org_id: newOrganization.org_id,
         is_admin: 1,
         phone: param.phone_no,
-        full_name: "",
         role_id: role_id,
       });
 

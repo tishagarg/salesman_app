@@ -355,6 +355,7 @@ export class VisitService {
         const waypoints = leadsToPlan.map(
           (lead) => `${lead.address.latitude},${lead.address.longitude}`
         );
+        // console.log(r)
         const repLocation = {
           latitude: repAddress?.address.latitude,
           longitude: repAddress?.address.longitude,
@@ -444,6 +445,7 @@ export class VisitService {
           message: "Daily visits planned successfully",
         };
       } catch (error: any) {
+        console.log(error)
         throw this.handleError(error, "Failed to plan daily visits");
       }
     });
