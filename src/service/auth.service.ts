@@ -38,7 +38,7 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 export class AuthService {
   ttl: number;
   constructor() {
-    this.ttl = 1 * 24 * 60 * 60; // 2 days in seconds
+    this.ttl = 2 * 24 * 60 * 60; // 2 days in seconds
   }
 
   private readonly refreshTokenTTL = 7 * 24 * 60 * 60; // 7 days in seconds
@@ -304,7 +304,7 @@ export class AuthService {
     const refreshToken = manager.getRepository(RefreshToken).create({
       token,
       user_id: userId,
-      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), 
+      expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
       created_at: new Date(),
     });
     return await manager.getRepository(RefreshToken).save(refreshToken);
