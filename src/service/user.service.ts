@@ -129,7 +129,7 @@ export class UserTeamService {
       const activeUsersCount = await queryRunner.manager
         .getRepository(User)
         .countBy({ is_active: true });
-    const assignedManagerCount = await queryRunner.query(`
+      const assignedManagerCount = await queryRunner.query(`
   SELECT COUNT(DISTINCT manager_id) as count 
   FROM contract_template_managers
 `);
@@ -148,13 +148,13 @@ export class UserTeamService {
           unassignedSalesRepsCount,
           totalSignedContracts,
           totalContractTemplates,
-          assignedManagerCount:assignedManagerCount.count,
+          assignedManagerCount: assignedManagerCount.count,
         },
         status: 200,
         message: "Analytics fetched successfully",
       };
     } catch (error) {
-      console.log(error)
+      console.log(error);
       await queryRunner.rollbackTransaction();
       return {
         data: null,
@@ -234,22 +234,55 @@ export class UserTeamService {
     }
   }
 
-  async getSalesRepManagaerList(): Promise<{
+  async getSalesRepManagaerList(
+    page: number,
+    limit: number,
+    search: string,
+    managerId?: number,
+    salesmanId?: number
+  ): Promise<{
     status: number;
     data?: any;
     message: string;
+    total: number;
   }> {
-    try {
-      const dataSource = await getDataSource();
-      const repData = await dataSource
-        .getRepository(ManagerSalesRep)
-        .find({ relations: { manager: true, sales_rep: true } });
+    const skip = (page - 1) * limit;
+    const dataSource = await getDataSource();
 
-      // Grouping sales reps by manager
+    try {
+      const query = dataSource
+        .getRepository(ManagerSalesRep)
+        .createQueryBuilder("msr")
+        .leftJoinAndSelect("msr.manager", "manager")
+        .leftJoinAndSelect("msr.sales_rep", "sales_rep");
+
+      if (search && search.trim() !== "") {
+        const searchTerm = `%${search.trim().toLowerCase()}%`;
+        query.andWhere(
+          `(LOWER(COALESCE(manager.full_name, '')) LIKE :searchTerm
+        OR LOWER(COALESCE(manager.email, '')) LIKE :searchTerm)`,
+          { searchTerm }
+        );
+      }
+      if (managerId) {
+        query.andWhere("manager.user_id = :managerId", { managerId });
+      }
+
+      // Apply salesman ID filter
+      if (salesmanId) {
+        query.andWhere("sales_rep.user_id = :salesmanId", { salesmanId });
+      }
+      const [results, total] = await query
+        .orderBy("manager.user_id", "ASC")
+        .skip(skip)
+        .take(limit)
+        .getManyAndCount();
+      console.log(total);
+      // Group sales reps by manager
       const groupedData: Record<number, { manager: any; sales_reps: any[] }> =
         {};
 
-      for (const entry of repData) {
+      for (const entry of results) {
         const managerId = entry.manager.user_id;
         if (!groupedData[managerId]) {
           groupedData[managerId] = {
@@ -262,13 +295,16 @@ export class UserTeamService {
 
       return {
         data: Object.values(groupedData),
+        total: Object.keys(groupedData).length,
         status: 200,
-        message: "Data fetched and grouped successfully",
+        message: "Sales reps grouped by manager with pagination",
       };
     } catch (error) {
+      console.error(error);
       return {
         data: null,
         status: 500,
+        total: 0,
         message: "Error fetching data",
       };
     }

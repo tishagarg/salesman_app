@@ -44,11 +44,18 @@ export class ContractTemplateController {
     const search = req.query.search as string;
     const sortBy = req.query.sortBy as "signedCount" | "title" | "date";
 
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+
     const result = await ContractTemplateService.getAllContracts({
       managerId,
       status,
       search,
       sortBy,
+      skip,
+      limit,
+      page,
     });
 
     if (result.status >= 400) {
@@ -57,12 +64,21 @@ export class ContractTemplateController {
 
     return ApiResponse.result(
       res,
-      result.data,
+      {
+        contracts: result.data,
+        pagination: {
+          page,
+          limit,
+          total: result.total,
+          totalPages: Math.ceil((result.total || 0) / limit),
+        },
+      },
       result.status,
       null,
       result.message
     );
   }
+
   async getTemplatesForRep(req: any, res: Response) {
     const repId = req.user.user_id;
     const templates = await ContractTemplateService.getTemplatesForSalesRep(

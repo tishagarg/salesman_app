@@ -11,6 +11,11 @@ router.post(
   territoryController.assignManagerToTerritory
 );
 router.post(
+  "/unassign-salesman",
+  verifyToken,
+  territoryController.unAssignSalesManFromTerritory
+);
+router.post(
   "/",
   verifyToken,
   // permissionMiddleware("territory_assign"),

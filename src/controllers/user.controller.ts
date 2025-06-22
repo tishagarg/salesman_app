@@ -43,16 +43,41 @@ export class UserTeamController {
   }
   async getSalesRepManagaerList(req: any, res: Response): Promise<void> {
     let { user_id } = req.user as IJwtVerify;
-    const response = await userTeamService.getSalesRepManagaerList();
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const search = (req.query.search as string) || "";
+
+    const managerId = req.query.managerId
+      ? parseInt(req.query.managerId)
+      : undefined;
+    const salesmanId = req.query.salesmanId
+      ? parseInt(req.query.salesmanId)
+      : undefined;
+
+    const response = await userTeamService.getSalesRepManagaerList(
+      page,
+      limit,
+      search,
+      managerId,
+      salesmanId
+    );
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
     }
+    const totalPages = Math.ceil(response?.total / limit);
     return ApiResponse.result(
       res,
       response.data,
       response.status,
       null,
-      response.message
+      response.message,
+      {
+        previousPage: page > 1 ? page - 1 : null,
+        nextPage: page < totalPages ? page + 1 : null,
+        currentPage: page,
+        totalItems: response?.total,
+        totalPages,
+      }
     );
   }
   async getUserById(req: any, res: Response): Promise<void> {
@@ -184,7 +209,6 @@ export class UserTeamController {
     );
   }
 
-
   async activeDeactive(req: any, res: Response): Promise<void> {
     const { org_id, user_id } = req.user as IJwtVerify;
     const { status, id }: activeDeactiveI = req.body;
@@ -248,12 +272,23 @@ export class UserTeamController {
       return ApiResponse.error(res, response.status, response.message);
     }
 
+    const totalPages = Math.ceil(response.total / limit);
+
+    const paginationMeta = {
+      previousPage: page > 1 ? page - 1 : null,
+      nextPage: page < totalPages ? page + 1 : null,
+      currentPage: page,
+      totalItems: response.total,
+      totalPages,
+    };
+
     return ApiResponse.result(
       res,
       response.data,
       response.status,
       null,
-      response.message
+      response.message,
+      paginationMeta
     );
   }
   async getAllManagers(req: any, res: Response): Promise<void> {

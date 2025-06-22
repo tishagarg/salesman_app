@@ -74,7 +74,7 @@ export class LeadsController {
       role
     );
     if (response.status >= 400) {
-      return ApiResponse.error(res, response.status, response.message,null);
+      return ApiResponse.error(res, response.status, response.message, null);
     }
 
     return ApiResponse.result(
@@ -109,7 +109,7 @@ export class LeadsController {
       role
     );
     if (response.status >= 400) {
-      return ApiResponse.error(res, response.status, response.message,null);
+      return ApiResponse.error(res, response.status, response.message, null);
     }
 
     return ApiResponse.result(
@@ -126,14 +126,24 @@ export class LeadsController {
     const limit = parseInt(req.query.limit as string) || 10;
     const skip = (page - 1) * limit;
     const source = req.query.source as string;
-
     const search = req.query.search as string;
-    const filters = { page, limit, skip, search, source };
+    const managerId = req.query.managerId
+      ? parseInt(req.query.managerId)
+      : undefined;
+    const salesmanId = req.query.salesmanId
+      ? parseInt(req.query.salesmanId)
+      : undefined;
+    const filters = {
+      page,
+      limit,
+      skip,
+      search,
+      source,
+      managerId,
+      salesmanId,
+    };
     const userId = parseInt(req.user.user_id);
-    const response = await customerService.getAllCustomers(
-      filters,
-      userId,
-    );
+    const response = await customerService.getAllCustomers(filters, userId);
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
     }
@@ -210,7 +220,12 @@ export class LeadsController {
         org_id
       );
       if (response.status >= 400) {
-        return ApiResponse.error(res, response.status, response.message, response.errors);
+        return ApiResponse.error(
+          res,
+          response.status,
+          response.message,
+          response.errors
+        );
       }
 
       return ApiResponse.result(

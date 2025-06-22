@@ -809,53 +809,92 @@ export class TerritoryService {
     }
   }
 
-  async getAllTerritories(org_id: number): Promise<{
-    status: number;
-    data?: any[] | null;
-    message: string;
-  }> {
-    const dataSource = await getDataSource();
-    try {
-      const territories = await dataSource.manager.find(Territory, {
-        where: { is_active: true, org_id },
-        relations: ["polygon"],
-      });
-      if (!territories.length) {
-        return {
-          status: httpStatusCodes.OK,
-          data: [],
-          message: "No territories found",
-        };
-      }
-      const territoryIds = territories.map((t) => t.territory_id);
-      const territorySalesmen = await dataSource.manager.find(
-        TerritorySalesman,
-        {
-          where: { territory_id: In(territoryIds) },
-          relations: ["salesman"],
-        }
-      );
-      const territoriesWithSalesmen = territories.map((territory) => {
-        const salesmen = territorySalesmen
-          .filter((ts) => ts.territory_id === territory.territory_id)
-          .map((ts) => ts.salesman);
-        return {
-          ...territory,
-          salesmen: salesmen.length ? salesmen : [],
-        };
-      });
+async getAllTerritories({
+  org_id,
+  skip,
+  limit,
+  page,
+  salesmanId,
+}: {
+  org_id: number;
+  skip: number;
+  limit: number;
+  page: number;
+  salesmanId?: number;
+}): Promise<{
+  status: number;
+  data?: any[] | null;
+  message: string;
+  total: number;
+}> {
+  const dataSource = await getDataSource();
+  try {
+    // Fetch active territories for org
+    const baseQuery = dataSource.manager
+      .getRepository(Territory)
+      .createQueryBuilder("territory")
+      .leftJoinAndSelect("territory.polygon", "polygon")
+      .where("territory.is_active = true")
+      .andWhere("territory.org_id = :org_id", { org_id });
 
+    const [territories, total] = await baseQuery
+      .skip(skip)
+      .take(limit)
+      .getManyAndCount();
+
+    if (!territories.length) {
       return {
         status: httpStatusCodes.OK,
-        data: territoriesWithSalesmen,
-        message: "Territories retrieved successfully",
-      };
-    } catch (error: any) {
-      return {
-        status: httpStatusCodes.INTERNAL_SERVER_ERROR,
-        message: `Failed to retrieve territories: ${error.message}`,
-        data: null,
+        data: [],
+        message: "No territories found",
+        total: 0,
       };
     }
+
+    const territoryIds = territories.map((t) => t.territory_id);
+
+    // Get salesmen assigned to the listed territories
+    const territorySalesmenQuery = dataSource
+      .getRepository(TerritorySalesman)
+      .createQueryBuilder("ts")
+      .leftJoinAndSelect("ts.salesman", "salesman")
+      .where("ts.territory_id IN (:...territoryIds)", { territoryIds });
+
+    // Apply salesman filter if given
+    if (salesmanId) {
+      territorySalesmenQuery.andWhere("ts.salesman_id = :salesmanId", {
+        salesmanId,
+      });
+    }
+
+    const territorySalesmen = await territorySalesmenQuery.getMany();
+
+    // Group salesmen by territory
+    const territoriesWithSalesmen = territories.map((territory) => {
+      const salesmen = territorySalesmen
+        .filter((ts) => ts.territory_id === territory.territory_id)
+        .map((ts) => ts.salesman);
+
+      return {
+        ...territory,
+        salesmen,
+      };
+    });
+
+    return {
+      status: httpStatusCodes.OK,
+      data: territoriesWithSalesmen,
+      message: "Territories retrieved successfully",
+      total,
+    };
+  } catch (error: any) {
+    return {
+      status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+      message: `Failed to retrieve territories: ${error.message}`,
+      data: null,
+      total: 0,
+    };
   }
+}
+
 }

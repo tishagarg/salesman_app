@@ -20,6 +20,7 @@ import { TerritorySalesman } from "../models/TerritorySalesMan.entity";
 import { Territory } from "../models/Territory.entity";
 import { Brackets, In } from "typeorm";
 import { GeocodingService } from "../utils/geoCode.service";
+import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
 
 const addressService = new AddressService();
 const territoryService = new TerritoryService();
@@ -453,6 +454,8 @@ export class CustomerService {
       skip: number;
       search?: string;
       source?: string;
+      managerId?: number;
+      salesmanId?: number;
     },
     userId: number
   ): Promise<{
@@ -487,6 +490,36 @@ export class CustomerService {
         query.andWhere("leads.assigned_rep_id = :userId", { userId });
       }
 
+      if (filters.salesmanId) {
+        query.andWhere("leads.assigned_rep_id = :salesmanId", {
+          salesmanId: filters.salesmanId,
+        });
+      }
+      if (filters.managerId) {
+        const managerSalesReps = await dataSource
+          .getRepository(ManagerSalesRep)
+          .find({
+            where: { manager_id: filters.managerId },
+            relations: ["sales_rep"],
+          });
+
+        const salesRepIds = managerSalesReps.map((r) => r.sales_rep.user_id);
+
+        if (salesRepIds.length > 0) {
+          query.andWhere("leads.assigned_rep_id IN (:...salesRepIds)", {
+            salesRepIds,
+          });
+        } else {
+          return {
+            status: httpStatusCodes.OK,
+            data: [],
+            message: "No leads found for this manager",
+            total: 0,
+          };
+        }
+      }
+
+      // Filter by search
       if (search) {
         query.andWhere(
           new Brackets((qb) => {
@@ -515,9 +548,12 @@ export class CustomerService {
         );
       }
 
+      // Filter by source
       if (source) {
         query.andWhere("leads.source = :source", { source });
       }
+
+      // Pagination and sorting
       query
         .skip(filters.skip)
         .take(filters.limit)
@@ -631,367 +667,392 @@ export class CustomerService {
     }
   }
 
- async importCustomers(
-  data: LeadImportDto[],
-  adminId: number,
-  org_id: number,
-  batchSize: number = 500
-): Promise<{
-  status: number;
-  message: string;
-  data?: { addresses: Address[]; customers: Leads[] } | null;
-  errors?: string[];
-}> {
-  const dataSource = await getDataSource();
-  const queryRunner = dataSource.createQueryRunner();
-  const addresses: Address[] = [];
-  const customers: Leads[] = [];
-  const errors: string[] = [];
+  async importCustomers(
+    data: LeadImportDto[],
+    adminId: number,
+    org_id: number,
+    batchSize: number = 500
+  ): Promise<{
+    status: number;
+    message: string;
+    data?: { addresses: Address[]; customers: Leads[] } | null;
+    errors?: string[];
+  }> {
+    const dataSource = await getDataSource();
+    const queryRunner = dataSource.createQueryRunner();
+    const addresses: Address[] = [];
+    const customers: Leads[] = [];
+    const errors: string[] = [];
 
-  try {
-    // Input validation
-    if (!data || !data.length) {
-      errors.push("Row 0: Empty input data provided");
-      return {
-        status: httpStatusCodes.BAD_REQUEST,
-        message: "Import failed: No data provided",
-        data: null,
-        errors,
-      };
-    }
-
-    // Fetch territories
-    const territories = await dataSource.manager.find(Territory, {
-      where: { org_id, is_active: true },
-      select: ["territory_id", "regions", "subregions", "postal_codes"],
-    }).catch((e) => {
-      throw new Error(`Territory fetch failed: ${e.message}`);
-    });
-
-    const territoryLookup = new Map<string, number>();
-    territories.forEach((territory) => {
-      const { territory_id } = territory;
-      try {
-        if (territory.postal_codes) {
-          (JSON.parse(territory.postal_codes) as string[]).forEach((code) =>
-            territoryLookup.set(`postal:${code}`, territory_id)
-          );
-        }
-        if (territory.regions) {
-          (JSON.parse(territory.regions) as string[]).forEach((region) =>
-            territoryLookup.set(`region:${region}`, territory_id)
-          );
-        }
-        if (territory.subregions) {
-          (JSON.parse(territory.subregions) as string[]).forEach((subregion) =>
-            territoryLookup.set(`subregion:${subregion}`, territory_id)
-          );
-        }
-      } catch (e:any) {
-        errors.push(`Row 0: Invalid JSON for territory ID ${territory_id}: ${e.message}`);
+    try {
+      // Input validation
+      if (!data || !data.length) {
+        errors.push("Row 0: Empty input data provided");
+        return {
+          status: httpStatusCodes.BAD_REQUEST,
+          message: "Import failed: No data provided",
+          data: null,
+          errors,
+        };
       }
-    });
-    const geocodeCache = new Map<string, { latitude: number; longitude: number }>();
 
-    for (let i = 0; i < data.length; i += batchSize) {
-      await queryRunner.startTransaction();
-      try {
-        const batch = data.slice(i, i + batchSize);
-        const addressKeys = batch.map((row, idx) => {
-          if (!row.postal_code || !row.street_address) {
-            errors.push(
-              `Row ${i + idx + 1}: Missing postal code or street address`
+      // Fetch territories
+      const territories = await dataSource.manager
+        .find(Territory, {
+          where: { org_id, is_active: true },
+          select: ["territory_id", "regions", "subregions", "postal_codes"],
+        })
+        .catch((e) => {
+          throw new Error(`Territory fetch failed: ${e.message}`);
+        });
+
+      const territoryLookup = new Map<string, number>();
+      territories.forEach((territory) => {
+        const { territory_id } = territory;
+        try {
+          if (territory.postal_codes) {
+            (JSON.parse(territory.postal_codes) as string[]).forEach((code) =>
+              territoryLookup.set(`postal:${code}`, territory_id)
             );
           }
-          return {
-            postal_code: row.postal_code?.trim() || "00000",
-            street_address: row.street_address?.trim() || "",
-            subregion: row.subregion?.trim() || row.city?.trim() || "",
-            org_id,
-          };
-        });
-
-        const existingAddresses = await queryRunner.manager.find(Address, {
-          where: addressKeys,
-          select: [
-            "address_id",
-            "postal_code",
-            "street_address",
-            "subregion",
-            "org_id",
-            "territory_id",
-            "comments",
-          ],
-        }).catch((e) => {
-          throw new Error(`Address fetch failed: ${e.message}`);
-        });
-
-        const addressMap = new Map<string, Address>(
-          existingAddresses.map((addr) => [
-            `${addr.postal_code}|${addr.street_address}|${addr.subregion}|${org_id}`,
-            addr,
-          ])
-        );
-
-        const addressIds = existingAddresses.map((addr) => addr.address_id);
-        const existingLeads = addressIds.length
-          ? await queryRunner.manager.find(Leads, {
-              where: { address_id: In(addressIds), is_active: true },
-              select: ["address_id", "name"],
-            }).catch((e) => {
-              throw new Error(`Leads fetch failed: ${e.message}`);
-            })
-          : [];
-        const leadAddressMap = new Map<number, string>(
-          existingLeads.map((lead) => [lead.address_id, lead.name])
-        );
-
-        const newAddresses: Address[] = [];
-        const addressesToUpdate: Address[] = [];
-        const newCustomers: Leads[] = [];
-        const customerToAddressIndex: Map<number, number> = new Map();
-        const addressesToGeocode: {
-          index: number;
-          address: {
-            street_address: string;
-            postal_code: string;
-            subregion: string;
-            city: string;
-            state: string;
-            region: string;
-            country: string;
-          };
-        }[] = [];
-
-        batch.forEach((row, index) => {
-          const rowNum = i + index + 1;
-          const addressData = {
-            name: row.name?.trim() || "",
-            contact_name: row.contact_name?.trim() || "",
-            contact_email: row.contact_email?.trim() || "",
-            contact_phone: row.contact_phone?.trim() || "",
-            street_address: row.street_address?.trim() || "",
-            comments: row.comments?.trim() || "",
-            postal_code: row.postal_code?.trim() || "00000",
-            area_name: row.area_name?.trim() || "",
-            city: row.city?.trim() || "",
-            state: row.state?.trim() || "",
-            subregion: row.subregion?.trim() || row.city?.trim() || "",
-            region: row.region?.trim() || row.state?.trim() || "",
-            country: row.country?.trim() || "Finland",
-          };
-
-          // Skip invalid rows
-          if (!addressData.street_address || !addressData.postal_code) {
-            return;
+          if (territory.regions) {
+            (JSON.parse(territory.regions) as string[]).forEach((region) =>
+              territoryLookup.set(`region:${region}`, territory_id)
+            );
           }
-          const territoryId =
-            territoryLookup.get(`postal:${addressData.postal_code}`) ||
-            territoryLookup.get(`region:${addressData.region}`) ||
-            territoryLookup.get(`subregion:${addressData.subregion}`) ||
-            null;
-          const addressKey = `${addressData.postal_code}|${addressData.street_address}|${addressData.subregion}|${org_id}`;
-          const existingAddress = addressMap.get(addressKey);
+          if (territory.subregions) {
+            (JSON.parse(territory.subregions) as string[]).forEach(
+              (subregion) =>
+                territoryLookup.set(`subregion:${subregion}`, territory_id)
+            );
+          }
+        } catch (e: any) {
+          errors.push(
+            `Row 0: Invalid JSON for territory ID ${territory_id}: ${e.message}`
+          );
+        }
+      });
+      const geocodeCache = new Map<
+        string,
+        { latitude: number; longitude: number }
+      >();
 
-          let address: Address;
-          if (existingAddress) {
-            if (addressData.name && leadAddressMap.has(existingAddress.address_id)) {
+      for (let i = 0; i < data.length; i += batchSize) {
+        await queryRunner.startTransaction();
+        try {
+          const batch = data.slice(i, i + batchSize);
+          const addressKeys = batch.map((row, idx) => {
+            if (!row.postal_code || !row.street_address) {
               errors.push(
-                `Row ${rowNum}: Duplicate customer ${addressData.name} at ${addressData.street_address}, ${addressData.postal_code}, ${addressData.subregion}`
+                `Row ${i + idx + 1}: Missing postal code or street address`
               );
+            }
+            return {
+              postal_code: row.postal_code?.trim() || "00000",
+              street_address: row.street_address?.trim() || "",
+              subregion: row.subregion?.trim() || row.city?.trim() || "",
+              org_id,
+            };
+          });
+
+          const existingAddresses = await queryRunner.manager
+            .find(Address, {
+              where: addressKeys,
+              select: [
+                "address_id",
+                "postal_code",
+                "street_address",
+                "subregion",
+                "org_id",
+                "territory_id",
+                "comments",
+              ],
+            })
+            .catch((e) => {
+              throw new Error(`Address fetch failed: ${e.message}`);
+            });
+
+          const addressMap = new Map<string, Address>(
+            existingAddresses.map((addr) => [
+              `${addr.postal_code}|${addr.street_address}|${addr.subregion}|${org_id}`,
+              addr,
+            ])
+          );
+
+          const addressIds = existingAddresses.map((addr) => addr.address_id);
+          const existingLeads = addressIds.length
+            ? await queryRunner.manager
+                .find(Leads, {
+                  where: { address_id: In(addressIds), is_active: true },
+                  select: ["address_id", "name"],
+                })
+                .catch((e) => {
+                  throw new Error(`Leads fetch failed: ${e.message}`);
+                })
+            : [];
+          const leadAddressMap = new Map<number, string>(
+            existingLeads.map((lead) => [lead.address_id, lead.name])
+          );
+
+          const newAddresses: Address[] = [];
+          const addressesToUpdate: Address[] = [];
+          const newCustomers: Leads[] = [];
+          const customerToAddressIndex: Map<number, number> = new Map();
+          const addressesToGeocode: {
+            index: number;
+            address: {
+              street_address: string;
+              postal_code: string;
+              subregion: string;
+              city: string;
+              state: string;
+              region: string;
+              country: string;
+            };
+          }[] = [];
+
+          batch.forEach((row, index) => {
+            const rowNum = i + index + 1;
+            const addressData = {
+              name: row.name?.trim() || "",
+              contact_name: row.contact_name?.trim() || "",
+              contact_email: row.contact_email?.trim() || "",
+              contact_phone: row.contact_phone?.trim() || "",
+              street_address: row.street_address?.trim() || "",
+              comments: row.comments?.trim() || "",
+              postal_code: row.postal_code?.trim() || "00000",
+              area_name: row.area_name?.trim() || "",
+              city: row.city?.trim() || "",
+              state: row.state?.trim() || "",
+              subregion: row.subregion?.trim() || row.city?.trim() || "",
+              region: row.region?.trim() || row.state?.trim() || "",
+              country: row.country?.trim() || "Finland",
+            };
+
+            // Skip invalid rows
+            if (!addressData.street_address || !addressData.postal_code) {
               return;
             }
-            existingAddress.comments =
-              addressData.comments || existingAddress.comments;
-            existingAddress.territory_id =
-              territoryId || existingAddress.territory_id;
-            addressesToUpdate.push(existingAddress);
-            address = existingAddress;
-          } else {
-            const newAddress: Address = queryRunner.manager.create(Address, {
-              street_address: addressData.street_address,
-              postal_code: addressData.postal_code,
-              area_name: addressData.area_name,
-              subregion: addressData.subregion,
-              region: addressData.region,
-              country: addressData.country,
-              org_id,
-              city: addressData.city,
-              state: addressData.state,
-              comments: addressData.comments,
-              territory_id: territoryId,
-              latitude: 0,
-              longitude: 0,
-              created_by: adminId.toString(),
-              updated_by: adminId.toString(),
-              is_active: true,
-            });
-            newAddresses.push(newAddress);
-            addressesToGeocode.push({
-              index: newAddresses.length - 1,
-              address: {
+            const territoryId =
+              territoryLookup.get(`postal:${addressData.postal_code}`) ||
+              territoryLookup.get(`region:${addressData.region}`) ||
+              territoryLookup.get(`subregion:${addressData.subregion}`) ||
+              null;
+            const addressKey = `${addressData.postal_code}|${addressData.street_address}|${addressData.subregion}|${org_id}`;
+            const existingAddress = addressMap.get(addressKey);
+
+            let address: Address;
+            if (existingAddress) {
+              if (
+                addressData.name &&
+                leadAddressMap.has(existingAddress.address_id)
+              ) {
+                errors.push(
+                  `Row ${rowNum}: Duplicate customer ${addressData.name} at ${addressData.street_address}, ${addressData.postal_code}, ${addressData.subregion}`
+                );
+                return;
+              }
+              existingAddress.comments =
+                addressData.comments || existingAddress.comments;
+              existingAddress.territory_id =
+                territoryId || existingAddress.territory_id;
+              addressesToUpdate.push(existingAddress);
+              address = existingAddress;
+            } else {
+              const newAddress: Address = queryRunner.manager.create(Address, {
                 street_address: addressData.street_address,
                 postal_code: addressData.postal_code,
+                area_name: addressData.area_name,
                 subregion: addressData.subregion,
-                city: addressData.city,
-                state: addressData.state,
                 region: addressData.region,
                 country: addressData.country,
-              },
-            });
-            address = newAddress;
-          }
-          addresses.push(address);
+                org_id,
+                city: addressData.city,
+                state: addressData.state,
+                comments: addressData.comments,
+                territory_id: territoryId,
+                latitude: 0,
+                longitude: 0,
+                created_by: adminId.toString(),
+                updated_by: adminId.toString(),
+                is_active: true,
+              });
+              newAddresses.push(newAddress);
+              addressesToGeocode.push({
+                index: newAddresses.length - 1,
+                address: {
+                  street_address: addressData.street_address,
+                  postal_code: addressData.postal_code,
+                  subregion: addressData.subregion,
+                  city: addressData.city,
+                  state: addressData.state,
+                  region: addressData.region,
+                  country: addressData.country,
+                },
+              });
+              address = newAddress;
+            }
+            addresses.push(address);
 
-          if (addressData.name) {
-            const customer = queryRunner.manager.create(Leads, {
-              name: addressData.name,
-              contact_name: addressData.contact_name || addressData.name,
-              contact_email: addressData.contact_email,
-              contact_phone: addressData.contact_phone,
-              pending_assignment: true,
-              is_active: true,
-              created_by: adminId.toString(),
-              updated_by: adminId.toString(),
-              org_id,
-              // assigned_rep_id:t
-              source: Source.Excel,
-              territory_id: territoryId,
+            if (addressData.name) {
+              const customer = queryRunner.manager.create(Leads, {
+                name: addressData.name,
+                contact_name: addressData.contact_name || addressData.name,
+                contact_email: addressData.contact_email,
+                contact_phone: addressData.contact_phone,
+                pending_assignment: true,
+                is_active: true,
+                created_by: adminId.toString(),
+                updated_by: adminId.toString(),
+                org_id,
+                // assigned_rep_id:t
+                source: Source.Excel,
+                territory_id: territoryId,
+              });
+              newCustomers.push(customer);
+              customerToAddressIndex.set(
+                newCustomers.length - 1,
+                newAddresses.length - 1
+              );
+            }
+          });
+
+          if (addressesToGeocode.length) {
+            const geocodePromises = addressesToGeocode.map(
+              async ({ index, address }) => {
+                const cacheKey = `${address.street_address}|${address.postal_code}|${address.subregion}|${address.country}`;
+                if (geocodeCache.has(cacheKey)) {
+                  return { index, coords: geocodeCache.get(cacheKey)! };
+                }
+                try {
+                  const coords = await geoCodeingService.getCoordinates(
+                    address
+                  );
+                  geocodeCache.set(cacheKey, coords);
+                  return { index, coords };
+                } catch (e: any) {
+                  errors.push(
+                    `Geocoding failed for ${address.street_address}, ${address.postal_code}, ${address.subregion}: ${e.message}`
+                  );
+                  return { index, coords: { latitude: 0, longitude: 0 } };
+                }
+              }
+            );
+
+            const geocodeResults = await Promise.all(geocodePromises);
+            geocodeResults.forEach(({ index, coords }) => {
+              newAddresses[index].latitude = coords.latitude;
+              newAddresses[index].longitude = coords.longitude;
             });
-            newCustomers.push(customer);
-            customerToAddressIndex.set(
-              newCustomers.length - 1,
-              newAddresses.length - 1
+          }
+
+          // Bulk insert new addresses
+          if (newAddresses.length) {
+            const savedAddresses = await queryRunner.manager
+              .save(Address, newAddresses)
+              .catch((e) => {
+                throw new Error(`Address save failed: ${e.message}`);
+              });
+            newCustomers.forEach((customer, customerIndex) => {
+              const addressIndex = customerToAddressIndex.get(customerIndex);
+              if (addressIndex !== undefined && savedAddresses[addressIndex]) {
+                customer.address_id = savedAddresses[addressIndex].address_id;
+              }
+            });
+            addresses.splice(
+              addresses.length - newAddresses.length,
+              newAddresses.length,
+              ...savedAddresses
             );
           }
-        });
 
-        if (addressesToGeocode.length) {
-          const geocodePromises = addressesToGeocode.map(
-            async ({ index, address }) => {
-              const cacheKey = `${address.street_address}|${address.postal_code}|${address.subregion}|${address.country}`;
-              if (geocodeCache.has(cacheKey)) {
-                return { index, coords: geocodeCache.get(cacheKey)! };
-              }
-              try {
-                const coords = await geoCodeingService.getCoordinates(address);
-                geocodeCache.set(cacheKey, coords);
-                return { index, coords };
-              } catch (e:any) {
-                errors.push(
-                  `Geocoding failed for ${address.street_address}, ${address.postal_code}, ${address.subregion}: ${e.message}`
-                );
-                return { index, coords: { latitude: 0, longitude: 0 } };
-              }
-            }
-          );
-
-          const geocodeResults = await Promise.all(geocodePromises);
-          geocodeResults.forEach(({ index, coords }) => {
-            newAddresses[index].latitude = coords.latitude;
-            newAddresses[index].longitude = coords.longitude;
-          });
-        }
-
-        // Bulk insert new addresses
-        if (newAddresses.length) {
-          const savedAddresses = await queryRunner.manager.save(
-            Address,
-            newAddresses
-          ).catch((e) => {
-            throw new Error(`Address save failed: ${e.message}`);
-          });
-          newCustomers.forEach((customer, customerIndex) => {
-            const addressIndex = customerToAddressIndex.get(customerIndex);
-            if (addressIndex !== undefined && savedAddresses[addressIndex]) {
-              customer.address_id = savedAddresses[addressIndex].address_id;
-            }
-          });
-          addresses.splice(
-            addresses.length - newAddresses.length,
-            newAddresses.length,
-            ...savedAddresses
-          );
-        }
-
-        if (addressesToUpdate.length) {
-          await queryRunner.manager.save(Address, addressesToUpdate).catch((e) => {
-            throw new Error(`Address update failed: ${e.message}`);
-          });
-        }
-
-        const territoryIds = [
-          ...new Set(
-            newCustomers.map((c) => c.territory_id).filter((id) => id)
-          ),
-        ];
-        const territorySalesmen = territoryIds.length
-          ? await queryRunner.manager.find(TerritorySalesman, {
-              where: { territory_id: In(territoryIds) },
-              select: ["territory_id", "salesman_id"],
-            }).catch((e) => {
-              throw new Error(`Territory salesmen fetch failed: ${e.message}`);
-            })
-          : [];
-        const salesmanMap = new Map<number, number>(
-          territorySalesmen.map((ts) => [ts.territory_id, ts.salesman_id])
-        );
-        newCustomers.forEach((customer) => {
-          if (
-            customer.territory_id &&
-            salesmanMap.has(customer.territory_id)
-          ) {
-            customer.assigned_rep_id = salesmanMap.get(customer.territory_id)!;
-            customer.pending_assignment = false;
+          if (addressesToUpdate.length) {
+            await queryRunner.manager
+              .save(Address, addressesToUpdate)
+              .catch((e) => {
+                throw new Error(`Address update failed: ${e.message}`);
+              });
           }
-        });
 
-        // Bulk insert new customers
-        if (newCustomers.length) {
-          const savedCustomers = await queryRunner.manager.save(
-            Leads,
-            newCustomers
-          ).catch((e) => {
-            throw new Error(`Customer save failed: ${e.message}`);
+          const territoryIds = [
+            ...new Set(
+              newCustomers.map((c) => c.territory_id).filter((id) => id)
+            ),
+          ];
+          const territorySalesmen = territoryIds.length
+            ? await queryRunner.manager
+                .find(TerritorySalesman, {
+                  where: { territory_id: In(territoryIds) },
+                  select: ["territory_id", "salesman_id"],
+                })
+                .catch((e) => {
+                  throw new Error(
+                    `Territory salesmen fetch failed: ${e.message}`
+                  );
+                })
+            : [];
+          const salesmanMap = new Map<number, number>(
+            territorySalesmen.map((ts) => [ts.territory_id, ts.salesman_id])
+          );
+          newCustomers.forEach((customer) => {
+            if (
+              customer.territory_id &&
+              salesmanMap.has(customer.territory_id)
+            ) {
+              customer.assigned_rep_id = salesmanMap.get(
+                customer.territory_id
+              )!;
+              customer.pending_assignment = false;
+            }
           });
-          customers.push(...savedCustomers);
+
+          // Bulk insert new customers
+          if (newCustomers.length) {
+            const savedCustomers = await queryRunner.manager
+              .save(Leads, newCustomers)
+              .catch((e) => {
+                throw new Error(`Customer save failed: ${e.message}`);
+              });
+            customers.push(...savedCustomers);
+          }
+
+          await queryRunner.commitTransaction();
+        } catch (e: any) {
+          await queryRunner.rollbackTransaction();
+          errors.push(
+            `Batch ${i / batchSize + 1}: Processing failed - ${e.message}`
+          );
         }
-
-        await queryRunner.commitTransaction();
-      } catch (e: any) {
-        await queryRunner.rollbackTransaction();
-        errors.push(`Batch ${i / batchSize + 1}: Processing failed - ${e.message}`);
       }
-    }
 
-    // Response logic
-    if (addresses.length || customers.length) {
+      // Response logic
+      if (addresses.length || customers.length) {
+        return {
+          status: httpStatusCodes.OK,
+          message: errors.length ? "Failed to import leads" : "",
+          data: { addresses, customers },
+          errors: errors.length ? errors : undefined,
+        };
+      } else {
+        return {
+          status: httpStatusCodes.BAD_REQUEST,
+          message: "Import failed: No valid data processed",
+          data: null,
+          errors,
+        };
+      }
+    } catch (e: any) {
+      errors.push(`Server error: ${e.message}`);
       return {
-        status: httpStatusCodes.OK,
-        message: errors.length ? "Failed to import leads":"",
-        data: { addresses, customers },
-        errors: errors.length ? errors : undefined,
-      };
-    } else {
-      return {
-        status: httpStatusCodes.BAD_REQUEST,
-        message: "Import failed: No valid data processed",
+        status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+        message: "Import failed: Server error",
         data: null,
         errors,
       };
+    } finally {
+      await queryRunner.release();
     }
-  } catch (e: any) {
-    errors.push(`Server error: ${e.message}`);
-    return {
-      status: httpStatusCodes.INTERNAL_SERVER_ERROR,
-      message: "Import failed: Server error",
-      data: null,
-      errors,
-    };
-  } finally {
-    await queryRunner.release();
   }
-}
   async assignCustomer(
     customerId: number,
     repId: number,
