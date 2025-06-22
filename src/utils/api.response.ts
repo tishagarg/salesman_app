@@ -35,13 +35,15 @@ export class ApiResponse {
   static error = (
     res: Response,
     status: number = 400,
-    error: string = httpStatusCodes.getStatusText(status)
+    error: string = httpStatusCodes.getStatusText(status),
+    errors?: string[] | undefined | null
   ) => {
     res.status(status).json({
       success: false,
       error: {
         message: error,
       },
+      errors,
     });
   };
 
@@ -51,12 +53,13 @@ export class ApiResponse {
 
   static exception(res: any, error: any) {
     if (error instanceof Error) {
-      return ApiResponse.error(res, httpStatusCodes.OK, error.message);
+      return ApiResponse.error(res, httpStatusCodes.OK, error.message, null);
     }
     return ApiResponse.error(
       res,
       httpStatusCodes.BAD_REQUEST,
-      constants.ERROR_CODE.SOMETHING_WENT_WRONG
+      constants.ERROR_CODE.SOMETHING_WENT_WRONG,
+      null
     );
   }
 }

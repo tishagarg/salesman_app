@@ -194,6 +194,7 @@ export class VisitController {
         relations: {
           lead: true,
           rep: true,
+          contract:true
         },
         order,
         skip: (+page - 1) * +limit,

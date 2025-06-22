@@ -36,7 +36,7 @@ export interface IgoogleLoginBody {
 
 export interface IloginResponse {
   token: string;
-  refreshToken: string;
+  refreshToken: string ;
   user: any;
   organization: Organization | null;
 }

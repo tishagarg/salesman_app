@@ -74,7 +74,7 @@ export class LeadsController {
       role
     );
     if (response.status >= 400) {
-      return ApiResponse.error(res, response.status, response.message);
+      return ApiResponse.error(res, response.status, response.message,null);
     }
 
     return ApiResponse.result(
@@ -109,7 +109,7 @@ export class LeadsController {
       role
     );
     if (response.status >= 400) {
-      return ApiResponse.error(res, response.status, response.message);
+      return ApiResponse.error(res, response.status, response.message,null);
     }
 
     return ApiResponse.result(
@@ -210,7 +210,7 @@ export class LeadsController {
         org_id
       );
       if (response.status >= 400) {
-        return ApiResponse.error(res, response.status, response.message);
+        return ApiResponse.error(res, response.status, response.message, response.errors);
       }
 
       return ApiResponse.result(
