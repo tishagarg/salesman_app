@@ -24,6 +24,6 @@ router.post("/reset-password", authController.resetPassword);
 router.post("/change-password", verifyToken,authController.resetPassword);
 
 
-router.post("/refresh-token",  authController.refreshToken);
+// router.post("/refresh-token",  authController.refreshToken);
 
 export default router;
