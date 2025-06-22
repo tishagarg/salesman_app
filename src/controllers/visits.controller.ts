@@ -46,9 +46,10 @@ export class VisitController {
   }
 
   async logVisit(req: any, res: Response): Promise<void> {
-    const { lead_id, latitude, longitude, notes } = req.body;
+    const { lead_id, latitude, longitude, notes, followUps } = req.body;
     const rep_id = req.user.user_id;
     const files = req.files as Express.Multer.File[];
+
     if (!lead_id || !latitude || !longitude) {
       return ApiResponse.error(
         res,
@@ -63,7 +64,8 @@ export class VisitController {
       latitude: parseFloat(latitude),
       longitude: parseFloat(longitude),
       notes: notes || undefined,
-      photos: files || undefined, // Pass the uploaded files
+      photos: files || undefined,
+      followUps: followUps || [],
     };
 
     const response = await visitService.logVisit(data);
@@ -79,6 +81,7 @@ export class VisitController {
       response.message
     );
   }
+
   async getDailyRoute(req: any, res: Response): Promise<void> {
     const rep_id = req.user.user_id;
     const response = await visitService.getDailyRoute(rep_id);
@@ -194,7 +197,7 @@ export class VisitController {
         relations: {
           lead: true,
           rep: true,
-          contract:true
+          contract: true,
         },
         order,
         skip: (+page - 1) * +limit,

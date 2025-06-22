@@ -21,6 +21,8 @@ import { ContractTemplate } from "../models/ContractTemplate.entity";
 import { renderContract } from "../utils/renderContracts";
 import { Address } from "../models/Address.entity";
 import { User } from "../models/User.entity";
+import { FollowUp } from "../models/FollowUp.entity";
+import { FollowUpVisit } from "../models/FollowUpVisit.entity";
 
 require("dotenv").config();
 
@@ -42,6 +44,7 @@ interface VisitData {
   created_by: string;
   is_active?: boolean;
   notes?: string;
+  contract_id?: number;
   photo_urls?: string[];
 }
 
@@ -511,8 +514,10 @@ export class VisitService {
     rep_id: number;
     latitude: number;
     longitude: number;
+    contract_id?: number;
     notes?: string;
     photos?: Express.Multer.File[];
+    followUps?: { subject: string; notes?: string; scheduled_date?: Date }[];
   }): Promise<{ status: number; data?: any; message: string }> {
     return await this.withTransaction(async (queryRunner) => {
       try {
@@ -530,7 +535,6 @@ export class VisitService {
           };
         }
 
-        // Check existing visit
         const existingVisit = await queryRunner.manager.findOne(Visit, {
           where: {
             lead_id: Equal(data.lead_id),
@@ -545,25 +549,49 @@ export class VisitService {
           check_in_time: new Date(),
           latitude: data.latitude,
           longitude: data.longitude,
+          contract_id: data.contract_id,
           notes: data.notes,
           created_by: data.rep_id.toString(),
           photo_urls: [],
         };
+
         const visit = await this.handleVisit(
           queryRunner,
           visitData,
           existingVisit ?? undefined
         );
+
         await queryRunner.manager.update(
           Leads,
           { lead_id: customer.lead_id },
           { is_visited: true }
         );
+        if (data.followUps && data.followUps.length > 0) {
+          for (const followUp of data.followUps) {
+            const newFollowUp = queryRunner.manager.create(FollowUp, {
+              subject: followUp.subject,
+              notes: followUp.notes || null,
+              scheduled_date: followUp.scheduled_date || null,
+              is_completed: false,
+              created_by: data.rep_id.toString(),
+            } as unknown as Partial<FollowUp>);
+
+            const savedFollowUp = await queryRunner.manager.save(
+              FollowUp,
+              newFollowUp
+            );
+
+            await queryRunner.manager.save(FollowUpVisit, {
+              follow_up_id: savedFollowUp.follow_up_id,
+              visit_id: visit.visit_id,
+            });
+          }
+        }
 
         return {
           status: httpStatusCodes.OK,
           data: visit,
-          message: "Visit logged successfully",
+          message: "Visit and follow-up(s) logged successfully",
         };
       } catch (error: any) {
         console.log(error);
@@ -571,6 +599,7 @@ export class VisitService {
       }
     });
   }
+
   private isValidCoordinate(value: any, type: string): boolean {
     if (typeof value !== "number" || isNaN(value)) {
       return false;
