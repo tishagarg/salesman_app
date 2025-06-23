@@ -445,7 +445,7 @@ export class VisitService {
           message: "Daily visits planned successfully",
         };
       } catch (error: any) {
-        console.log(error)
+        console.log(error);
         throw this.handleError(error, "Failed to plan daily visits");
       }
     });
@@ -704,7 +704,7 @@ export class VisitService {
         waypoints
       );
       let currentTime = new Date();
-
+      const skippedLeads: any[] = [];
       const routeOrder: RouteOrderItem[] = [];
       for (let i = 0; i < waypointOrder.length; i++) {
         ("inside the waypoints for loop");
@@ -712,7 +712,8 @@ export class VisitService {
         const visit = validVisits[index];
         const leg = route.legs[i];
         if (!leg?.distance?.value || !leg?.duration?.value) {
-          throw new Error(`Invalid route leg at index ${i}`);
+          console.warn(`Skipping invalid route leg at index ${i}`);
+          continue;
         }
         const distance = leg.distance.value / 1000;
         const duration = leg.duration.value / 60;
@@ -739,7 +740,9 @@ export class VisitService {
       return {
         status: httpStatusCodes.OK,
         data: routes,
-        message: "Daily route optimized successfully",
+        message: skippedLeads.length
+          ? "Daily route optimized with some leads skipped due to invalid route data"
+          : "Daily route optimized successfully",
       };
     } catch (error: any) {
       return this.handleError(error, "Failed to optimize daily route");
@@ -789,7 +792,6 @@ export class VisitService {
         where: { rep_id: repId, route_date: today },
         relations: { rep: true },
       });
-      console.log(route);
       if (!route) {
         return {
           status: httpStatusCodes.NOT_FOUND,
