@@ -184,6 +184,7 @@ export class AuthService {
         message: "Login successful",
       };
     } catch (error: any) {
+      console.log(error);
       await queryRunner.rollbackTransaction();
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
