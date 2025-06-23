@@ -42,7 +42,7 @@ export class VisitController {
     if (contract.status >= 400) {
       ApiResponse.error(res, contract.status, contract.message);
     }
-    ApiResponse.result(res, contract, contract.status, null, contract.message);
+    ApiResponse.result(res, contract.data, contract.status, null, contract.message);
   }
 
   async logVisit(req: any, res: Response): Promise<void> {

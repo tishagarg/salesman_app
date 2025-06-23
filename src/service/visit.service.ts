@@ -7,6 +7,7 @@ import { Idempotency } from "../models/Idempotency";
 import httpStatusCodes from "http-status-codes";
 import {
   Between,
+  DeepPartial,
   Double,
   Equal,
   IsNull,
@@ -114,7 +115,10 @@ export class VisitService {
       const visitRepo = dataSource.getRepository(Visit);
       const contractRepo = dataSource.getRepository(Contract);
       const templateRepo = dataSource.getRepository(ContractTemplate);
-      const visit = await visitRepo.findOneBy({ visit_id: payload.visit_id });
+      const visit = await visitRepo.findOne({
+        where: { visit_id: payload.visit_id },
+        relations: { contract: true },
+      });
       if (!visit) {
         await queryRunner.rollbackTransaction();
         return {
@@ -135,7 +139,6 @@ export class VisitService {
       });
       if (!template) {
         await queryRunner.rollbackTransaction();
-
         return {
           data: null,
           message: "Contract template not found",
@@ -143,6 +146,7 @@ export class VisitService {
         };
       }
       const renderedHtml = renderContract(template.content, payload.metadata);
+      console.log(renderedHtml);
       const contract = contractRepo.create({
         contract_template_id: template.id,
         visit_id: visit.visit_id,
@@ -153,7 +157,6 @@ export class VisitService {
       visit.contract = contract;
       await visitRepo.save(visit);
       await queryRunner.commitTransaction();
-
       return {
         data: contract,
         message: "Contract signed successfully",
@@ -245,6 +248,8 @@ export class VisitService {
     return await this.withTransaction(async (queryRunner) => {
       try {
         const startOfDay = this.getStartOfDay(date);
+        const endOfDay = new Date(startOfDay);
+        endOfDay.setHours(23, 59, 59, 999);
 
         // Check idempotency
         const existingIdempotency = await queryRunner.manager.findOne(
@@ -290,18 +295,28 @@ export class VisitService {
           relations: ["lead", "lead.address"],
         });
 
-        const uncompletedLeads = uncompletedVisits
-          .map((visit) => visit.lead)
-          .filter(
-            (lead) =>
-              lead &&
-              lead.is_active &&
-              !lead.pending_assignment &&
-              lead.address?.latitude &&
-              lead.address?.longitude
-          );
+        const updatedUncompletedLeads = uncompletedVisits
+          .map((visit) => {
+            if (
+              visit.lead &&
+              visit.lead.is_active &&
+              !visit.lead.pending_assignment &&
+              visit.lead.address?.latitude &&
+              visit.lead.address?.longitude
+            ) {
+              return {
+                ...visit.lead,
+                updatedVisit: {
+                  ...visit,
+                  check_in_time: new Date(), // will be overwritten later
+                },
+              };
+            }
+            return null;
+          })
+          .filter((lead): lead is NonNullable<typeof lead> => lead !== null);
 
-        // Fetch all assigned leads
+        // Get all valid customers
         const allCustomers = await queryRunner.manager.find(Leads, {
           where: {
             assigned_rep_id: Equal(repId),
@@ -311,66 +326,75 @@ export class VisitService {
           relations: ["address"],
           order: { created_at: "ASC" },
         });
+
         const validCustomers = allCustomers.filter(
-          (customer) =>
-            customer.address?.latitude && customer.address?.longitude
+          (c) => c.address?.latitude && c.address?.longitude
         );
 
-        if (!validCustomers.length && !uncompletedLeads.length) {
-          return {
-            status: httpStatusCodes.OK,
-            data: null,
-            message: "No valid customer addresses for visit planning",
-          };
-        }
+        // Fetch today's follow-up leads
+        const followUpLeadsRaw = await queryRunner.manager
+          .createQueryBuilder(FollowUp, "fu")
+          .leftJoin(FollowUpVisit, "fuv", "fu.follow_up_id = fuv.follow_up_id")
+          .leftJoin(Visit, "v", "fuv.visit_id = v.visit_id")
+          .select("v.lead_id", "lead_id")
+          .where("fu.scheduled_date BETWEEN :start AND :end", {
+            start: startOfDay,
+            end: endOfDay,
+          })
+          .andWhere("fu.is_completed = false")
+          .getRawMany();
 
-        const leadIdsToExclude = uncompletedLeads.map((lead) => lead.lead_id);
-        const newLeads = validCustomers.filter(
-          (customer) => !leadIdsToExclude.includes(customer.lead_id)
+        const followUpLeadIds = followUpLeadsRaw.map((f) => f.lead_id);
+        const followUpLeads = validCustomers.filter((c) =>
+          followUpLeadIds.includes(c.lead_id)
         );
-        const maxLeadsPerDay = 10;
-        const leadsToPlan = [
-          ...uncompletedLeads,
-          ...newLeads.slice(0, maxLeadsPerDay - uncompletedLeads.length),
-        ].slice(0, maxLeadsPerDay);
+
+        // Combine all leads with priority: uncompleted > follow-ups > others
+        const leadsMap = new Map<number, Leads>();
+
+        updatedUncompletedLeads.forEach((lead) =>
+          leadsMap.set(lead.lead_id, lead)
+        );
+        followUpLeads.forEach((lead) => {
+          if (!leadsMap.has(lead.lead_id)) leadsMap.set(lead.lead_id, lead);
+        });
+        validCustomers.forEach((lead) => {
+          if (!leadsMap.has(lead.lead_id)) leadsMap.set(lead.lead_id, lead);
+        });
+
+        const leadsToPlan = Array.from(leadsMap.values()).slice(0, 10);
 
         if (!leadsToPlan.length) {
           return {
             status: httpStatusCodes.OK,
             data: null,
-            message: "No leads available for visit planning",
+            message: "No valid leads available for visit planning",
           };
         }
 
         const leadIds = leadsToPlan.map((lead) => lead.lead_id);
         if (new Set(leadIds).size !== leadIds.length) {
           return {
-            status: httpStatusCodes.OK,
+            status: httpStatusCodes.BAD_REQUEST,
             data: null,
             message: "Duplicate leads detected in visit planning",
           };
         }
 
-        // Generate optimized route
         const waypoints = leadsToPlan.map(
           (lead) => `${lead.address.latitude},${lead.address.longitude}`
         );
-        // console.log(r)
-        const repLocation = {
-          latitude: repAddress?.address.latitude,
-          longitude: repAddress?.address.longitude,
-        };
-        const origin = `${repLocation.latitude},${repLocation.longitude}`;
+
+        const origin = `${repAddress?.address.latitude},${repAddress?.address.longitude}`;
         const { route, waypointOrder } = await this.getOptimizedRoute(
           origin,
           waypoints
         );
 
-        // Plan visits
         let currentTime = new Date(date);
         currentTime.setHours(9, 0, 0, 0);
 
-        const uncompletedVisitsMap = new Map(
+        const previousVisitMap = new Map(
           [...uncompletedVisits, ...existingVisits].map((visit) => [
             visit.lead_id,
             visit,
@@ -385,6 +409,7 @@ export class VisitService {
           const lead = leadsToPlan[index];
           const leg = route.legs[i];
           const duration = leg.duration.value / 60;
+
           currentTime = new Date(currentTime.getTime() + duration * 60000);
           const eta = currentTime.toLocaleTimeString([], {
             hour: "2-digit",
@@ -403,10 +428,10 @@ export class VisitService {
           const visit = await this.handleVisit(
             queryRunner,
             visitData,
-            uncompletedVisitsMap.get(lead.lead_id) ?? undefined
+            previousVisitMap.get(lead.lead_id) ?? undefined
           );
-          visits.push(visit);
 
+          visits.push(visit);
           routeOrder.push({
             lead_id: lead.lead_id,
             visit_id: visit.visit_id,
@@ -417,7 +442,7 @@ export class VisitService {
           });
         }
 
-        // Upsert route
+        // Update or create route
         let routeEntity;
         if (existingRoute) {
           existingRoute.route_order = routeOrder;
@@ -433,7 +458,7 @@ export class VisitService {
           });
         }
 
-        // Save idempotency record
+        // Save idempotency
         await queryRunner.manager.save(Idempotency, {
           key: idempotencyKey,
           result: { visits, route: routeEntity },
@@ -519,16 +544,37 @@ export class VisitService {
     contract_id?: number;
     notes?: string;
     photos?: Express.Multer.File[];
-    followUps?: { subject: string; notes?: string; scheduled_date?: Date }[];
+    followUps?:
+      | string
+      | { subject: string; notes?: string; scheduled_date?: string }[];
   }): Promise<{ status: number; data?: any; message: string }> {
     return await this.withTransaction(async (queryRunner) => {
       try {
+        // ✅ Parse followUps from FormData string if needed
+        let followUps: {
+          subject: string;
+          notes?: string;
+          scheduled_date?: string;
+        }[] = [];
+
+        if (typeof data.followUps === "string") {
+          try {
+            followUps = JSON.parse(data.followUps);
+          } catch (e) {
+            console.error("Invalid followUps JSON");
+            followUps = [];
+          }
+        } else if (Array.isArray(data.followUps)) {
+          followUps = data.followUps;
+        }
+
         const customer = await queryRunner.manager.findOne(Leads, {
           where: {
-            lead_id: Equal(data.lead_id),
-            assigned_rep_id: Equal(data.rep_id),
+            lead_id: data.lead_id,
+            assigned_rep_id: data.rep_id,
           },
         });
+
         if (!customer) {
           return {
             data: null,
@@ -568,28 +614,31 @@ export class VisitService {
           { lead_id: customer.lead_id },
           { is_visited: true }
         );
-        if (data.followUps && data.followUps.length > 0) {
-          for (const followUp of data.followUps) {
-            const newFollowUp = queryRunner.manager.create(FollowUp, {
-              subject: followUp.subject,
-              notes: followUp.notes || null,
-              scheduled_date: followUp.scheduled_date || null,
-              is_completed: false,
-              created_by: data.rep_id.toString(),
-            } as unknown as Partial<FollowUp>);
 
-            const savedFollowUp = await queryRunner.manager.save(
-              FollowUp,
-              newFollowUp
-            );
+    for (const followUp of followUps) {
+  const parsedDate = followUp.scheduled_date
+    ? new Date(followUp.scheduled_date)
+    : null;
 
-            await queryRunner.manager.save(FollowUpVisit, {
-              follow_up_id: savedFollowUp.follow_up_id,
-              visit_id: visit.visit_id,
-            });
-          }
-        }
+  const followUpData: DeepPartial<FollowUp> = {
+    subject: followUp.subject,
+    notes: followUp.notes ?? "",
+    scheduled_date:
+      parsedDate instanceof Date && !isNaN(parsedDate.getTime())
+        ? parsedDate
+        : undefined,
+    is_completed: false,
+    created_by: data.rep_id,
+  };
 
+  const newFollowUp = queryRunner.manager.create(FollowUp, followUpData);
+  const savedFollowUp = await queryRunner.manager.save(FollowUp, newFollowUp);
+
+  await queryRunner.manager.save(FollowUpVisit, {
+    follow_up_id: savedFollowUp.follow_up_id,
+    visit_id: visit.visit_id,
+  });
+}
         return {
           status: httpStatusCodes.OK,
           data: visit,
