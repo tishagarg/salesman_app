@@ -254,7 +254,8 @@ export class UserTeamController {
       response.data,
       response.status,
       null,
-      response.message
+      response.message,
+      response.pagination
     );
   }
   async getUnassignedSalesRep(req: any, res: Response): Promise<void> {
@@ -312,19 +313,11 @@ export class UserTeamController {
 
     return ApiResponse.result(
       res,
-      {
-        teamMembers: response.data,
-        pagination: {
-          page,
-          limit,
-          total: response.total ?? 0,
-          totalPages: Math.ceil((response.total ?? 0) / limit),
-        },
-      },
-
+      response.data,
       response.status,
       null,
-      response.message
+      response.message,
+      response.pagination
     );
   }
   async updateProfile(req: any, res: Response): Promise<void> {

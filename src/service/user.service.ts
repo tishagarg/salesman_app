@@ -17,7 +17,7 @@ import { OrganizationQuery } from "../query/organization.query";
 import { Roles } from "../enum/roles";
 import { Address } from "../models/Address.entity";
 import { AddressQuery } from "../query/address.query";
-import { AddressDto } from "../interfaces/common.interface";
+import { AddressDto, IPagination } from "../interfaces/common.interface";
 import { TerritoryService } from "./territory.service";
 import { Territory } from "../models/Territory.entity";
 import { In, IsNull, Not } from "typeorm";
@@ -383,7 +383,7 @@ export class UserTeamService {
     status: number;
     data?: any;
     message: string;
-    total: number;
+    pagination?: IPagination;
   }> {
     const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
@@ -399,13 +399,24 @@ export class UserTeamService {
       );
       await queryRunner.commitTransaction();
 
+      const totalPages = Math.ceil(total / pagination.limit);
+      const currentPage = Math.floor(pagination.skip / pagination.limit) + 1;
+      const previousPage = currentPage > 1 ? currentPage - 1 : null;
+      const nextPage = currentPage < totalPages ? currentPage + 1 : null;
+
       return {
         status: 200,
         data: salesRep.map((val) => {
           let { password_hash, ...safeUser } = val;
           return safeUser;
         }),
-        total,
+        pagination: {
+          totalPages,
+          previousPage,
+          currentPage,
+          nextPage,
+          totalItems: total,
+        },
         message: "Users fetched successfully",
       };
     } catch (error) {
@@ -415,7 +426,6 @@ export class UserTeamService {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: "An error occurred while fetching user data.",
         data: null,
-        total: 0,
       };
     } finally {
       await queryRunner.release();
