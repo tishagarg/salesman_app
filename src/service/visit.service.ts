@@ -701,14 +701,6 @@ export class VisitService {
       select: ["manager_id"],
     });
   }
-
-  private async deleteRoute(repId: number, today: Date): Promise<void> {
-    const dataSource = await getDataSource();
-    await dataSource.manager.delete(Route, {
-      rep_id: repId,
-      route_date: today,
-    });
-  }
   private async getVisitsForToday(
     repId: number,
     today: Date
@@ -733,17 +725,51 @@ export class VisitService {
     createdBy: string
   ): Promise<any> {
     const dataSource = await getDataSource();
-    const existingRoute = await dataSource.manager.findOne(Route, {
+    const routeRepository = dataSource.getRepository(Route);
+    const existingRoute = await routeRepository.findOne({
       where: { rep_id: Equal(repId), route_date: Equal(today) },
     });
-    return dataSource.manager.save(Route, {
-      ...existingRoute,
-      rep_id: repId,
-      route_date: today,
-      route_order: routeOrder,
-      created_by: createdBy,
-      updated_at: existingRoute ? new Date() : undefined,
+
+    if (existingRoute) {
+      return await routeRepository.update(
+        { route_id: existingRoute.route_id },
+        {
+          route_order: routeOrder,
+          updated_at: new Date(),
+          created_by: createdBy,
+          is_active: true,
+        }
+      );
+    } else {
+      // Create new route
+      return await routeRepository.save({
+        rep_id: repId,
+        route_date: today,
+        route_order: routeOrder,
+        created_by: createdBy,
+        created_at: new Date(),
+        is_active: true,
+      });
+    }
+  }
+
+  async getRouteForToday(repId: number, date: Date): Promise<Route[]> {
+    const dataSource = await getDataSource();
+    return await dataSource.getRepository(Route).find({
+      where: { rep_id: Equal(repId), route_date: Equal(date), is_active: true },
     });
+  }
+
+  async updateRoute(repId: number, date: Date, routeOrder: RouteOrderItem[]) {
+    const dataSource = await getDataSource();
+    return await dataSource.getRepository(Route).update(
+      { rep_id: Equal(repId), route_date: Equal(date) },
+      {
+        route_order: routeOrder,
+        updated_at: new Date(),
+        is_active: true,
+      }
+    );
   }
 
   async generateDailyRoute(
@@ -785,7 +811,6 @@ export class VisitService {
       const skippedLeads: any[] = [];
       const routeOrder: RouteOrderItem[] = [];
       for (let i = 0; i < waypointOrder.length; i++) {
-        ("inside the waypoints for loop");
         const index = waypointOrder[i];
         const visit = validVisits[index];
         const leg = route.legs[i];
@@ -809,12 +834,9 @@ export class VisitService {
           eta,
         });
       }
-      const routes = await this.saveRoute(
-        repId,
-        today,
-        routeOrder,
-        String(managerId)
-      );
+      await this.saveRoute(repId, today, routeOrder, String(managerId));
+      const routes = await this.getRouteForToday(repId, today);
+
       return {
         status: httpStatusCodes.OK,
         data: routes,
@@ -849,7 +871,6 @@ export class VisitService {
         throw new Error(`No valid manager assigned for repId: ${repId}`);
       }
       const managerId = managerAssignment.manager_id;
-      await this.deleteRoute(repId, today);
       return await this.generateDailyRoute(
         repId,
         latitude,
