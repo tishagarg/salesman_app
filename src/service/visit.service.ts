@@ -24,6 +24,7 @@ import { Address } from "../models/Address.entity";
 import { User } from "../models/User.entity";
 import { FollowUp } from "../models/FollowUp.entity";
 import { FollowUpVisit } from "../models/FollowUpVisit.entity";
+import { ContractImage } from "../models/ContractImage.entity";
 
 require("dotenv").config();
 
@@ -40,6 +41,7 @@ interface VisitData {
   lead_id: number;
   rep_id: number;
   check_in_time: Date;
+  check_out_time?: Date;
   latitude?: number;
   longitude?: number;
   created_by: string;
@@ -103,8 +105,9 @@ export class VisitService {
   }
   async submitVisitWithContract(payload: {
     visit_id: number;
+    signatureFile: any;
     contract_template_id: number;
-    metadata: Record<string, string>;
+    parsedMetaData: Record<string, string>;
   }): Promise<{ data: any; status: number; message: string }> {
     const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
@@ -127,13 +130,13 @@ export class VisitService {
           status: 404,
         };
       }
-      if (visit.contract !== null) {
-        return {
-          data: null,
-          message: "Contract already signed",
-          status: 200,
-        };
-      }
+      // if (visit.contract !== null) {
+      //   return {
+      //     data: null,
+      //     message: "Contract already signed",
+      //     status: 400,
+      //   };
+      // }
       const template = await templateRepo.findOneBy({
         id: payload.contract_template_id,
       });
@@ -145,20 +148,33 @@ export class VisitService {
           status: 404,
         };
       }
-      const renderedHtml = renderContract(template.content, payload.metadata);
-      console.log(renderedHtml);
+      const renderedHtml = renderContract(
+        template.content,
+        payload.parsedMetaData
+      );
+      // Assuming you saved the contract as `const newContract = await contractRepo.save(...)`
+
       const contract = contractRepo.create({
         contract_template_id: template.id,
         visit_id: visit.visit_id,
         rendered_html: renderedHtml,
-        metadata: payload.metadata,
+        metadata: payload.parsedMetaData,
       });
-      await contractRepo.save(contract);
+
+      const savedContract = await contractRepo.save(contract);
+      await dataSource.getRepository(ContractImage).save({
+        contract_id: savedContract.id,
+        image_url: payload.signatureFile?.location,
+        metadata: payload.signatureFile,
+      });
       visit.contract = contract;
       await visitRepo.save(visit);
+      const newContract = await dataSource
+        .getRepository(Contract)
+        .findOne({ where: { id: contract.id }, relations: { images: true } });
       await queryRunner.commitTransaction();
       return {
-        data: contract,
+        data: newContract,
         message: "Contract signed successfully",
         status: 200,
       };
@@ -204,6 +220,7 @@ export class VisitService {
     };
   }
 
+  // async getPastVisits():Promise<{data:any, status:number, message:string}>{}
   private async handleVisit(
     queryRunner: QueryRunner,
     visitData: VisitData,
@@ -211,6 +228,10 @@ export class VisitService {
   ): Promise<Visit> {
     if (uncompletedVisit) {
       uncompletedVisit.check_in_time = visitData.check_in_time;
+      if (visitData.check_out_time !== undefined) {
+        uncompletedVisit.check_out_time = visitData.check_out_time;
+      }
+
       if (visitData.latitude !== undefined) {
         uncompletedVisit.latitude = visitData.latitude;
       }
@@ -543,14 +564,13 @@ export class VisitService {
     longitude: number;
     contract_id?: number;
     notes?: string;
-    photos?: Express.Multer.File[];
+    photos?: any;
     followUps?:
       | string
       | { subject: string; notes?: string; scheduled_date?: string }[];
   }): Promise<{ status: number; data?: any; message: string }> {
     return await this.withTransaction(async (queryRunner) => {
       try {
-        // ✅ Parse followUps from FormData string if needed
         let followUps: {
           subject: string;
           notes?: string;
@@ -590,17 +610,20 @@ export class VisitService {
             check_out_time: IsNull(),
           },
         });
-
+        const photo_url = data.photos?.map((p: any) => {
+          return p.location;
+        });
         const visitData: VisitData = {
           lead_id: data.lead_id,
           rep_id: data.rep_id,
-          check_in_time: new Date(),
+          check_in_time: existingVisit?.check_in_time ?? new Date(),
+          check_out_time: new Date(),
           latitude: data.latitude,
           longitude: data.longitude,
           contract_id: data.contract_id,
           notes: data.notes,
           created_by: data.rep_id.toString(),
-          photo_urls: [],
+          photo_urls: photo_url || [],
         };
 
         const visit = await this.handleVisit(
@@ -615,30 +638,36 @@ export class VisitService {
           { is_visited: true }
         );
 
-    for (const followUp of followUps) {
-  const parsedDate = followUp.scheduled_date
-    ? new Date(followUp.scheduled_date)
-    : null;
+        for (const followUp of followUps) {
+          const parsedDate = followUp.scheduled_date
+            ? new Date(followUp.scheduled_date)
+            : null;
 
-  const followUpData: DeepPartial<FollowUp> = {
-    subject: followUp.subject,
-    notes: followUp.notes ?? "",
-    scheduled_date:
-      parsedDate instanceof Date && !isNaN(parsedDate.getTime())
-        ? parsedDate
-        : undefined,
-    is_completed: false,
-    created_by: data.rep_id,
-  };
+          const followUpData: DeepPartial<FollowUp> = {
+            subject: followUp.subject,
+            notes: followUp.notes ?? "",
+            scheduled_date:
+              parsedDate instanceof Date && !isNaN(parsedDate.getTime())
+                ? parsedDate
+                : undefined,
+            is_completed: false,
+            created_by: data.rep_id,
+          };
 
-  const newFollowUp = queryRunner.manager.create(FollowUp, followUpData);
-  const savedFollowUp = await queryRunner.manager.save(FollowUp, newFollowUp);
+          const newFollowUp = queryRunner.manager.create(
+            FollowUp,
+            followUpData
+          );
+          const savedFollowUp = await queryRunner.manager.save(
+            FollowUp,
+            newFollowUp
+          );
 
-  await queryRunner.manager.save(FollowUpVisit, {
-    follow_up_id: savedFollowUp.follow_up_id,
-    visit_id: visit.visit_id,
-  });
-}
+          await queryRunner.manager.save(FollowUpVisit, {
+            follow_up_id: savedFollowUp.follow_up_id,
+            visit_id: visit.visit_id,
+          });
+        }
         return {
           status: httpStatusCodes.OK,
           data: visit,

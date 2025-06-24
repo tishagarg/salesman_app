@@ -2,7 +2,7 @@ import { Response } from "express";
 import { VisitService } from "../service/visit.service";
 import { ApiResponse } from "../utils/api.response";
 import { Leads } from "../models/Leads.entity";
-import { Between, In, MoreThanOrEqual } from "typeorm";
+import { Between, In, LessThanOrEqual, MoreThanOrEqual } from "typeorm";
 import { Visit } from "../models/Visits.entity";
 import { Route } from "../models/Route.entity";
 import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
@@ -33,23 +33,30 @@ export class VisitController {
 
   async submitVisitWithContract(req: any, res: Response): Promise<void> {
     const { visit_id, contract_template_id, metadata } = req.body;
-
+    const signatureFile = req.file;
+    const parsedMetaData = JSON.parse(metadata);
     const contract = await visitService.submitVisitWithContract({
       visit_id,
+      signatureFile,
       contract_template_id,
-      metadata,
+      parsedMetaData,
     });
     if (contract.status >= 400) {
       ApiResponse.error(res, contract.status, contract.message);
     }
-    ApiResponse.result(res, contract.data, contract.status, null, contract.message);
+    ApiResponse.result(
+      res,
+      contract.data,
+      contract.status,
+      null,
+      contract.message
+    );
   }
 
   async logVisit(req: any, res: Response): Promise<void> {
     const { lead_id, latitude, longitude, notes, followUps } = req.body;
     const rep_id = req.user.user_id;
-    const files = req.files as Express.Multer.File[];
-
+    const photos = req.files;
     if (!lead_id || !latitude || !longitude) {
       return ApiResponse.error(
         res,
@@ -64,10 +71,9 @@ export class VisitController {
       latitude: parseFloat(latitude),
       longitude: parseFloat(longitude),
       notes: notes || undefined,
-      photos: files || undefined,
-      followUps: followUps || [],
+      photos: photos || undefined,
+      followUps: JSON.parse(followUps) || [],
     };
-
     const response = await visitService.logVisit(data);
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
@@ -256,6 +262,65 @@ export class VisitController {
         500,
         error.message || "Failed to retrieve daily routes and visits"
       );
+    }
+  }
+  async getPastVisits(req: any, res: Response): Promise<void> {
+    try {
+      const dataSource = await getDataSource();
+      const visitRepo = dataSource.getRepository(Visit);
+      const {
+        from,
+        to,
+        page = 1,
+        limit = 10,
+        order = "DESC",
+      } = req.query as {
+        from?: string;
+        to?: string;
+        page?: number;
+        limit?: number;
+        order?: string;
+      };
+
+      const user_id = req.user.user_id;
+
+      const where: any = {
+        rep_id: user_id,
+      };
+
+      if (from && to) {
+        where.check_in_time = Between(new Date(from), new Date(to));
+      } else if (from) {
+        where.check_in_time = MoreThanOrEqual(new Date(from));
+      } else if (to) {
+        where.check_in_time = LessThanOrEqual(new Date(to));
+      }
+
+      // ✅ Only allow valid order values
+      const safeOrder = order?.toUpperCase() === "ASC" ? "ASC" : "DESC";
+
+      const [visits, total] = await visitRepo.findAndCount({
+        where,
+        relations: {
+          lead: true,
+          contract: true,
+        },
+        order: {
+          check_in_time: safeOrder,
+        },
+        skip: (page - 1) * limit,
+        take: limit,
+      });
+      return ApiResponse.result(res, visits, 200, null, "Past Visits", {
+        totalItems: total,
+        currentPage: +page,
+        totalPages: Math.ceil(total / +limit),
+        previousPage: +page > 1 ? +page - 1 : null,
+        nextPage: +page < Math.ceil(total / +limit) ? +page + 1 : null,
+      });
+    } catch (error) {
+      console.error(error);
+      return ApiResponse.error(res, 500, "Failed to retrieve visits");
     }
   }
 }

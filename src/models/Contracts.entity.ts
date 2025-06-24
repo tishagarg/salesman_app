@@ -1,6 +1,14 @@
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from "typeorm";
+import {
+  Column,
+  Entity,
+  JoinColumn,
+  ManyToOne,
+  OneToMany,
+  PrimaryGeneratedColumn,
+} from "typeorm";
 import { Visit } from "./Visits.entity";
 import { ContractTemplate } from "./ContractTemplate.entity";
+import { ContractImage } from "./ContractImage.entity";
 
 @Entity("contracts")
 export class Contract {
@@ -29,4 +37,7 @@ export class Contract {
 
   @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP" })
   signed_at: Date;
+
+  @OneToMany(() => ContractImage, (image) => image.contract)
+  images: ContractImage[];
 }

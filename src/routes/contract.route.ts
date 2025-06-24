@@ -3,6 +3,7 @@ import { AuthController } from "../controllers/auth.controller";
 import { verifyToken } from "../middleware/auth.middleware";
 import { ContractTemplateController } from "../controllers/contract.controller";
 import { VisitController } from "../controllers/visits.controller";
+import {  uploadContractImage } from "../aws/aws.service";
 
 const router = express.Router();
 
@@ -16,5 +17,10 @@ router.get(
 router.post("/templates", verifyToken, authController.create);
 router.get("/templates", verifyToken, authController.list);
 router.get("/", verifyToken, authController.getAllContracts);
-router.post("/submit", visitController.submitVisitWithContract);
+router.post(
+  "/submit",
+  verifyToken,
+  uploadContractImage.single("signature"),
+  visitController.submitVisitWithContract
+);
 export default router;
