@@ -130,13 +130,13 @@ export class VisitService {
           status: 404,
         };
       }
-      // if (visit.contract !== null) {
-      //   return {
-      //     data: null,
-      //     message: "Contract already signed",
-      //     status: 400,
-      //   };
-      // }
+      if (visit.contract !== null) {
+        return {
+          data: null,
+          message: "Contract already signed",
+          status: 400,
+        };
+      }
       const template = await templateRepo.findOneBy({
         id: payload.contract_template_id,
       });
