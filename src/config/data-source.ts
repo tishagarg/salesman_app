@@ -26,6 +26,7 @@ import { OtpVerification } from "../models/OTPVerification.entity";
 import { UserToken } from "../models/UserToken.entity";
 import { FollowUp } from "../models/FollowUp.entity";
 import { FollowUpVisit } from "../models/FollowUpVisit.entity";
+import { ContractImage } from "../models/ContractImage.entity";
 
 dotenv.config();
 
@@ -56,6 +57,7 @@ export const dataSourceOptions: DataSourceOptions = {
     UserToken,
     Address,
     Leads,
+    ContractImage,
     Visit,
     Territory,
     Message,
