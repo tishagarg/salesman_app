@@ -205,13 +205,13 @@ export class CustomerService {
         if (data.contact_phone) updateData.contact_phone = data.contact_phone;
         if (data.name) updateData.name = data.name;
         if (data.status) {
-          if (data.status !== LeadStatus.Active) {
-            await queryRunner.rollbackTransaction();
-            return {
-              status: httpStatusCodes.FORBIDDEN,
-              message: "Sales reps can only change status to Active",
-            };
-          }
+          // if (data.status !== LeadStatus.Active) {
+          //   await queryRunner.rollbackTransaction();
+          //   return {
+          //     status: httpStatusCodes.FORBIDDEN,
+          //     message: "Sales reps can only change status to Active",
+          //   };
+          // }
           updateData.status = data.status;
         }
       } else {

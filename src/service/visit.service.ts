@@ -25,6 +25,7 @@ import { User } from "../models/User.entity";
 import { FollowUp } from "../models/FollowUp.entity";
 import { FollowUpVisit } from "../models/FollowUpVisit.entity";
 import { ContractImage } from "../models/ContractImage.entity";
+import { LeadStatus } from "../enum/leadStatus";
 
 require("dotenv").config();
 
@@ -568,6 +569,7 @@ export class VisitService {
     followUps?:
       | string
       | { subject: string; notes?: string; scheduled_date?: string }[];
+    status: LeadStatus;
   }): Promise<{ status: number; data?: any; message: string }> {
     return await this.withTransaction(async (queryRunner) => {
       try {
@@ -632,11 +634,13 @@ export class VisitService {
           existingVisit ?? undefined
         );
 
-        await queryRunner.manager.update(
-          Leads,
-          { lead_id: customer.lead_id },
-          { is_visited: true }
-        );
+        await queryRunner.manager
+          .getRepository(Leads)
+          .update(customer.lead_id, {
+            lead_id: customer.lead_id,
+            is_visited: true,
+            status: data.status,
+          });
 
         for (const followUp of followUps) {
           const parsedDate = followUp.scheduled_date
