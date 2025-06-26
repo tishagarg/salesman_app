@@ -10,6 +10,7 @@ import { getDataSource } from "../config/data-source";
 import { Roles } from "../enum/roles";
 import { Role } from "../models/Role.entity";
 import { User } from "../models/User.entity";
+import { LeadStatus } from "../enum/leadStatus";
 
 const visitService = new VisitService();
 
@@ -54,7 +55,7 @@ export class VisitController {
   }
 
   async logVisit(req: any, res: Response): Promise<void> {
-    const { lead_id, latitude, longitude, notes, followUps } = req.body;
+    const { lead_id, latitude, longitude, notes, followUps, status } = req.body;
     const rep_id = req.user.user_id;
     const photos = req.files;
     if (!lead_id || !latitude || !longitude) {
@@ -73,6 +74,7 @@ export class VisitController {
       notes: notes || undefined,
       photos: photos || undefined,
       followUps: JSON.parse(followUps) || [],
+      status,
     };
     const response = await visitService.logVisit(data);
     if (response.status >= 400) {
@@ -268,49 +270,76 @@ export class VisitController {
     try {
       const dataSource = await getDataSource();
       const visitRepo = dataSource.getRepository(Visit);
+
       const {
         from,
         to,
         page = 1,
         limit = 10,
         order = "DESC",
+        lead_id,
+        status,
       } = req.query as {
         from?: string;
         to?: string;
         page?: number;
         limit?: number;
         order?: string;
+        lead_id?: number;
+        status?: LeadStatus;
       };
 
-      const user_id = req.user.user_id;
-
-      const where: any = {
-        rep_id: user_id,
-      };
-
-      if (from && to) {
-        where.check_in_time = Between(new Date(from), new Date(to));
-      } else if (from) {
-        where.check_in_time = MoreThanOrEqual(new Date(from));
-      } else if (to) {
-        where.check_in_time = LessThanOrEqual(new Date(to));
-      }
-
-      // ✅ Only allow valid order values
+      const user_id = (req as any).user.user_id;
       const safeOrder = order?.toUpperCase() === "ASC" ? "ASC" : "DESC";
 
-      const [visits, total] = await visitRepo.findAndCount({
-        where,
-        relations: {
-          lead: true,
-          contract: true,
-        },
-        order: {
-          check_in_time: safeOrder,
-        },
-        skip: (page - 1) * limit,
-        take: limit,
-      });
+      const visitQuery = visitRepo
+        .createQueryBuilder("visit")
+        .leftJoinAndSelect("visit.lead", "lead")
+        .leftJoinAndSelect("visit.contract", "contract")
+        .leftJoinAndSelect("visit.followUpVisits", "followUpVisit")
+        .leftJoinAndSelect("followUpVisit.followUp", "followUp")
+        .where("visit.rep_id = :user_id", { user_id });
+
+      // Optional lead or status filters
+      if (lead_id) {
+        visitQuery.andWhere("visit.lead_id = :lead_id", { lead_id });
+      }
+
+      if (status) {
+        visitQuery.andWhere("lead.status = :status", { status });
+      }
+
+      // Handle time filtering on check-in or follow-up scheduled date
+      if (from && to) {
+        visitQuery.andWhere(
+          `(visit.check_in_time BETWEEN :from AND :to OR followUp.scheduled_date BETWEEN :from AND :to)`,
+          { from: new Date(from), to: new Date(to) }
+        );
+      } else if (from) {
+        visitQuery.andWhere(
+          `(visit.check_in_time >= :from OR followUp.scheduled_date >= :from)`,
+          { from: new Date(from) }
+        );
+      } else if (to) {
+        visitQuery.andWhere(
+          `(visit.check_in_time <= :to OR followUp.scheduled_date <= :to)`,
+          { to: new Date(to) }
+        );
+      }
+
+      // Only include follow-ups where scheduled_date is in the past or not set
+      visitQuery.andWhere(
+        "followUp.scheduled_date IS NULL OR followUp.scheduled_date < NOW()"
+      );
+
+      // Pagination + ordering
+      visitQuery
+        .orderBy("visit.check_in_time", safeOrder)
+        .skip((+page - 1) * +limit)
+        .take(+limit);
+
+      const [visits, total] = await visitQuery.getManyAndCount();
+
       return ApiResponse.result(res, visits, 200, null, "Past Visits", {
         totalItems: total,
         currentPage: +page,
@@ -319,7 +348,7 @@ export class VisitController {
         nextPage: +page < Math.ceil(total / +limit) ? +page + 1 : null,
       });
     } catch (error) {
-      console.error(error);
+      console.error("Error in getPastVisits:", error);
       return ApiResponse.error(res, 500, "Failed to retrieve visits");
     }
   }

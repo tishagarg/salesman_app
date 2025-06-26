@@ -4,6 +4,7 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
+  OneToMany,
   OneToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
@@ -11,6 +12,7 @@ import {
 import { User } from "./User.entity";
 import { Leads } from "./Leads.entity";
 import { Contract } from "./Contracts.entity";
+import { FollowUpVisit } from "./FollowUpVisit.entity";
 @Entity("visit")
 export class Visit {
   @PrimaryGeneratedColumn()
@@ -68,4 +70,6 @@ export class Visit {
   @ManyToOne(() => User, { onDelete: "SET NULL" })
   @JoinColumn({ name: "rep_id" })
   rep: User;
+  @OneToMany(() => FollowUpVisit, (followUpVisit) => followUpVisit.visit)
+  followUpVisits: FollowUpVisit[];
 }

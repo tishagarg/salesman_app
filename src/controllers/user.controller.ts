@@ -9,6 +9,7 @@ import {
 } from "../interfaces/user.interface";
 import { Response } from "express";
 import { Roles } from "../enum/roles";
+import { LeadStatus } from "../enum/leadStatus";
 
 const userTeamService = new UserTeamService();
 export class UserTeamController {
@@ -25,6 +26,14 @@ export class UserTeamController {
       null,
       response.message
     );
+  }
+  async getLeadStatus(req: any, res: Response): Promise<void> {
+    const leadStatusValues = Object.values(LeadStatus);
+    res.status(200).json({
+      data: leadStatusValues,
+      status: 200,
+      message: "Lead status fetched successfully",
+    });
   }
   async getAllRoles(req: any, res: Response): Promise<void> {
     const { org_id } = req.user;
