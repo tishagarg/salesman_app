@@ -9,7 +9,7 @@ import {
 } from "../interfaces/user.interface";
 import { Response } from "express";
 import { Roles } from "../enum/roles";
-import { LeadStatus } from "../enum/leadStatus";
+import { LeadStatus, leadStatusColors } from "../enum/leadStatus";
 
 const userTeamService = new UserTeamService();
 export class UserTeamController {
@@ -28,12 +28,22 @@ export class UserTeamController {
     );
   }
   async getLeadStatus(req: any, res: Response): Promise<void> {
-    const leadStatusValues = Object.values(LeadStatus);
+    try {
+    const leadStatusValues = Object.values(LeadStatus).map(status => ({
+      status,
+      color: leadStatusColors[status as LeadStatus],
+    }));
     res.status(200).json({
       data: leadStatusValues,
       status: 200,
       message: "Lead status fetched successfully",
     });
+  } catch (error) {
+    res.status(500).json({
+      status: 500,
+      message: "Internal server error",
+    });
+  }
   }
   async getAllRoles(req: any, res: Response): Promise<void> {
     const { org_id } = req.user;
