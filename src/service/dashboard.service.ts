@@ -5,6 +5,7 @@ import { Visit } from "../models/Visits.entity";
 import httpStatusCodes from "http-status-codes";
 import { IsNull, Not } from "typeorm";
 import { isEmpty } from "class-validator";
+import { getCurrentMonthData } from "../utils/workingDays";
 
 export class DashboardService {
   async getDashboard(
@@ -41,6 +42,7 @@ export class DashboardService {
         .where("contract.id IS NULL")
         .andWhere("visit.rep_id = :rep_id", { rep_id: userId })
         .getCount();
+      const calender = await getCurrentMonthData();
 
       const data = {
         unSignedLeads,
@@ -48,6 +50,7 @@ export class DashboardService {
         totalLeads,
         unVisitedLeads,
         visitedLeads,
+        calender,
       };
 
       await queryRunner.commitTransaction();

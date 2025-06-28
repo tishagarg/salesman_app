@@ -6,7 +6,6 @@ import { getCurrentMonthData } from "../utils/workingDays";
 
 const userTeamController = new UserTeamController();
 const router = Router();
-router.get("/calender", verifyToken, getCurrentMonthData);
 router.get("/lead-status", userTeamController.getLeadStatus);
 router.get("/sales-rep", verifyToken, userTeamController.getSalesRep);
 router.get(

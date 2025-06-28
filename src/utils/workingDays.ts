@@ -27,17 +27,17 @@ interface MonthData {
   workingDaysLeft: number;
 }
 
-export async function getCurrentMonthData(req: any, res: Response): Promise<void> {
+export async function getCurrentMonthData() {
   try {
-    const countryCode = 'FI';
-    const region =  'FI-BW';
+    const countryCode = "FI";
+    const region = "FI-BW";
     const today = new Date(); // Dynamic current date
     const year = today.getFullYear();
     const month = today.getMonth() + 1; // 1-based month (e.g., 6 for June, 7 for July)
     const startDate = today;
     const endDate = endOfMonth(today);
     const totalDays = getDaysInMonth(today);
-    const monthName = format(today, 'MMMM');
+    const monthName = format(today, "MMMM");
 
     // Fetch public holidays for the current year
     const url = `https://date.nager.at/api/v3/PublicHolidays/${year}/${countryCode}`;
@@ -62,7 +62,7 @@ export async function getCurrentMonthData(req: any, res: Response): Promise<void
     let currentDate = startDate;
     while (currentDate <= endDate) {
       const isHoliday = monthHolidays.some(
-        (holiday) => holiday.date === format(currentDate, 'yyyy-MM-dd')
+        (holiday) => holiday.date === format(currentDate, "yyyy-MM-dd")
       );
       if (isWeekend(currentDate)) {
         weekends++;
@@ -81,10 +81,9 @@ export async function getCurrentMonthData(req: any, res: Response): Promise<void
       publicHolidays,
       workingDaysLeft: workingDays,
     };
-
-    res.status(200).json({ data, status: 200, message: 'Success' });
+    return data;
   } catch (error) {
-    console.error('Error fetching holidays:', error);
-    res.status(500).json({ data: null, status: 500, message: 'Failed to fetch holiday data' });
+    console.error("Error fetching holidays:", error);
+    return null;
   }
 }
