@@ -36,6 +36,7 @@ interface RouteOrderItem {
   distance: number;
   eta: string;
   visit_id: number;
+  lead_status:LeadStatus
 }
 
 interface VisitData {
@@ -459,6 +460,7 @@ export class VisitService {
             visit_id: visit.visit_id,
             latitude: lead.address.latitude,
             longitude: lead.address.longitude,
+            lead_status:lead.status,
             distance: Number((leg.distance.value / 1000).toFixed(2)),
             eta,
           });
@@ -834,6 +836,7 @@ export class VisitService {
           latitude: visit.latitude,
           longitude: visit.longitude,
           visit_id: visit.visit_id,
+          lead_status:visit.lead.status,
           distance: Number(distance.toFixed(2)),
           eta,
         });
@@ -913,6 +916,7 @@ export class VisitService {
             name: customer?.name || "anonymous",
             latitude: customer?.address?.latitude,
             visit_id: item.visit_id,
+            lead_status:item.lead_status,
             longitude: customer?.address?.longitude,
             address: customer?.address
               ? `${customer.address.street_address || ""}, ${
