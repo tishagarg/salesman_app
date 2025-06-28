@@ -2,10 +2,12 @@ import { Response, Router } from "express";
 import { UserTeamController } from "../controllers/user.controller";
 import { verifyToken } from "../middleware/auth.middleware";
 import { LeadStatus } from "../enum/leadStatus";
+import { getCurrentMonthData } from "../utils/workingDays";
 
 const userTeamController = new UserTeamController();
 const router = Router();
-router.get("/lead-status",  userTeamController.getLeadStatus);
+router.get("/calender", verifyToken, getCurrentMonthData);
+router.get("/lead-status", userTeamController.getLeadStatus);
 router.get("/sales-rep", verifyToken, userTeamController.getSalesRep);
 router.get(
   "/unassigned-sales-rep",
