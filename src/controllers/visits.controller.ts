@@ -35,7 +35,14 @@ export class VisitController {
   async submitVisitWithContract(req: any, res: Response): Promise<void> {
     const { visit_id, contract_template_id, metadata } = req.body;
     const signatureFile = req.file;
-    const parsedMetaData = JSON.parse(metadata);
+    let parsedMetaData;
+    try {
+      parsedMetaData =
+        typeof metadata === "string" ? JSON.parse(metadata) : metadata;
+    } catch (error) {
+      console.error("Error parsing metadata:", error);
+      return ApiResponse.error(res, 400, "Invalid metadata format");
+    }
     const contract = await visitService.submitVisitWithContract({
       visit_id,
       signatureFile,
