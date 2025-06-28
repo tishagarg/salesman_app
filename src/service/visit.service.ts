@@ -132,6 +132,7 @@ export class VisitService {
         };
       }
       if (visit.contract !== null) {
+        await queryRunner.rollbackTransaction();
         return {
           data: null,
           message: "Contract already signed",
@@ -153,8 +154,6 @@ export class VisitService {
         template.content,
         payload.parsedMetaData
       );
-      // Assuming you saved the contract as `const newContract = await contractRepo.save(...)`
-
       const contract = contractRepo.create({
         contract_template_id: template.id,
         visit_id: visit.visit_id,
@@ -180,6 +179,7 @@ export class VisitService {
         status: 200,
       };
     } catch (error) {
+      console.log(error)
       await queryRunner.rollbackTransaction();
       return {
         data: null,

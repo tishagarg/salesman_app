@@ -43,9 +43,9 @@ export class VisitController {
       parsedMetaData,
     });
     if (contract.status >= 400) {
-      ApiResponse.error(res, contract.status, contract.message);
+      return ApiResponse.error(res, contract.status, contract.message);
     }
-    ApiResponse.result(
+    return ApiResponse.result(
       res,
       contract.data,
       contract.status,
