@@ -346,7 +346,7 @@ export class VisitController {
         .take(+limit);
 
       const [visits, total] = await visitQuery.getManyAndCount();
-
+console.log(visits)
       return ApiResponse.result(res, visits, 200, null, "Past Visits", {
         totalItems: total,
         currentPage: +page,
