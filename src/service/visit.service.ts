@@ -10,6 +10,7 @@ import {
   DeepPartial,
   Double,
   Equal,
+  In,
   IsNull,
   LessThan,
   MoreThanOrEqual,
@@ -712,17 +713,59 @@ export class VisitService {
     today: Date
   ): Promise<Visit[]> {
     const dataSource = await getDataSource();
-    return dataSource.manager.find(Visit, {
-      where: {
-        rep_id: Equal(repId),
-        check_in_time: Between(
-          today,
-          new Date(today.getTime() + 24 * 60 * 60 * 1000)
-        ),
-        is_active: true,
-      },
-      relations: ["lead", "lead.address"],
-    });
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.startTransaction();
+
+    try {
+      const visits = await queryRunner.manager.find(Visit, {
+        where: {
+          rep_id: Equal(repId),
+          check_in_time: Between(
+            today,
+            new Date(today.getTime() + 24 * 60 * 60 * 1000)
+          ),
+          is_active: true,
+        },
+        relations: ["lead", "lead.address"],
+      });
+
+      const visitsToKeep: Visit[] = [];
+      const visitsToDelete: Visit[] = [];
+
+      for (const visit of visits) {
+        if (!visit.lead) {
+          console.warn(`Visit ${visit.visit_id} has no associated lead`);
+          visitsToDelete.push(visit);
+          continue;
+        }
+        if (visit.rep_id === visit.lead.assigned_rep_id) {
+          visitsToKeep.push(visit);
+        } else {
+          console.log(
+            `Visit ${visit.visit_id} rep_id ${visit.rep_id} does not match lead.assigned_rep_id ${visit.lead.assigned_rep_id}`
+          );
+          visitsToDelete.push(visit);
+        }
+      }
+
+      if (visitsToDelete.length > 0) {
+        await queryRunner.manager.update(
+          Visit,
+          { id: In(visitsToDelete.map((visit) => visit.visit_id)) },
+          { is_active: false }
+        );
+        console.log(`Deleted ${visitsToDelete.length} non-matching visits`);
+      }
+
+      await queryRunner.commitTransaction();
+      return visitsToKeep;
+    } catch (error: any) {
+      await queryRunner.rollbackTransaction();
+      console.error("getVisitsForToday - Error:", error.message, error.stack);
+      throw new Error(`Failed to fetch visits: ${error.message}`);
+    } finally {
+      await queryRunner.release();
+    }
   }
   private async saveRoute(
     repId: number,
