@@ -908,7 +908,7 @@ export class UserTeamService {
             updateData.address_id = updatedAddress.address_id;
             await territoryService.autoAssignTerritory(
               updatedAddress.address_id,
-              org_id
+              org_id,queryRunner
             );
           }
         }

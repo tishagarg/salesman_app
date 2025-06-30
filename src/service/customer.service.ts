@@ -205,6 +205,7 @@ export class CustomerService {
         if (data.contact_phone) updateData.contact_phone = data.contact_phone;
         if (data.name) updateData.name = data.name;
         if (data.status) {
+          // Uncomment if sales reps are restricted to Active status
           // if (data.status !== LeadStatus.Active) {
           //   await queryRunner.rollbackTransaction();
           //   return {
@@ -270,28 +271,49 @@ export class CustomerService {
             updated_by: userId.toString(),
             updated_at: new Date(),
           };
+          console.log("Address Update:", addressUpdate);
 
-          await queryRunner.manager.update(
+          const addressUpdateResult = await queryRunner.manager.update(
             Address,
             { address_id: address.address_id },
             addressUpdate
           );
+
+          if (addressUpdateResult.affected === 0) {
+            console.warn("⚠️ Address update failed: No rows affected");
+            await queryRunner.rollbackTransaction();
+            return {
+              status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+              message: "Failed to update address",
+            };
+          }
         }
       }
 
       if (Object.keys(updateData).length > 2) {
-        await queryRunner.manager.update(
+        const leadUpdateResult = await queryRunner.manager.update(
           Leads,
           { lead_id: customerId },
           updateData
         );
+
+        if (leadUpdateResult.affected === 0) {
+          console.warn("⚠️ Lead update failed: No rows affected");
+          await queryRunner.rollbackTransaction();
+          return {
+            status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+            message: "Failed to update customer",
+          };
+        }
       }
 
       if (data.street_address || data.postal_code || data.subregion) {
         const autoAssignResult = await territoryService.autoAssignTerritory(
           addressId,
-          org_id
+          org_id,
+          queryRunner // Pass the queryRunner
         );
+        console.log("AutoAssignTerritory Result:", autoAssignResult);
         if (autoAssignResult.status >= 400) {
           await queryRunner.rollbackTransaction();
           return {
@@ -337,6 +359,7 @@ export class CustomerService {
       };
     } catch (error: any) {
       await queryRunner.rollbackTransaction();
+      console.error("updateCustomer - Error:", error.message, error.stack);
       return {
         status: httpStatusCodes.INTERNAL_SERVER_ERROR,
         message: `Failed to update customer: ${error.message}`,
@@ -610,18 +633,11 @@ export class CustomerService {
         const customer = await queryRunner.manager.findOne(Leads, {
           where: { lead_id: customerId, is_active: true },
         });
+        console.log(customer);
         if (!customer) {
           errors.push(`Customer with ID ${customerId} not found`);
           continue;
         }
-
-        if (!customer.pending_assignment) {
-          errors.push(
-            `Customer with ID ${customerId} is already assigned (${customer.name})`
-          );
-          continue;
-        }
-
         await queryRunner.manager.update(
           Leads,
           { lead_id: customerId },
@@ -639,7 +655,6 @@ export class CustomerService {
         });
         updatedCustomers.push(updatedCustomer!);
       }
-
       if (errors.length && !updatedCustomers.length) {
         await queryRunner.rollbackTransaction();
         return {

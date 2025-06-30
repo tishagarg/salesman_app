@@ -173,7 +173,7 @@ export class AddressService {
 
       const autoAssignResult = await this.territoryService.autoAssignTerritory(
         savedAddress.address_id,
-        data.org_id
+        data.org_id,queryRunner
       );
 
       // Commit territory assignment
