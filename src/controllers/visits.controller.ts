@@ -16,9 +16,8 @@ const visitService = new VisitService();
 
 export class VisitController {
   async planVisit(req: any, res: Response): Promise<void> {
-    const data = req.body;
     const user_id = req.user.user_id;
-    const response = await visitService.planVisit(data, user_id);
+    const response = await visitService.planVisit( user_id);
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
     }
