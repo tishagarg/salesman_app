@@ -296,16 +296,19 @@ export class VisitController {
         status?: LeadStatus;
       };
 
-      const user_id = (req as any).user.user_id;
+      const user_id = req.user.user_id;
       const safeOrder = order?.toUpperCase() === "ASC" ? "ASC" : "DESC";
 
       const visitQuery = visitRepo
         .createQueryBuilder("visit")
-        .leftJoinAndSelect("visit.lead", "lead")
-        .leftJoinAndSelect("visit.contract", "contract")
-        .leftJoinAndSelect("visit.followUpVisits", "followUpVisit")
-        .leftJoinAndSelect("followUpVisit.followUp", "followUp")
-        .where("visit.rep_id = :user_id", { user_id });
+        .leftJoinAndSelect("visit.lead", "l")
+        .leftJoinAndSelect("visit.contract", "c")
+        .leftJoinAndSelect("visit.followUpVisits", "fv")
+        .leftJoinAndSelect("fv.followUp", "f")
+        .where("visit.rep_id = :user_id", { user_id })
+        .andWhere(
+          "(f.scheduled_date < NOW() OR visit.check_out_time IS NOT NULL)"
+        );
 
       // Optional lead or status filters
       if (lead_id) {
@@ -313,31 +316,26 @@ export class VisitController {
       }
 
       if (status) {
-        visitQuery.andWhere("lead.status = :status", { status });
+        visitQuery.andWhere("l.status = :status", { status });
       }
 
       // Handle time filtering on check-in or follow-up scheduled date
       if (from && to) {
         visitQuery.andWhere(
-          `(visit.check_in_time BETWEEN :from AND :to OR followUp.scheduled_date BETWEEN :from AND :to)`,
+          `(visit.check_in_time BETWEEN :from AND :to OR f.scheduled_date BETWEEN :from AND :to)`,
           { from: new Date(from), to: new Date(to) }
         );
       } else if (from) {
         visitQuery.andWhere(
-          `(visit.check_in_time >= :from OR followUp.scheduled_date >= :from)`,
+          `(visit.check_in_time >= :from OR f.scheduled_date >= :from)`,
           { from: new Date(from) }
         );
       } else if (to) {
         visitQuery.andWhere(
-          `(visit.check_in_time <= :to OR followUp.scheduled_date <= :to)`,
+          `(visit.check_in_time <= :to OR f.scheduled_date <= :to)`,
           { to: new Date(to) }
         );
       }
-
-      // Only include follow-ups where scheduled_date is in the past or not set
-      visitQuery.andWhere(
-        "followUp.scheduled_date IS NULL OR followUp.scheduled_date < NOW()"
-      );
 
       // Pagination + ordering
       visitQuery
@@ -346,7 +344,6 @@ export class VisitController {
         .take(+limit);
 
       const [visits, total] = await visitQuery.getManyAndCount();
-console.log(visits)
       return ApiResponse.result(res, visits, 200, null, "Past Visits", {
         totalItems: total,
         currentPage: +page,
