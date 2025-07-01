@@ -8,66 +8,67 @@ import { isEmpty } from "class-validator";
 import { getCurrentMonthData } from "../utils/workingDays";
 
 export class DashboardService {
-  async getDashboard(
-    orgId: number,
-    userId: number,
-    role_id: number
-  ): Promise<{ status: number; message: string; data: any }> {
-    const dataSource = await getDataSource();
-    const queryRunner = dataSource.createQueryRunner();
-    await queryRunner.startTransaction();
+async getDashboard(
+  orgId: number,
+  userId: number,
+  role_id: number
+): Promise<{ status: number; message: string; data: any }> {
+  const dataSource = await getDataSource();
+  const visitRepo = dataSource.getRepository(Visit);
+  const leadsRepo = dataSource.getRepository(Leads);
 
-    try {
-      const visitRepo = dataSource.getRepository(Visit);
-
-      const unVisitedLeads = await visitRepo.count({
+  try {
+    // Run queries in parallel
+    const [
+      unVisitedLeads,
+      visitedLeads,
+      totalLeads,
+      signedLeads,
+      unSignedLeads,
+      calender,
+    ] = await Promise.all([
+      visitRepo.count({
         where: { check_out_time: IsNull(), rep_id: userId },
-      });
-
-      const visitedLeads = await visitRepo.count({
+      }),
+      visitRepo.count({
         where: { check_out_time: Not(IsNull()), rep_id: userId },
-      });
-
-      const totalLeads = unVisitedLeads + visitedLeads;
-
-      const signedLeads = await visitRepo
+      }),
+      leadsRepo.count({
+        where: { assigned_rep_id: userId },
+      }),
+      visitRepo
         .createQueryBuilder("visit")
         .innerJoin("visit.contract", "contract")
         .where("visit.rep_id = :rep_id", { rep_id: userId })
-        .getCount();
-
-      const unSignedLeads = await visitRepo
+        .getCount(),
+      visitRepo
         .createQueryBuilder("visit")
         .leftJoin("visit.contract", "contract")
         .where("contract.id IS NULL")
         .andWhere("visit.rep_id = :rep_id", { rep_id: userId })
-        .getCount();
-      const calender = await getCurrentMonthData();
+        .getCount(),
+      getCurrentMonthData(),
+    ]);
 
-      const data = {
+    return {
+      status: httpStatusCodes.OK,
+      message: "Dashboard data retrieved successfully",
+      data: {
         unSignedLeads,
         signedLeads,
         totalLeads,
         unVisitedLeads,
         visitedLeads,
         calender,
-      };
-
-      await queryRunner.commitTransaction();
-      return {
-        status: httpStatusCodes.OK,
-        data,
-        message: "Dashboard data retrieved successfully",
-      };
-    } catch (error: any) {
-      await queryRunner.rollbackTransaction();
-      return {
-        status: httpStatusCodes.BAD_REQUEST,
-        message: error.message,
-        data: null,
-      };
-    } finally {
-      await queryRunner.release();
-    }
+      },
+    };
+  } catch (error: any) {
+    return {
+      status: httpStatusCodes.BAD_REQUEST,
+      message: error.message,
+      data: null,
+    };
   }
+}
+
 }
