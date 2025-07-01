@@ -38,7 +38,7 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 export class AuthService {
   ttl: number;
   constructor() {
-    this.ttl = 2 * 24 * 60 * 60; // 2 days in seconds
+    this.ttl = 2 * 24 * 60 * 60*1000; // 2 days in miliseconds
   }
 
   private readonly refreshTokenTTL = 7 * 24 * 60 * 60; // 7 days in seconds
@@ -109,16 +109,16 @@ export class AuthService {
           user.user_id
         );
 
-      const existingTokens = await userTokenQuery.findTokenById(
-        queryRunner.manager,
-        user.user_id
-      );
-      if (existingTokens.length) {
-        await userTokenQuery.deleteUserTokens(
-          queryRunner.manager,
-          user.user_id
-        );
-      }
+      // const existingTokens = await userTokenQuery.findTokenById(
+      //   queryRunner.manager,
+      //   user.user_id
+      // );
+      // if (existingTokens.length) {
+      //   await userTokenQuery.deleteUserTokens(
+      //     queryRunner.manager,
+      //     user.user_id
+      //   );
+      // }
       await userQuery.saveToken(queryRunner.manager, {
         id: token,
         userId: user.user_id,
@@ -128,16 +128,16 @@ export class AuthService {
         active: 1,
       });
 
-      const existingRefreshToken = await userTokenQuery.findRefreshTokenById(
-        queryRunner.manager,
-        user.user_id
-      );
-      if (existingRefreshToken) {
-        await userTokenQuery.deleteRefreshTokens(
-          queryRunner.manager,
-          user.user_id
-        );
-      }
+      // const existingRefreshToken = await userTokenQuery.findRefreshTokenById(
+      //   queryRunner.manager,
+      //   user.user_id
+      // );
+      // if (existingRefreshToken) {
+      //   await userTokenQuery.deleteRefreshTokens(
+      //     queryRunner.manager,
+      //     user.user_id
+      //   );
+      // }
 
       const newRefreshToken = generateRefreshToken(user.user_id);
       const refreshToken = queryRunner.manager
