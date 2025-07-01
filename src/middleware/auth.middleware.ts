@@ -43,7 +43,7 @@ export const verifyToken = async (
       },
     });
     if (!userToken) {
-      console.log("user token is not present")
+      console.log("user token is not present ", token)
       return ApiResponse.error(res, 401, "Token not authorized");
     }
 
