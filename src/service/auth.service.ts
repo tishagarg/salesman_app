@@ -139,16 +139,16 @@ export class AuthService {
       //   );
       // }
 
-      const newRefreshToken = generateRefreshToken(user.user_id);
-      const refreshToken = queryRunner.manager
-        .getRepository(RefreshToken)
-        .create({
-          token: newRefreshToken,
-          user_id: user.user_id,
-          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-          created_at: new Date(),
-        });
-      await queryRunner.manager.getRepository(RefreshToken).save(refreshToken);
+      // const newRefreshToken = generateRefreshToken(user.user_id);
+      // const refreshToken = queryRunner.manager
+      //   .getRepository(RefreshToken)
+      //   .create({
+      //     token: newRefreshToken,
+      //     user_id: user.user_id,
+      //     expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      //     created_at: new Date(),
+      //   });
+      // await queryRunner.manager.getRepository(RefreshToken).save(refreshToken);
 
       const { password_hash, ...safeUser } = user;
 
@@ -164,7 +164,7 @@ export class AuthService {
           status: httpStatusCodes.OK,
           data: {
             token,
-            refreshToken: refreshToken.token,
+            // refreshToken: refreshToken.token,
             user: safeUser,
             organization: getUserByIdWithOrganization.organization,
           },
@@ -177,7 +177,7 @@ export class AuthService {
         status: httpStatusCodes.OK,
         data: {
           token,
-          refreshToken: refreshToken.token,
+          // refreshToken: refreshToken.token,
           user: safeUser,
           organization: getUserByIdWithOrganization.organization,
         },
