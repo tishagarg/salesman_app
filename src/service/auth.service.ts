@@ -177,7 +177,7 @@ export class AuthService {
         status: httpStatusCodes.OK,
         data: {
           token,
-          // refreshToken: refreshToken.token,
+          refreshToken: refreshToken.token,
           user: safeUser,
           organization: getUserByIdWithOrganization.organization,
         },
