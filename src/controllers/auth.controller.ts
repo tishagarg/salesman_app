@@ -168,20 +168,20 @@ export class AuthController {
     );
   }
 
-  async refreshToken(req: any, res: Response): Promise<void> {
-    const { refreshToken } = req.body;
+  // async refreshToken(req: any, res: Response): Promise<void> {
+  //   const { refreshToken } = req.body;
 
-    if (!refreshToken) {
-      return ApiResponse.error(res, 400, "Refresh token is requirede");
-    }
+  //   if (!refreshToken) {
+  //     return ApiResponse.error(res, 400, "Refresh token is requirede");
+  //   }
 
-    const response = await authService.refreshToken(refreshToken);
-    return ApiResponse.result(
-      res,
-      response.data ?? null,
-      response.status,
-      null,
-      response.message
-    );
-  }
+  //   const response = await authService.refreshToken(refreshToken);
+  //   return ApiResponse.result(
+  //     res,
+  //     response.data ?? null,
+  //     response.status,
+  //     null,
+  //     response.message
+  //   );
+  // }
 }
