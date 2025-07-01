@@ -152,10 +152,11 @@ export class VisitService {
           status: 404,
         };
       }
-      const renderedHtml = renderContract(
-        template.content,
-        payload.parsedMetaData
-      );
+      const updatedMetaData = {
+        ...payload.parsedMetaData,
+        signature_image_url: payload.signatureFile?.location || "",
+      };
+      const renderedHtml = renderContract(template.content, updatedMetaData);
       const contract = contractRepo.create({
         contract_template_id: template.id,
         visit_id: visit.visit_id,
@@ -502,61 +503,225 @@ export class VisitService {
   }
 
   async planVisit(
-    data: { lead_id: number; rep_id: number; date: Date },
-    managerId: number
+    rep_id: number,
+    idempotencyKey: string = uuidv4()
   ): Promise<{ status: number; data?: any; message: string }> {
     return await this.withTransaction(async (queryRunner) => {
       try {
-        const customer = await queryRunner.manager.findOne(Leads, {
-          where: {
-            lead_id: Equal(data.lead_id),
-            assigned_rep_id: Equal(data.rep_id),
-          },
-          relations: ["address"],
-        });
-        if (!customer) {
-          throw new Error("Customer not assigned to rep");
-        }
-        await this.logQuery(
-          queryRunner.manager
-            .createQueryBuilder(Visit, "visit")
-            .leftJoinAndSelect("visit.lead", "lead")
-            .where("visit.lead_id = :leadId", { leadId: data.lead_id })
-            .andWhere("visit.rep_id = :repId", { repId: data.rep_id })
-            .andWhere("visit.check_out_time IS NULL")
-            .andWhere("visit.is_active = :isActive", { isActive: true })
+        const startOfDay = this.getStartOfDay(new Date());
+        const endOfDay = new Date(startOfDay);
+        endOfDay.setHours(23, 59, 59, 999);
+        const existingIdempotency = await queryRunner.manager.findOne(
+          Idempotency,
+          {
+            where: { key: idempotencyKey },
+          }
         );
-        const uncompletedVisit = await queryRunner.manager.findOne(Visit, {
+
+        if (existingIdempotency) {
+          return {
+            status: httpStatusCodes.OK,
+            data: existingIdempotency.result,
+            message: "Request already processed",
+          };
+        }
+        // Get existing visits and route for the day
+        const existingVisits = await queryRunner.manager.find(Visit, {
           where: {
-            lead_id: Equal(data.lead_id),
-            rep_id: Equal(data.rep_id),
+            rep_id: Equal(rep_id),
+            check_in_time: MoreThanOrEqual(startOfDay),
+            is_active: true,
+          },
+        });
+
+        const repAddress = await queryRunner.manager
+          .getRepository(User)
+          .findOne({
+            where: { user_id: rep_id },
+            relations: { address: true },
+          });
+
+        if (!repAddress?.address?.latitude || !repAddress?.address?.longitude) {
+          return {
+            status: httpStatusCodes.BAD_REQUEST,
+            data: null,
+            message: "Sales representative address is missing or invalid",
+          };
+        }
+
+        const existingRoute = await queryRunner.manager.findOne(Route, {
+          where: { rep_id: Equal(rep_id), route_date: Equal(startOfDay) },
+          lock: { mode: "pessimistic_write" },
+        });
+
+        // Fetch uncompleted visits for the provided leads
+        const uncompletedVisits = await queryRunner.manager.find(Visit, {
+          where: {
+            rep_id: Equal(rep_id),
+            check_in_time: LessThan(startOfDay),
             check_out_time: IsNull(),
             is_active: true,
           },
           relations: ["lead", "lead.address"],
         });
 
-        const visitData: VisitData = {
-          lead_id: data.lead_id,
-          rep_id: data.rep_id,
-          check_in_time: data.date,
-          latitude: customer.address?.latitude,
-          longitude: customer.address?.longitude,
-          created_by: managerId.toString(),
-        };
-        const visit = await this.handleVisit(
-          queryRunner,
-          visitData,
-          uncompletedVisit ?? undefined
+        const updatedUncompletedLeads = uncompletedVisits
+          .map((visit) => {
+            if (
+              visit.lead &&
+              visit.lead.is_active &&
+              !visit.lead.pending_assignment &&
+              visit.lead.address?.latitude &&
+              visit.lead.address?.longitude
+            ) {
+              return {
+                ...visit.lead,
+                updatedVisit: {
+                  ...visit,
+                  check_in_time: new Date(),
+                },
+              };
+            }
+            return null;
+          })
+          .filter((lead): lead is NonNullable<typeof lead> => lead !== null);
+
+        // Fetch provided leads
+        const providedLeads = await queryRunner.manager.find(Leads, {
+          where: {
+            assigned_rep_id: Equal(rep_id),
+            is_active: true,
+            pending_assignment: false,
+          },
+          relations: ["address"],
+          order: { created_at: "ASC" },
+        });
+
+        const validLeads = providedLeads.filter(
+          (c) => c.address?.latitude && c.address?.longitude
         );
+
+        // Combine leads with priority: uncompleted > provided leads
+        const leadsMap = new Map<number, Leads>();
+
+        updatedUncompletedLeads.forEach((lead) =>
+          leadsMap.set(lead.lead_id, lead)
+        );
+        validLeads.forEach((lead) => {
+          if (!leadsMap.has(lead.lead_id)) leadsMap.set(lead.lead_id, lead);
+        });
+
+        const leadsToPlan = Array.from(leadsMap.values());
+
+        if (!leadsToPlan.length) {
+          return {
+            status: httpStatusCodes.OK,
+            data: null,
+            message: "No valid leads available for visit planning",
+          };
+        }
+
+        const leadIds = leadsToPlan.map((lead) => lead.lead_id);
+        if (new Set(leadIds).size !== leadIds.length) {
+          return {
+            status: httpStatusCodes.BAD_REQUEST,
+            data: null,
+            message: "Duplicate leads detected in visit planning",
+          };
+        }
+
+        const waypoints = leadsToPlan.map(
+          (lead) => `${lead.address.latitude},${lead.address.longitude}`
+        );
+
+        const origin = `${repAddress.address.latitude},${repAddress.address.longitude}`;
+        const { route, waypointOrder } = await this.getOptimizedRoute(
+          origin,
+          waypoints
+        );
+
+        let currentTime = new Date(new Date());
+        currentTime.setHours(9, 0, 0, 0);
+
+        const previousVisitMap = new Map(
+          [...uncompletedVisits, ...existingVisits].map((visit) => [
+            visit.lead_id,
+            visit,
+          ])
+        );
+
+        const routeOrder: RouteOrderItem[] = [];
+        const visits: Visit[] = [];
+
+        for (let i = 0; i < waypointOrder.length; i++) {
+          const index = waypointOrder[i];
+          const lead = leadsToPlan[index];
+          const leg = route.legs[i];
+          const duration = leg.duration.value / 60;
+
+          currentTime = new Date(currentTime.getTime() + duration * 60000);
+          const eta = currentTime.toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+
+          const visitData: VisitData = {
+            lead_id: lead.lead_id,
+            rep_id: rep_id,
+            check_in_time: currentTime,
+            latitude: lead.address.latitude,
+            longitude: lead.address.longitude,
+            created_by: "system",
+          };
+
+          const visit = await this.handleVisit(
+            queryRunner,
+            visitData,
+            previousVisitMap.get(lead.lead_id) ?? undefined
+          );
+
+          visits.push(visit);
+          routeOrder.push({
+            lead_id: lead.lead_id,
+            visit_id: visit.visit_id,
+            latitude: lead.address.latitude,
+            longitude: lead.address.longitude,
+            lead_status: lead.status,
+            distance: Number((leg.distance.value / 1000).toFixed(2)),
+            eta,
+          });
+        }
+
+        // Update or create route
+        let routeEntity;
+        if (existingRoute) {
+          existingRoute.route_order = routeOrder;
+          existingRoute.updated_by = "system";
+          existingRoute.updated_at = new Date();
+          routeEntity = await queryRunner.manager.save(existingRoute);
+        } else {
+          routeEntity = await queryRunner.manager.save(Route, {
+            rep_id: rep_id,
+            route_date: startOfDay,
+            route_order: routeOrder,
+            created_by: "system",
+          });
+        }
+
+        // Save idempotency
+        await queryRunner.manager.save(Idempotency, {
+          key: idempotencyKey,
+          result: { visits, route: routeEntity },
+        });
 
         return {
           status: httpStatusCodes.OK,
-          data: visit,
-          message: "Visit planned successfully",
+          data: { visits, route: routeEntity },
+          message: "Visits planned successfully",
         };
       } catch (error: any) {
-        throw this.handleError(error, "Failed to plan visit");
+        console.log(error);
+        throw this.handleError(error, "Failed to plan visits");
       }
     });
   }
