@@ -14,17 +14,18 @@ export const verifyToken = async (
   next: NextFunction
 ): Promise<any> => {
   const token = req.headers["authorization"]?.split(" ")[1];
- if (req.url?.includes('/api/cron/daily-visit')) {
+  if (req.url?.includes("/api/cron/daily-visit")) {
     try {
       await runDailyVisitPlanning();
-      console.log('Daily visit planning ran successfully');
-      return res.status(200).json({ message: 'Success' });
+      console.log("Daily visit planning ran successfully");
+      return res.status(200).json({ message: "Success" });
     } catch (err) {
-      console.error('Cron job failed:', err);
-      return ApiResponse.error(res, 500, 'Internal Server Error');
+      console.error("Cron job failed:", err);
+      return ApiResponse.error(res, 500, "Internal Server Error");
     }
   }
   if (!token) {
+    console.log("Token is not present")
     return ApiResponse.error(res, 401, "Token not provided");
   }
 
@@ -42,6 +43,7 @@ export const verifyToken = async (
       },
     });
     if (!userToken) {
+      console.log("user token is not present")
       return ApiResponse.error(res, 401, "Token not authorized");
     }
 
@@ -56,6 +58,7 @@ export const verifyToken = async (
     req.user = { ...decoded, token };
     next();
   } catch (error) {
+    console.log("error in catch block", error)
     return ApiResponse.error(res, 401, "Token not authorized");
   }
 };
