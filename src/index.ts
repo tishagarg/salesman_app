@@ -30,44 +30,6 @@ const PORT = process.env.PORT || 3002;
   app.use("/api", router);
   app.use(verifyToken);
   app.get("/api/user/me", userController.getUserById);
-  interface Subregion {
-    id: number;
-    name: string;
-  }
-
-  interface Region {
-    id: number;
-    name: string;
-    subregions: Subregion[];
-  }
-  app.get("/api/regions", (req: any, res: Response) => {
-    try {
-      const regions = regionsData.map((region) => ({
-        id: region.id,
-        name: region.name,
-      }));
-      res.json(regions);
-    } catch (error) {
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-  app.get("/api/regions/:id", (req: any, res: Response) => {
-    try {
-      const id = req.params.id;
-      const region = regionsData.find(
-        (r) =>
-          r.id === parseInt(id) || r.name.toLowerCase() === id.toLowerCase()
-      );
-      if (!region) {
-        res.status(404).json({ error: "Region not found" });
-        return;
-      }
-      res.json(region);
-    } catch (error) {
-      res.status(500).json({ error: "Internal server error" });
-    }
-  });
-
   const MAX_RETRIES = 5;
   const INITIAL_RETRY_DELAY = 5000;
 
