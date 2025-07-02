@@ -810,35 +810,37 @@ export class VisitService {
             status: data.status,
           });
 
-        for (const followUp of followUps) {
-          const parsedDate = followUp.scheduled_date
-            ? new Date(followUp.scheduled_date)
-            : null;
+        if (followUps.length > 0 && followUps != undefined) {
+          for (const followUp of followUps) {
+            const parsedDate = followUp.scheduled_date
+              ? new Date(followUp.scheduled_date)
+              : null;
 
-          const followUpData: DeepPartial<FollowUp> = {
-            subject: followUp.subject,
-            notes: followUp.notes ?? "",
-            scheduled_date:
-              parsedDate instanceof Date && !isNaN(parsedDate.getTime())
-                ? parsedDate
-                : undefined,
-            is_completed: false,
-            created_by: data.rep_id,
-          };
+            const followUpData: DeepPartial<FollowUp> = {
+              subject: followUp.subject,
+              notes: followUp.notes ?? "",
+              scheduled_date:
+                parsedDate instanceof Date && !isNaN(parsedDate.getTime())
+                  ? parsedDate
+                  : undefined,
+              is_completed: false,
+              created_by: data.rep_id,
+            };
 
-          const newFollowUp = queryRunner.manager.create(
-            FollowUp,
-            followUpData
-          );
-          const savedFollowUp = await queryRunner.manager.save(
-            FollowUp,
-            newFollowUp
-          );
+            const newFollowUp = queryRunner.manager.create(
+              FollowUp,
+              followUpData
+            );
+            const savedFollowUp = await queryRunner.manager.save(
+              FollowUp,
+              newFollowUp
+            );
 
-          await queryRunner.manager.save(FollowUpVisit, {
-            follow_up_id: savedFollowUp.follow_up_id,
-            visit_id: visit.visit_id,
-          });
+            await queryRunner.manager.save(FollowUpVisit, {
+              follow_up_id: savedFollowUp.follow_up_id,
+              visit_id: visit.visit_id,
+            });
+          }
         }
         return {
           status: httpStatusCodes.OK,

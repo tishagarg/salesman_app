@@ -17,7 +17,7 @@ const visitService = new VisitService();
 export class VisitController {
   async planVisit(req: any, res: Response): Promise<void> {
     const user_id = req.user.user_id;
-    const response = await visitService.planVisit( user_id);
+    const response = await visitService.planVisit(user_id);
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
     }
@@ -71,7 +71,20 @@ export class VisitController {
         "Missing required fields: lead_id, latitude, or longitude"
       );
     }
+    let parsedFollowUps: any[] | undefined = undefined;
 
+    if (
+      followUps &&
+      typeof followUps === "string" &&
+      followUps !== "undefined" &&
+      followUps !== "null"
+    ) {
+      try {
+        parsedFollowUps = JSON.parse(followUps);
+      } catch (e) {
+        return ApiResponse.error(res, 400, "Invalid followUps JSON");
+      }
+    }
     const data = {
       lead_id: parseInt(lead_id),
       rep_id,
@@ -79,7 +92,7 @@ export class VisitController {
       longitude: parseFloat(longitude),
       notes: notes || undefined,
       photos: photos || undefined,
-      followUps: JSON.parse(followUps) || [],
+      parsedFollowUps,
       status,
     };
     const response = await visitService.logVisit(data);
