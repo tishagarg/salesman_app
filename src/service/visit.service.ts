@@ -413,14 +413,16 @@ export class VisitService {
           repAddress?.address?.latitude && repAddress?.address?.longitude
             ? `${repAddress.address.latitude},${repAddress.address.longitude}`
             : null;
- if (!origin) {
-        console.log(`Skipping rep ${repId} due to missing or incomplete address`);
-        return {
-          status: httpStatusCodes.OK,
-          data: null,
-          message: `Rep ${repId} skipped due to missing address.`,
-        };
-      }
+        if (!origin) {
+          console.log(
+            `Skipping rep ${repId} due to missing or incomplete address`
+          );
+          return {
+            status: httpStatusCodes.OK,
+            data: null,
+            message: `Rep ${repId} skipped due to missing address.`,
+          };
+        }
         const { route, waypointOrder } = await this.getOptimizedRoute(
           origin,
           waypoints
@@ -514,10 +516,14 @@ export class VisitService {
 
   async planVisit(
     rep_id: number,
+    repLatitude: number,
+    repLongitude: number,
     idempotencyKey: string = uuidv4()
   ): Promise<{ status: number; data?: any; message: string }> {
     return await this.withTransaction(async (queryRunner) => {
       try {
+        const latitude = parseFloat(String(repLatitude));
+        const longitude = parseFloat(String(repLongitude));
         const startOfDay = this.getStartOfDay(new Date());
         const endOfDay = new Date(startOfDay);
         endOfDay.setHours(23, 59, 59, 999);
@@ -610,10 +616,7 @@ export class VisitService {
         const validLeads = providedLeads.filter(
           (c) => c.address?.latitude && c.address?.longitude
         );
-
-        // Combine leads with priority: uncompleted > provided leads
         const leadsMap = new Map<number, Leads>();
-
         updatedUncompletedLeads.forEach((lead) =>
           leadsMap.set(lead.lead_id, lead)
         );
@@ -644,7 +647,7 @@ export class VisitService {
           (lead) => `${lead.address.latitude},${lead.address.longitude}`
         );
 
-        const origin = `${repAddress.address.latitude},${repAddress.address.longitude}`;
+        const origin = `${latitude},${longitude}`;
         const { route, waypointOrder } = await this.getOptimizedRoute(
           origin,
           waypoints
