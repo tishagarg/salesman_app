@@ -114,7 +114,7 @@ export class CustomerService {
         await queryRunner.manager.save(Address, address);
       }
       const customer = new Leads();
-      customer.name = data.name;
+      customer.name = data.name ?? "";
       customer.contact_name = data.contact_name ?? "";
       customer.contact_email = data.contact_email ?? "";
       customer.contact_phone = data.contact_phone ?? "";
@@ -571,9 +571,11 @@ export class CustomerService {
         .createQueryBuilder(Leads, "leads")
         .leftJoinAndSelect("leads.address", "address")
         .where("leads.is_active = :isActive", { isActive: true });
-
+      const prospectLeadStatus = LeadStatus.Prospect;
       if (user.role.role_name === Roles.SALES_REP) {
-        query.andWhere("leads.assigned_rep_id = :userId", { userId });
+        query
+          .andWhere("leads.assigned_rep_id = :userId", { userId })
+          .andWhere("leads.status = :status", { status: prospectLeadStatus });
       }
 
       if (filters.salesmanId) {
@@ -862,7 +864,7 @@ export class CustomerService {
             ? await queryRunner.manager
                 .find(Leads, {
                   where: { address_id: In(addressIds), is_active: true },
-                  select: ["address_id", "name"],
+                  select: ["address_id"],
                 })
                 .catch((e) => {
                   throw new Error(`Leads fetch failed: ${e.message}`);
@@ -892,10 +894,6 @@ export class CustomerService {
           batch.forEach((row, index) => {
             const rowNum = i + index + 1;
             const addressData = {
-              name: row.name?.trim() || "",
-              contact_name: row.contact_name?.trim() || "",
-              contact_email: row.contact_email?.trim() || "",
-              contact_phone: row.contact_phone?.trim() || "",
               street_address: row.street_address?.trim() || "",
               comments: row.comments?.trim() || "",
               postal_code: row.postal_code?.trim() || "00000",
@@ -921,12 +919,9 @@ export class CustomerService {
 
             let address: Address;
             if (existingAddress) {
-              if (
-                addressData.name &&
-                leadAddressMap.has(existingAddress.address_id)
-              ) {
+              if (leadAddressMap.has(existingAddress.address_id)) {
                 errors.push(
-                  `Row ${rowNum}: Duplicate customer ${addressData.name} at ${addressData.street_address}, ${addressData.postal_code}, ${addressData.subregion}`
+                  `Row ${rowNum}: Duplicate customer  at ${addressData.street_address}, ${addressData.postal_code}, ${addressData.subregion}`
                 );
                 return;
               }
@@ -972,27 +967,21 @@ export class CustomerService {
             }
             addresses.push(address);
 
-            if (addressData.name) {
-              const customer = queryRunner.manager.create(Leads, {
-                name: addressData.name,
-                contact_name: addressData.contact_name || addressData.name,
-                contact_email: addressData.contact_email,
-                contact_phone: addressData.contact_phone,
-                pending_assignment: true,
-                is_active: true,
-                created_by: adminId.toString(),
-                updated_by: adminId.toString(),
-                org_id,
-                // assigned_rep_id:t
-                source: Source.Excel,
-                territory_id: territoryId,
-              });
-              newCustomers.push(customer);
-              customerToAddressIndex.set(
-                newCustomers.length - 1,
-                newAddresses.length - 1
-              );
-            }
+            const customer = queryRunner.manager.create(Leads, {
+              pending_assignment: true,
+              is_active: true,
+              name:"",
+              created_by: adminId.toString(),
+              updated_by: adminId.toString(),
+              org_id,
+              source: Source.Excel,
+              territory_id: territoryId,
+            });
+            newCustomers.push(customer);
+            customerToAddressIndex.set(
+              newCustomers.length - 1,
+              newAddresses.length - 1
+            );
           });
 
           if (addressesToGeocode.length) {
@@ -1023,8 +1012,6 @@ export class CustomerService {
               newAddresses[index].longitude = coords.longitude;
             });
           }
-
-          // Bulk insert new addresses
           if (newAddresses.length) {
             const savedAddresses = await queryRunner.manager
               .save(Address, newAddresses)

@@ -62,9 +62,9 @@ export interface ILeadImport {
 }
 
 export class LeadImportDto {
-  name: string;
+  name?: string;
   contact_name?: string;
-  contact_email: string;
+  contact_email?: string;
   contact_phone?: string;
   street_address: string;
   comments?: string;
