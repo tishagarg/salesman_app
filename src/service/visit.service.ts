@@ -266,7 +266,6 @@ export class VisitService {
 
   async planDailyVisits(
     repId: number,
-    managerId: number,
     date: Date = new Date(),
     idempotencyKey: string = uuidv4()
   ): Promise<{ status: number; data?: any; message: string }> {
@@ -406,11 +405,22 @@ export class VisitService {
           };
         }
 
-        const waypoints = leadsToPlan.map(
-          (lead) => `${lead.address.latitude},${lead.address.longitude}`
-        );
+        const waypoints = leadsToPlan
+          .filter((lead) => lead.address?.latitude && lead.address?.longitude) // Filter out invalid addresses
+          .map((lead) => `${lead.address.latitude},${lead.address.longitude}`);
 
-        const origin = `${repAddress?.address.latitude},${repAddress?.address.longitude}`;
+        const origin =
+          repAddress?.address?.latitude && repAddress?.address?.longitude
+            ? `${repAddress.address.latitude},${repAddress.address.longitude}`
+            : null;
+ if (!origin) {
+        console.log(`Skipping rep ${repId} due to missing or incomplete address`);
+        return {
+          status: httpStatusCodes.OK,
+          data: null,
+          message: `Rep ${repId} skipped due to missing address.`,
+        };
+      }
         const { route, waypointOrder } = await this.getOptimizedRoute(
           origin,
           waypoints
@@ -447,7 +457,7 @@ export class VisitService {
             check_in_time: currentTime,
             latitude: lead.address.latitude,
             longitude: lead.address.longitude,
-            created_by: managerId.toString(),
+            created_by: "system",
           };
 
           const visit = await this.handleVisit(
@@ -472,7 +482,7 @@ export class VisitService {
         let routeEntity;
         if (existingRoute) {
           existingRoute.route_order = routeOrder;
-          existingRoute.updated_by = managerId.toString();
+          existingRoute.updated_by = "system";
           existingRoute.updated_at = new Date();
           routeEntity = await queryRunner.manager.save(existingRoute);
         } else {
@@ -480,7 +490,7 @@ export class VisitService {
             rep_id: repId,
             route_date: startOfDay,
             route_order: routeOrder,
-            created_by: managerId.toString(),
+            created_by: "system",
           });
         }
 
@@ -1053,7 +1063,7 @@ export class VisitService {
           eta,
         });
       }
-      await this.saveRoute(repId, today, routeOrder, String(managerId));
+      await this.saveRoute(repId, today, routeOrder, "system");
       const routes = await this.getRouteForToday(repId, today);
 
       return {
