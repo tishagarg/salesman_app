@@ -6,7 +6,7 @@ const visitController = new VisitController();
 import express from "express";
 import { upload } from "../aws/aws.service";
 const router = express.Router();
-router.get(
+router.post(
   "/plan",
   verifyToken,
   // permissionMiddleware("customer_import"),
