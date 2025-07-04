@@ -46,6 +46,12 @@ router.delete(
   // permissionMiddleware("customer_delete"),
   leadController.deleteLead
 );
+router.post(
+  "/bulk-delete",
+  verifyToken,
+  // permissionMiddleware("customer_delete"),
+  leadController.deleteBulkLead
+);
 
 router.get(
   "/:id",

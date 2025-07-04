@@ -98,6 +98,16 @@ export class LeadsController {
     return ApiResponse.result(res, {}, response.status, null, response.message);
   }
 
+  async deleteBulkLead(req: any, res: Response): Promise<void> {
+    const userId = parseInt(req.user.user_id);
+    const { lead_ids } = req.body;
+    const response = await customerService.deleteBulkCustomer(lead_ids, userId);
+    if (response.status >= 400) {
+      return ApiResponse.error(res, response.status, response.message);
+    }
+
+    return ApiResponse.result(res, {}, response.status, null, response.message);
+  }
   async getLeadById(req: any, res: Response): Promise<void> {
     const customerId = parseInt(req.params.id);
     const userId = parseInt(req.user.user_id);

@@ -76,7 +76,12 @@ export class RoleQuery {
     const dataSource = await getDataSource();
     return await dataSource
       .getRepository(Role)
-      .findOne({ where: { role_id, org_id } });
+      .findOne({
+      where: [
+        { role_id, org_id },
+        { role_id, org_id: undefined }
+      ]
+      });
   }
 
   async getPermissionByName(

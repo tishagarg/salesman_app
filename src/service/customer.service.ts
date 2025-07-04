@@ -426,6 +426,69 @@ export class CustomerService {
       await queryRunner.release();
     }
   }
+  async deleteBulkCustomer(
+    customerIds: number[],
+    adminId: number
+  ): Promise<{
+    status: number;
+    message: string;
+  }> {
+    const dataSource = await getDataSource();
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.startTransaction();
+    try {
+      const customers = await queryRunner.manager.find(Leads, {
+        where: { lead_id: In(customerIds), is_active: true },
+      });
+
+      if (customers.length === 0) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.NOT_FOUND,
+          message: "Customers not found",
+        };
+      }
+
+      await queryRunner.manager.update(
+        Leads,
+        { lead_id: In(customerIds) },
+        {
+          is_active: false,
+          updated_by: adminId.toString(),
+          updated_at: new Date(),
+        }
+      );
+
+      const addressIds = customers
+        .map((customer) => customer.address_id)
+        .filter(Boolean);
+      if (addressIds.length > 0) {
+        await queryRunner.manager.update(
+          Address,
+          { address_id: In(addressIds) },
+          {
+            is_active: false,
+            updated_by: adminId.toString(),
+            updated_at: new Date(),
+          }
+        );
+      }
+
+      await queryRunner.commitTransaction();
+      return {
+        status: httpStatusCodes.OK,
+        message: "Customers deleted successfully",
+      };
+    } catch (error: any) {
+      await queryRunner.rollbackTransaction();
+      return {
+        status: httpStatusCodes.INTERNAL_SERVER_ERROR,
+        message: `Failed to delete customers: ${error.message}`,
+      };
+    } finally {
+      await queryRunner.release();
+    }
+  }
 
   async getCustomerById(
     customerId: number,
