@@ -1,4 +1,3 @@
-
 import { v4 as uuidv4 } from "uuid";
 import { In } from "typeorm";
 import { getDataSource } from "../config/data-source";
@@ -16,31 +15,24 @@ export async function runDailyVisitPlanning() {
       where: { is_active: true, role_id: 9 },
       select: ["user_id"],
     });
-    const repIds = reps.map((rep:any) => rep.user_id);
+    const repIds = reps.map((rep: any) => rep.user_id);
     console.log(`Planning visits for reps: ${repIds.join(", ")}`);
     const managerAssignments = await queryRunner.manager.find(ManagerSalesRep, {
       where: { sales_rep_id: In(repIds) },
       select: ["manager_id", "sales_rep_id"],
     });
-    const repToManagerMap = new Map<number, number>();
-    managerAssignments.forEach((assignment) => {
-      repToManagerMap.set(assignment.sales_rep_id, assignment.manager_id);
-    });
-
     for (const repId of repIds) {
-      const managerId = repToManagerMap.get(repId);
-      if (!managerId) {
-        console.warn(`No manager assigned for repId: ${repId}, skipping...`);
-        continue;
-      }
+      // if (!managerId) {
+      //   console.warn(`No manager assigned for repId: ${repId}, skipping...`);
+      //   continue;
+      // }
 
       const idempotencyKey = uuidv4();
       console.log(
-        `Planning visits for repId: ${repId}, managerId: ${managerId}, idempotencyKey: ${idempotencyKey}`
+        `Planning visits for repId: ${repId},  idempotencyKey: ${idempotencyKey}`
       );
       const result = await visitService.planDailyVisits(
         repId,
-        managerId,
         new Date(),
         idempotencyKey
       );
@@ -49,7 +41,7 @@ export async function runDailyVisitPlanning() {
     await queryRunner.commitTransaction();
   } catch (error: any) {
     await queryRunner.rollbackTransaction();
-    console.log(error)
+    console.log(error);
     console.error(`Error during scheduled visit planning: ${error.message}`);
   } finally {
     await queryRunner.release();
