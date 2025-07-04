@@ -463,8 +463,7 @@ export class AuthService {
         !param.password ||
         !param.first_name ||
         !param.last_name ||
-        !param.phone_no ||
-        !param.org_name
+        !param.phone_no
       ) {
         await queryRunner.rollbackTransaction();
         return {

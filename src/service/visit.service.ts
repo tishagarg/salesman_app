@@ -518,10 +518,19 @@ export class VisitService {
     rep_id: number,
     repLatitude: number,
     repLongitude: number,
+    lead_ids: number[],
     idempotencyKey: string = uuidv4()
   ): Promise<{ status: number; data?: any; message: string }> {
     return await this.withTransaction(async (queryRunner) => {
       try {
+        if (!lead_ids || lead_ids.length === 0) {
+          return {
+            status: httpStatusCodes.BAD_REQUEST,
+            data: null,
+            message: "No lead IDs provided. Cannot plan visits.",
+          };
+        }
+
         const latitude = parseFloat(String(repLatitude));
         const longitude = parseFloat(String(repLongitude));
         const startOfDay = this.getStartOfDay(new Date());
@@ -541,11 +550,10 @@ export class VisitService {
             message: "Request already processed",
           };
         }
-        // Get existing visits and route for the day
+
         const existingVisits = await queryRunner.manager.find(Visit, {
           where: {
             rep_id: Equal(rep_id),
-            check_in_time: MoreThanOrEqual(startOfDay),
             is_active: true,
           },
         });
@@ -557,24 +565,14 @@ export class VisitService {
             relations: { address: true },
           });
 
-        if (!repAddress?.address?.latitude || !repAddress?.address?.longitude) {
-          return {
-            status: httpStatusCodes.BAD_REQUEST,
-            data: null,
-            message: "Sales representative address is missing or invalid",
-          };
-        }
-
         const existingRoute = await queryRunner.manager.findOne(Route, {
-          where: { rep_id: Equal(rep_id), route_date: Equal(startOfDay) },
+          where: { rep_id: Equal(rep_id) },
           lock: { mode: "pessimistic_write" },
         });
 
-        // Fetch uncompleted visits for the provided leads
         const uncompletedVisits = await queryRunner.manager.find(Visit, {
           where: {
             rep_id: Equal(rep_id),
-            check_in_time: LessThan(startOfDay),
             check_out_time: IsNull(),
             is_active: true,
           },
@@ -602,13 +600,8 @@ export class VisitService {
           })
           .filter((lead): lead is NonNullable<typeof lead> => lead !== null);
 
-        // Fetch provided leads
         const providedLeads = await queryRunner.manager.find(Leads, {
-          where: {
-            assigned_rep_id: Equal(rep_id),
-            is_active: true,
-            pending_assignment: false,
-          },
+          where: { lead_id: In(lead_ids) },
           relations: ["address"],
           order: { created_at: "ASC" },
         });
@@ -705,7 +698,6 @@ export class VisitService {
           });
         }
 
-        // Update or create route
         let routeEntity;
         if (existingRoute) {
           existingRoute.route_order = routeOrder;
@@ -721,7 +713,6 @@ export class VisitService {
           });
         }
 
-        // Save idempotency
         await queryRunner.manager.save(Idempotency, {
           key: idempotencyKey,
           result: { visits, route: routeEntity },
@@ -888,10 +879,7 @@ export class VisitService {
       select: ["manager_id"],
     });
   }
-  private async getVisitsForToday(
-    repId: number,
-    today: Date
-  ): Promise<Visit[]> {
+  private async getVisitsForToday(repId: number): Promise<Visit[]> {
     const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
@@ -900,10 +888,6 @@ export class VisitService {
       const visits = await queryRunner.manager.find(Visit, {
         where: {
           rep_id: Equal(repId),
-          check_in_time: Between(
-            today,
-            new Date(today.getTime() + 24 * 60 * 60 * 1000)
-          ),
           is_active: true,
         },
         relations: ["lead", "lead.address"],
@@ -918,6 +902,17 @@ export class VisitService {
           visitsToDelete.push(visit);
           continue;
         }
+        if (
+          visit.lead.status.includes(
+            LeadStatus.Signed ||
+              LeadStatus.Not_Available ||
+              LeadStatus.Not_Interested
+          )
+        ) {
+          visitsToDelete.push(visit);
+          continue;
+        }
+
         if (visit.rep_id === visit.lead.assigned_rep_id) {
           visitsToKeep.push(visit);
         } else {
@@ -927,16 +922,6 @@ export class VisitService {
           visitsToDelete.push(visit);
         }
       }
-
-      if (visitsToDelete.length > 0) {
-        await queryRunner.manager.update(
-          Visit,
-          { id: In(visitsToDelete.map((visit) => visit.visit_id)) },
-          { is_active: false }
-        );
-        console.log(`Deleted ${visitsToDelete.length} non-matching visits`);
-      }
-
       await queryRunner.commitTransaction();
       return visitsToKeep;
     } catch (error: any) {
@@ -982,10 +967,10 @@ export class VisitService {
     }
   }
 
-  async getRouteForToday(repId: number, date: Date): Promise<Route[]> {
+  async getRouteForToday(repId: number): Promise<Route[]> {
     const dataSource = await getDataSource();
     return await dataSource.getRepository(Route).find({
-      where: { rep_id: Equal(repId), route_date: Equal(date), is_active: true },
+      where: { rep_id: Equal(repId), is_active: true },
     });
   }
 
@@ -1004,19 +989,17 @@ export class VisitService {
   async generateDailyRoute(
     repId: number,
     repLatitude: number,
-    repLongitude: number,
-    managerId: number
+    repLongitude: number
   ): Promise<{ status: number; data?: any; message: string }> {
     try {
-      // Parse and validate inputs
       const latitude = parseFloat(String(repLatitude));
       const longitude = parseFloat(String(repLongitude));
       const today = this.getToday();
-      const visits = await this.getVisitsForToday(repId, today);
+      const visits = await this.getVisitsForToday(repId);
       if (!visits.length) {
         return {
           status: httpStatusCodes.OK,
-          message: "No visits assigned for today to optimize",
+          message: "No visits assigned to optimize",
           data: [],
         };
       }
@@ -1047,6 +1030,15 @@ export class VisitService {
         const leg = route.legs[i];
         if (!leg?.distance?.value || !leg?.duration?.value) {
           console.warn(`Skipping invalid route leg at index ${i}`);
+          routeOrder.push({
+            lead_id: visit.lead_id,
+            latitude: visit.latitude,
+            longitude: visit.longitude,
+            visit_id: visit.visit_id,
+            lead_status: visit.lead.status,
+            distance: leg.distance.value,
+            eta: "0",
+          });
           continue;
         }
         const distance = leg.distance.value / 1000;
@@ -1067,7 +1059,7 @@ export class VisitService {
         });
       }
       await this.saveRoute(repId, today, routeOrder, "system");
-      const routes = await this.getRouteForToday(repId, today);
+      const routes = await this.getRouteForToday(repId);
 
       return {
         status: httpStatusCodes.OK,
@@ -1093,22 +1085,7 @@ export class VisitService {
       if (!this.isValidCoordinate(longitude, "longitude")) {
         throw new Error(`Invalid longitude: ${longitude}`);
       }
-
-      const today = this.getToday();
-      const managerAssignment = await this.getManagerAssignment(repId);
-      if (
-        !managerAssignment ||
-        !Number.isInteger(managerAssignment.manager_id)
-      ) {
-        throw new Error(`No valid manager assigned for repId: ${repId}`);
-      }
-      const managerId = managerAssignment.manager_id;
-      return await this.generateDailyRoute(
-        repId,
-        latitude,
-        longitude,
-        managerId
-      );
+      return await this.generateDailyRoute(repId, latitude, longitude);
     } catch (error: any) {
       return this.handleError(error, "Failed to refresh daily route");
     }
@@ -1118,9 +1095,8 @@ export class VisitService {
   ): Promise<{ status: number; data?: any; message: string }> {
     const dataSource = await getDataSource();
     try {
-      const today = this.getStartOfDay();
       const route = await dataSource.manager.findOne(Route, {
-        where: { rep_id: repId, route_date: today },
+        where: { rep_id: repId },
         relations: { rep: true },
       });
       if (!route) {
@@ -1129,11 +1105,20 @@ export class VisitService {
           message: "No route found for today",
         };
       }
-
+      // hot lead , meetimg, get back
       const routeDetails = await Promise.all(
         (route.route_order as RouteOrderItem[]).map(async (item) => {
           const customer = await dataSource.manager.findOne(Leads, {
-            where: { lead_id: Equal(item.lead_id) },
+            where: {
+              lead_id: Equal(item.lead_id),
+              status: In([
+                LeadStatus.Prospect,
+                LeadStatus.Get_Back,
+                LeadStatus.Meeting,
+                LeadStatus.Hot_Lead,
+                LeadStatus.Start_Signing,
+              ]),
+            },
             relations: ["address"],
           });
           return {

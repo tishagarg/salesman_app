@@ -17,8 +17,13 @@ const visitService = new VisitService();
 export class VisitController {
   async planVisit(req: any, res: Response): Promise<void> {
     const user_id = req.user.user_id;
-    const {latitude, longitude} = req.body;
-    const response = await visitService.planVisit(user_id,latitude, longitude);
+    const { latitude, longitude, lead_ids } = req.body;
+    const response = await visitService.planVisit(
+      user_id,
+      latitude,
+      longitude,
+      lead_ids
+    );
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
     }
@@ -311,17 +316,19 @@ export class VisitController {
 
       const user_id = req.user.user_id;
       const safeOrder = order?.toUpperCase() === "ASC" ? "ASC" : "DESC";
-
+      const statuses = ["Signed", "Not Available", "Not Interested"];
       const visitQuery = visitRepo
         .createQueryBuilder("visit")
         .leftJoinAndSelect("visit.lead", "l")
         .leftJoinAndSelect("visit.contract", "c")
         .leftJoinAndSelect("visit.followUpVisits", "fv")
         .leftJoinAndSelect("fv.followUp", "f")
-        .where("visit.rep_id = :user_id", { user_id })
+        .where("l.status IN (:...statuses)", { statuses })
         .andWhere(
-          "(f.scheduled_date < NOW() OR visit.check_out_time IS NOT NULL)"
-        );
+          "(f.scheduled_date < :now OR visit.check_out_time IS NOT NULL)",
+          { now: new Date() }
+        )
+        .andWhere("visit.rep_id = :repId", { repId: user_id });
 
       // Optional lead or status filters
       if (lead_id) {
@@ -349,7 +356,8 @@ export class VisitController {
           { to: new Date(to) }
         );
       }
-
+      console.log(visitQuery.getSql());
+      console.log(visitQuery.getParameters());
       // Pagination + ordering
       visitQuery
         .orderBy("visit.check_in_time", safeOrder)
