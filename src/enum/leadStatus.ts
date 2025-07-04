@@ -9,14 +9,14 @@ export enum LeadStatus {
   Get_Back = "Get Back",
 }
 export const leadStatusColors: Record<LeadStatus, { name: string; hex: string }> = {
-  [LeadStatus.Prospect]: { name: "Orange", hex: "#FFDAB9" }, // Light orange
-  [LeadStatus.Signed]: { name: "Green", hex: "#90EE90" },   // Light green
-  [LeadStatus.Hot_Lead]: { name: "Purple", hex: "#D8BFD8" }, // Light purple
-  [LeadStatus.Start_Signing]: { name: "Light Blue", hex: "#B0E0E6" }, // Light light blue
-  [LeadStatus.Meeting]: { name: "Blue", hex: "#ADD8E6" },   // Light blue
-  [LeadStatus.Not_Interested]: { name: "Red", hex: "#FADADD" }, // Light red
-  [LeadStatus.Not_Available]: { name: "Yellow", hex: "#FFFFE0" }, // Light yellow
-  [LeadStatus.Get_Back]: { name: "Orange", hex: "#FFDAB9" }, // Light orange
+  [LeadStatus.Prospect]: { name: "Orange", hex: "#FB9D4A" }, // Light orange
+  [LeadStatus.Signed]: { name: "Green", hex: "#59A559" },   // Light green
+  [LeadStatus.Hot_Lead]: { name: "Purple", hex: "#B57FB5" }, // Light purple
+  [LeadStatus.Start_Signing]: { name: "Light Blue", hex: "#A8F5FF" }, // Light light blue
+  [LeadStatus.Meeting]: { name: "Blue", hex: "#68D1F3" },   // Light blue
+  [LeadStatus.Not_Interested]: { name: "Red", hex: "#F94E5E" }, // Light red
+  [LeadStatus.Not_Available]: { name: "Yellow", hex: "#F9F984" }, // Light yellow
+  [LeadStatus.Get_Back]: { name: "Orange", hex: "#FB9D4A" }, // Light orange
 };
 
 
