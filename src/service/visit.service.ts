@@ -309,8 +309,8 @@ export class VisitService {
       if (visitData.longitude !== undefined) {
         uncompletedVisit.longitude = visitData.longitude;
       }
-      if(visitData.status !== undefined){
-        uncompletedVisit.status = visitData.status
+      if (visitData.status !== undefined) {
+        uncompletedVisit.status = visitData.status;
       }
       uncompletedVisit.created_by = visitData.created_by;
       if (visitData.notes) uncompletedVisit.notes = visitData.notes;
@@ -879,13 +879,11 @@ export class VisitService {
           photo_urls: photo_url || [],
           status: data.status,
         };
-        console.log(visitData);
         const visit = await this.handleVisit(
           queryRunner,
           visitData,
           existingVisit ?? undefined
         );
-
         await queryRunner.manager
           .getRepository(Leads)
           .update(customer.lead_id, {
