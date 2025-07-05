@@ -701,7 +701,16 @@ export class VisitService {
             message: "Duplicate leads detected in visit planning",
           };
         }
+        leadsToPlan.forEach((lead) => {
+          lead.status = LeadStatus.Start_Signing;
+          lead.updated_at = new Date(); 
+          lead.updated_by = "system";
+        });
 
+        // Save updated leads
+        await queryRunner.manager.save(Leads, leadsToPlan).catch((e) => {
+          throw new Error(`Failed to update lead statuses: ${e.message}`);
+        });
         const waypoints = leadsToPlan.map(
           (lead) => `${lead.address.latitude},${lead.address.longitude}`
         );
@@ -1070,8 +1079,7 @@ export class VisitService {
       }
       const validVisits = visits.filter(
         (visit) =>
-          visit.lead?.address?.latitude &&
-          visit.lead?.address?.longitude 
+          visit.lead?.address?.latitude && visit.lead?.address?.longitude
       );
       if (!validVisits.length) {
         throw new Error("No valid visit addresses for route optimization");
@@ -1136,7 +1144,6 @@ export class VisitService {
       return this.handleError(error, "Failed to optimize daily route");
     }
   }
-
 
   async refreshDailyRoute(
     repId: number,
