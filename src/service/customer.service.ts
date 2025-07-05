@@ -112,7 +112,8 @@ export class CustomerService {
       customer.contact_name = data.contact_name ?? "";
       customer.contact_email = data.contact_email ?? "";
       customer.contact_phone = data.contact_phone ?? "";
-      customer.address_id = (savedAddress?.address_id ?? addressResponse.data?.address_id)!;
+      customer.address_id = (savedAddress?.address_id ??
+        addressResponse.data?.address_id)!;
       customer.assigned_rep_id = userId;
       customer.status = LeadStatus.Prospect;
       customer.pending_assignment = false;
@@ -964,6 +965,9 @@ export class CustomerService {
               updated_by: adminId.toString(),
               org_id,
               source: Source.Excel,
+              address_id: existingAddress
+                ? existingAddress.address_id
+                : undefined,
               territory_id: territoryId,
             });
             newCustomers.push(customer);
@@ -1011,6 +1015,7 @@ export class CustomerService {
               const addressIndex = customerToAddressIndex.get(customerIndex);
               if (addressIndex !== undefined && savedAddresses[addressIndex]) {
                 customer.address_id = savedAddresses[addressIndex].address_id;
+                customer.address = savedAddresses[addressIndex];
               }
             });
             addresses.splice(
