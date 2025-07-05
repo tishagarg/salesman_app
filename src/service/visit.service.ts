@@ -191,19 +191,26 @@ export class VisitService {
 
         // Add signature image if available
         if (payload.signatureFile?.location) {
-          // Fetch the image as a buffer
-          fetch(payload.signatureFile.location)
-            .then((res) => res.buffer())
-            .then((imageBuffer) => {
-              doc.moveDown(1);
-              doc.image(imageBuffer, {
-                width: 150,
-              });
-              doc.end();
+          // Use dynamic import for node-fetch
+          import("node-fetch")
+            .then(({ default: fetch }) => {
+              fetch(payload.signatureFile.location)
+                .then((res) => res.buffer())
+                .then((imageBuffer) => {
+                  doc.moveDown(1);
+                  doc.image(imageBuffer, {
+                    width: 150,
+                  });
+                  doc.end();
+                })
+                .catch((err) => {
+                  console.error("Error fetching signature image:", err);
+                  doc.end(); // Close the document even if image fails
+                });
             })
             .catch((err) => {
-              console.error("Error fetching signature image:", err);
-              doc.end(); // Close the document even if image fails
+              console.error("Error importing node-fetch:", err);
+              doc.end(); // Close the document if import fails
             });
         } else {
           doc.end();
@@ -957,6 +964,7 @@ export class VisitService {
       const visitsToDelete: Visit[] = [];
 
       for (const visit of visits) {
+        console.log("visit ", visit);
         if (!visit.lead) {
           console.warn(`Visit ${visit.visit_id} has no associated lead`);
           visitsToDelete.push(visit);
@@ -1069,6 +1077,7 @@ export class VisitService {
           visit.lead?.address?.longitude &&
           visit.check_out_time == null
       );
+      console.log(validVisits);
       if (!validVisits.length) {
         throw new Error("No valid visit addresses for route optimization");
       }
