@@ -28,27 +28,33 @@ export class DashboardService {
         unSignedLeads,
         calender,
       ] = await Promise.all([
-        visitRepo.count({
-          where: { check_out_time: IsNull(), rep_id: userId },
+        leadsRepo.count({
+          where: {
+            status: In([LeadStatus.Prospect, LeadStatus.Start_Signing]),
+            assigned_rep_id: userId,
+          },
         }),
-        visitRepo.count({
-          where: { check_out_time: Not(IsNull()), rep_id: userId },
+        leadsRepo.count({
+          where: {
+            status: Not(In([LeadStatus.Prospect, LeadStatus.Start_Signing])),
+            assigned_rep_id: userId,
+          },
         }),
         leadsRepo.count({
           where: { assigned_rep_id: userId },
         }),
-        visitRepo
-          .createQueryBuilder("visit")
-          .leftJoin("visit.contract", "contract")
-          .where("contract.id IS NOT NULL")
-          .andWhere("visit.rep_id = :rep_id", { rep_id: userId })
-          .getCount(),
-        visitRepo
-          .createQueryBuilder("visit")
-          .leftJoin("visit.contract", "contract")
-          .where("contract.id IS NULL")
-          .andWhere("visit.rep_id = :rep_id", { rep_id: userId })
-          .getCount(),
+        leadsRepo.count({
+          where: {
+            status: LeadStatus.Signed,
+            assigned_rep_id: userId,
+          },
+        }),
+        leadsRepo.count({
+          where: {
+            status: Not(In([LeadStatus.Signed])),
+            assigned_rep_id: userId,
+          },
+        }),
         getCurrentMonthData(),
       ]);
 
