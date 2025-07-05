@@ -1,6 +1,9 @@
 import { Response } from "express";
 import { ContractTemplateService } from "../service/contract.service";
 import { ApiResponse } from "../utils/api.response";
+import { getDataSource } from "../config/data-source";
+import { Contract } from "../models/Contracts.entity";
+import { ContractPDF } from "../models/ContractPdf.entity";
 
 export class ContractTemplateController {
   async create(req: any, res: Response): Promise<void> {
@@ -94,5 +97,49 @@ export class ContractTemplateController {
       null,
       templates.message
     );
+  }
+  async getContractPDF(req: any, res: Response) {
+    try {
+      const { contractId } = req.params;
+      const dataSource = await getDataSource();
+      const contractRepo = dataSource.getRepository(Contract);
+      const contractPDFRepo = dataSource.getRepository(ContractPDF);
+      const contract = await contractRepo.findOne({
+        where: { id: parseInt(contractId) },
+      });
+      if (!contract) {
+        res.status(404).json({
+          data: null,
+          message: "Contract not found",
+          status: 404,
+        });
+      }
+      const contractPDF = await contractPDFRepo.findOne({
+        where: { contract_id: parseInt(contractId) },
+      });
+
+      if (!contractPDF || !contractPDF.pdf_data) {
+        res.status(404).json({
+          data: null,
+          message: "PDF not found for this contract",
+          status: 404,
+        });
+        return;
+      }
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `inline; filename="contract-${contractId}.pdf"`
+      );
+      res.setHeader("Content-Length", contractPDF.pdf_data.length);
+      res.status(200).send(contractPDF.pdf_data);
+    } catch (error) {
+      console.error("Error retrieving PDF:", error);
+      res.status(500).json({
+        data: null,
+        message: "Error retrieving the PDF",
+        status: 500,
+      });
+    }
   }
 }
