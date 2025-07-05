@@ -233,7 +233,6 @@ export class UserQuery {
       query = query.andWhere("LOWER(role.role_name) = :role", {
         role: role.toLowerCase(),
       });
-      console.log(query);
     }
     if (status && (status === "active" || status === "inactive")) {
       const isActive = status === "active";

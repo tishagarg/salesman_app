@@ -277,7 +277,6 @@ export class UserTeamService {
         .skip(skip)
         .take(limit)
         .getManyAndCount();
-      console.log(total);
       // Group sales reps by manager
       const groupedData: Record<number, { manager: any; sales_reps: any[] }> =
         {};

@@ -158,7 +158,6 @@ export class VisitController {
   getToday = async (): Promise<Date> => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    console.log(today);
     return today;
   };
 
@@ -320,6 +319,7 @@ export class VisitController {
       const visitQuery = visitRepo
         .createQueryBuilder("visit")
         .leftJoinAndSelect("visit.lead", "l")
+        .leftJoinAndSelect("l.address", "a")
         .leftJoinAndSelect("visit.contract", "c")
         .leftJoinAndSelect("visit.followUpVisits", "fv")
         .leftJoinAndSelect("fv.followUp", "f")
@@ -356,8 +356,7 @@ export class VisitController {
           { to: new Date(to) }
         );
       }
-      console.log(visitQuery.getSql());
-      console.log(visitQuery.getParameters());
+
       // Pagination + ordering
       visitQuery
         .orderBy("visit.check_in_time", safeOrder)

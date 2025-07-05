@@ -675,7 +675,6 @@ export class VisitService {
         const validLeads = providedLeads.filter(
           (c) => c.address?.latitude && c.address?.longitude
         );
-        console.log(validLeads);
         const leadsMap = new Map<number, Leads>();
         updatedUncompletedLeads.forEach((lead) =>
           leadsMap.set(lead.lead_id, lead)
