@@ -288,6 +288,7 @@ export class UserQuery {
 
     const updatedUser = await userRepo.findOne({
       where: { user_id, org_id },
+      relations: { address: true },
     });
 
     return updatedUser;
