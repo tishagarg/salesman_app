@@ -1,10 +1,12 @@
 import { getDataSource } from "../config/data-source";
 import { Leads } from "../models/Leads.entity";
 import { Visit } from "../models/Visits.entity";
+import pdfkit from "pdfkit";
 import { Route } from "../models/Route.entity";
 import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
 import { Idempotency } from "../models/Idempotency";
 import httpStatusCodes from "http-status-codes";
+import { convert } from "html-to-text";
 import {
   Between,
   DeepPartial,
@@ -27,7 +29,8 @@ import { FollowUp } from "../models/FollowUp.entity";
 import { FollowUpVisit } from "../models/FollowUpVisit.entity";
 import { ContractImage } from "../models/ContractImage.entity";
 import { LeadStatus } from "../enum/leadStatus";
-
+import { ContractPDF } from "../models/ContractPdf.entity";
+import fetch from "node-fetch";
 require("dotenv").config();
 
 interface RouteOrderItem {
@@ -117,7 +120,6 @@ export class VisitService {
     await queryRunner.startTransaction();
 
     try {
-      const dataSource = await getDataSource();
       const visitRepo = dataSource.getRepository(Visit);
       const contractRepo = dataSource.getRepository(Contract);
       const templateRepo = dataSource.getRepository(ContractTemplate);
@@ -157,11 +159,63 @@ export class VisitService {
         signature_image_url: payload.signatureFile?.location || "",
       };
       const renderedHtml = renderContract(template.content, updatedMetaData);
+
+      // Convert HTML to plain text
+      const plainText = convert(renderedHtml, {
+        wordwrap: 80,
+        selectors: [
+          { selector: "h1", format: "block", options: { uppercase: true } },
+          { selector: "h2", format: "block", options: { uppercase: true } },
+          { selector: "strong", format: "inline" },
+          { selector: "br", format: "inline", options: { baseElement: "br" } },
+          { selector: "img", format: "skip" },
+        ],
+      });
+
+      // Generate PDF from plain text
+      const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
+        const buffers: Buffer[] = [];
+        const doc = new pdfkit({ size: "A4", margin: 50 });
+        doc.on("data", buffers.push.bind(buffers));
+        doc.on("end", () => resolve(Buffer.concat(buffers)));
+        doc.on("error", reject);
+
+        // Set font and size for better readability
+        doc.font("Helvetica").fontSize(12);
+
+        // Add plain text content
+        doc.text(plainText, {
+          align: "left",
+          lineGap: 2,
+        });
+
+        // Add signature image if available
+        if (payload.signatureFile?.location) {
+          // Fetch the image as a buffer
+          fetch(payload.signatureFile.location)
+            .then((res) => res.buffer())
+            .then((imageBuffer) => {
+              doc.moveDown(1);
+              doc.image(imageBuffer, {
+                width: 150,
+              });
+              doc.end();
+            })
+            .catch((err) => {
+              console.error("Error fetching signature image:", err);
+              doc.end(); // Close the document even if image fails
+            });
+        } else {
+          doc.end();
+        }
+      });
+
       const contract = contractRepo.create({
         contract_template_id: template.id,
         visit_id: visit.visit_id,
         rendered_html: renderedHtml,
-        metadata: payload.parsedMetaData,
+        metadata: updatedMetaData,
+        signed_at: new Date(),
       });
 
       const savedContract = await contractRepo.save(contract);
@@ -170,11 +224,17 @@ export class VisitService {
         image_url: payload.signatureFile?.location,
         metadata: payload.signatureFile,
       });
-      visit.contract = contract;
+      await dataSource.getRepository(ContractPDF).save({
+        contract_id: savedContract.id,
+        pdf_data: pdfBuffer,
+        created_at: new Date(),
+      });
+      visit.contract = savedContract;
       await visitRepo.save(visit);
-      const newContract = await dataSource
-        .getRepository(Contract)
-        .findOne({ where: { id: contract.id }, relations: { images: true } });
+      const newContract = await dataSource.getRepository(Contract).findOne({
+        where: { id: savedContract.id },
+        relations: { images: true, pdf: true },
+      });
       await queryRunner.commitTransaction();
       return {
         data: newContract,
@@ -1105,46 +1165,67 @@ export class VisitService {
           message: "No route found for today",
         };
       }
-      // hot lead , meetimg, get back
-      const routeDetails = await Promise.all(
-        (route.route_order as RouteOrderItem[]).map(async (item) => {
-          const customer = await dataSource.manager.findOne(Leads, {
-            where: {
-              lead_id: Equal(item.lead_id),
-              status: In([
-                LeadStatus.Prospect,
-                LeadStatus.Get_Back,
-                LeadStatus.Meeting,
-                LeadStatus.Hot_Lead,
-                LeadStatus.Start_Signing,
-              ]),
-            },
-            relations: ["address"],
-          });
-          return {
-            lead_id: item.lead_id,
-            name: customer?.name || "anonymous",
-            latitude: customer?.address?.latitude,
-            visit_id: item.visit_id,
-            lead_status: item.lead_status,
-            longitude: customer?.address?.longitude,
-            address: customer?.address
-              ? `${customer.address.street_address || ""}, ${
-                  customer.address.city || ""
-                }, ${customer.address.state || ""} ${
-                  customer.address.postal_code || ""
-                }`
-              : null,
-            eta: item.eta,
-            distance: item.distance,
-          };
-        })
-      );
+      if (
+        !route.route_order ||
+        !Array.isArray(route.route_order) ||
+        route.route_order.length === 0
+      ) {
+        return {
+          status: httpStatusCodes.OK,
+          data: [],
+          message: "No leads assigned to this route",
+        };
+      }
+      const routeDetails = (
+        await Promise.all(
+          (route.route_order as RouteOrderItem[]).map(async (item) => {
+            if (!item.lead_id) {
+              return null;
+            }
+            const customer = await dataSource.manager.findOne(Leads, {
+              where: {
+                lead_id: Equal(item.lead_id),
+                status: In([
+                  LeadStatus.Prospect,
+                  LeadStatus.Get_Back,
+                  LeadStatus.Meeting,
+                  LeadStatus.Hot_Lead,
+                  LeadStatus.Start_Signing,
+                ]),
+              },
+              relations: ["address"],
+            });
+            if (!customer) {
+              return null;
+            }
+            return {
+              lead_id: item.lead_id,
+              name: customer.name || "anonymous",
+              latitude: customer.address?.latitude,
+              visit_id: item.visit_id,
+              lead_status: item.lead_status,
+              longitude: customer.address?.longitude,
+              address: customer.address
+                ? `${customer.address.street_address || ""}, ${
+                    customer.address.city || ""
+                  }, ${customer.address.state || ""} ${
+                    customer.address.postal_code || ""
+                  }`.trim()
+                : null,
+              eta: item.eta,
+              distance: item.distance,
+            };
+          })
+        )
+      ).filter((item): item is NonNullable<typeof item> => item !== null); // Filter out null entries
 
       return {
         status: httpStatusCodes.OK,
         data: routeDetails,
-        message: "Retrieved successfully",
+        message:
+          routeDetails.length > 0
+            ? "Retrieved successfully"
+            : "No valid leads found for this route",
       };
     } catch (error: any) {
       return this.handleError(error, "Failed to retrieve daily route");

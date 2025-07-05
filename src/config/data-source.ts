@@ -27,6 +27,7 @@ import { UserToken } from "../models/UserToken.entity";
 import { FollowUp } from "../models/FollowUp.entity";
 import { FollowUpVisit } from "../models/FollowUpVisit.entity";
 import { ContractImage } from "../models/ContractImage.entity";
+import { ContractPDF } from "../models/ContractPdf.entity";
 
 dotenv.config();
 
@@ -56,6 +57,7 @@ export const dataSourceOptions: DataSourceOptions = {
     ManagerSalesRep,
     UserToken,
     Address,
+    ContractPDF,
     Leads,
     ContractImage,
     Visit,

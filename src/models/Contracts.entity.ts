@@ -4,11 +4,13 @@ import {
   JoinColumn,
   ManyToOne,
   OneToMany,
+  OneToOne,
   PrimaryGeneratedColumn,
 } from "typeorm";
 import { Visit } from "./Visits.entity";
 import { ContractTemplate } from "./ContractTemplate.entity";
 import { ContractImage } from "./ContractImage.entity";
+import { ContractPDF } from "./ContractPdf.entity";
 
 @Entity("contracts")
 export class Contract {
@@ -33,11 +35,13 @@ export class Contract {
   rendered_html: string;
 
   @Column("jsonb", { nullable: true })
-  metadata: Record<string, any>; // Raw data captured from the visit
-
+  metadata: Record<string, any>;
   @Column({ type: "timestamp", default: () => "CURRENT_TIMESTAMP" })
   signed_at: Date;
 
   @OneToMany(() => ContractImage, (image) => image.contract)
   images: ContractImage[];
+  
+  @OneToOne(() => ContractPDF, (pdf) => pdf.contract)
+  pdf: ContractPDF;
 }

@@ -23,4 +23,5 @@ router.post(
   uploadContractImage.single("signature"),
   visitController.submitVisitWithContract
 );
+router.get('/:contractId/pdf', authController.getContractPDF);
 export default router;
