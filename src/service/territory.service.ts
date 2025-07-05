@@ -165,48 +165,35 @@ async autoAssignTerritory(
       };
     }
 
-    const territory = await this.assignTerritory({
-      postal_code: address.postal_code,
-      subregion: address.subregion,
-      lat: address.latitude,
-      lng: address.longitude,
-      org_id,
-    });
-    if (territory) {
-      if (
-        address.territory_id === territory.territory_id &&
-        address.polygon_id === territory.polygon_id
-      ) {
+      const territory = await this.assignTerritory({
+        postal_code: address.postal_code,
+        subregion: address.subregion,
+        lat: address.latitude,
+        lng: address.longitude,
+        org_id,
+      });
+      if (territory) {
+        if (
+          address.territory_id === territory.territory_id &&
+          address.polygon_id === territory.polygon_id
+        ) {
+          return {
+            status: httpStatusCodes.OK,
+            data: address,
+            message: "Territory already assigned",
+          };
+        }
+        address.territory_id = territory.territory_id;
+        address.polygon_id = territory.polygon_id;
+        const updatedAddress = await queryRunner.manager
+          .getRepository(Address)
+          .save(address);
         return {
           status: httpStatusCodes.OK,
-          data: address,
-          message: "Territory already assigned",
+          data: updatedAddress,
+          message: "Territory auto-assigned",
         };
       }
-
-      const updatedAddress = await queryRunner.manager.update(
-        Address,
-        { address_id: address.address_id },
-        {
-          territory_id: territory.territory_id,
-          polygon_id: territory.polygon_id,
-        }
-      );
-
-      if (updatedAddress.affected === 0) {
-        console.warn("⚠️ Address update failed: No rows affected");
-        return {
-          status: httpStatusCodes.INTERNAL_SERVER_ERROR,
-          message: "Failed to update address with territory",
-        };
-      }
-
-      return {
-        status: httpStatusCodes.OK,
-        data: updatedAddress,
-        message: "Territory auto-assigned",
-      };
-    }
 
     return {
       status: httpStatusCodes.OK,

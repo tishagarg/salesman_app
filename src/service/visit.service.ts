@@ -30,7 +30,6 @@ import { FollowUpVisit } from "../models/FollowUpVisit.entity";
 import { ContractImage } from "../models/ContractImage.entity";
 import { LeadStatus } from "../enum/leadStatus";
 import { ContractPDF } from "../models/ContractPdf.entity";
-import fetch from "node-fetch";
 require("dotenv").config();
 
 interface RouteOrderItem {
@@ -676,6 +675,7 @@ export class VisitService {
         const validLeads = providedLeads.filter(
           (c) => c.address?.latitude && c.address?.longitude
         );
+        console.log(validLeads);
         const leadsMap = new Map<number, Leads>();
         updatedUncompletedLeads.forEach((lead) =>
           leadsMap.set(lead.lead_id, lead)
@@ -964,7 +964,6 @@ export class VisitService {
       const visitsToDelete: Visit[] = [];
 
       for (const visit of visits) {
-        console.log("visit ", visit);
         if (!visit.lead) {
           console.warn(`Visit ${visit.visit_id} has no associated lead`);
           visitsToDelete.push(visit);
@@ -1009,7 +1008,7 @@ export class VisitService {
     const dataSource = await getDataSource();
     const routeRepository = dataSource.getRepository(Route);
     const existingRoute = await routeRepository.findOne({
-      where: { rep_id: Equal(repId), route_date: Equal(today) },
+      where: { rep_id: Equal(repId) },
     });
 
     if (existingRoute) {
@@ -1023,7 +1022,6 @@ export class VisitService {
         }
       );
     } else {
-      // Create new route
       return await routeRepository.save({
         rep_id: repId,
         route_date: today,
@@ -1074,10 +1072,8 @@ export class VisitService {
       const validVisits = visits.filter(
         (visit) =>
           visit.lead?.address?.latitude &&
-          visit.lead?.address?.longitude &&
-          visit.check_out_time == null
+          visit.lead?.address?.longitude 
       );
-      console.log(validVisits);
       if (!validVisits.length) {
         throw new Error("No valid visit addresses for route optimization");
       }

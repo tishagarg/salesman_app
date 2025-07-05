@@ -165,18 +165,10 @@ export class AddressService {
         };
       }
 
-      // Commit address creation
-      await queryRunner.commitTransaction();
-
-      // Start a new transaction for territory assignment
-      await queryRunner.startTransaction();
-
-      const autoAssignResult = await this.territoryService.autoAssignTerritory(
+     const autoAssignResult = await this.territoryService.autoAssignTerritory(
         savedAddress.address_id,
         data.org_id,queryRunner
       );
-
-      // Commit territory assignment
       await queryRunner.commitTransaction();
 
       return {
