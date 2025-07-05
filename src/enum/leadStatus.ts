@@ -16,7 +16,7 @@ export const leadStatusColors: Record<LeadStatus, { name: string; hex: string }>
   [LeadStatus.Meeting]: { name: "Blue", hex: "#1d43f0" },   // Light blue
   [LeadStatus.Not_Interested]: { name: "Red", hex: "#F94E5E" }, // Light red
   [LeadStatus.Not_Available]: { name: "Yellow", hex: "#aba418" }, // Light yellow
-  [LeadStatus.Get_Back]: { name: "Orange", hex: "#FB9D4A" }, // Light orange
+  [LeadStatus.Get_Back]: { name: "Orange", hex: "#db537e" }, // Light orange
 };
 
 
