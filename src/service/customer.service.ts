@@ -69,19 +69,12 @@ export class CustomerService {
       const existingEmail = await queryRunner.manager.findOne(Leads, {
         where: { contact_email: data.contact_email, is_active: true },
       });
-      if (existingEmail) {
-        await queryRunner.rollbackTransaction();
-        return {
-          status: httpStatusCodes.CONFLICT,
-          message: `Customer with email ${data.contact_email} already exists`,
-        };
-      }
       const addressData: AddressDto = {
-        street_address: data.street_address,
-        postal_code: data.postal_code,
+        street_address: data.street_address || "",
+        postal_code: data.postal_code || "",
         area_name: data.area_name || "",
-        subregion: data.subregion,
-        region: data.region,
+        subregion: data.subregion || "",
+        region: data.region || "",
         country: data.country || "Finland",
         org_id: org_id,
         city: data.city || "",

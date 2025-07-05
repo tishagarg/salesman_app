@@ -172,16 +172,7 @@ async autoAssignTerritory(
       lng: address.longitude,
       org_id,
     });
-    console.log("territory ", territory);
-
     if (territory) {
-      console.log("👉 Before update: ", {
-        address_id: address.address_id,
-        territory_id: territory.territory_id,
-        polygon_id: territory.polygon_id,
-      });
-
-      // Check if the address already has the same territory_id and polygon_id
       if (
         address.territory_id === territory.territory_id &&
         address.polygon_id === territory.polygon_id
