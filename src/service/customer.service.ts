@@ -121,9 +121,7 @@ export class CustomerService {
       customer.created_by = userId.toString();
       customer.updated_by = userId.toString();
       customer.org_id = org_id;
-      console.log("customer ", customer);
       const savedCustomer = await queryRunner.manager.save(Leads, customer);
-      console.log("saved customer ", savedCustomer);
       await queryRunner.commitTransaction();
       return {
         status: httpStatusCodes.CREATED,
@@ -265,7 +263,6 @@ export class CustomerService {
             updated_by: userId.toString(),
             updated_at: new Date(),
           };
-          console.log("Address Update:", addressUpdate);
 
           const addressUpdateResult = await queryRunner.manager.update(
             Address,
@@ -307,7 +304,6 @@ export class CustomerService {
           org_id,
           queryRunner // Pass the queryRunner
         );
-        console.log("AutoAssignTerritory Result:", autoAssignResult);
         if (autoAssignResult.status >= 400) {
           await queryRunner.rollbackTransaction();
           return {
@@ -692,7 +688,6 @@ export class CustomerService {
         const customer = await queryRunner.manager.findOne(Leads, {
           where: { lead_id: customerId, is_active: true },
         });
-        console.log(customer);
         if (!customer) {
           errors.push(`Customer with ID ${customerId} not found`);
           continue;
