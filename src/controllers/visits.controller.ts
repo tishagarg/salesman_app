@@ -329,7 +329,7 @@ export class VisitController {
 
       if (view === "past_visits") {
         visitQuery
-          .where("l.status IN (:...statuses)", { statuses })
+          .where("visit.status IN (:...statuses)", { statuses })
           .andWhere(
             "(f.scheduled_date < :now OR visit.check_out_time IS NOT NULL)",
             { now: new Date() }
