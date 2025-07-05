@@ -702,7 +702,7 @@ export class AuthService {
         return { status: 404, message: "User token not found", data: null };
       }
       const resetLink = `${
-        process.env.FORNTEND_URL || "https://field-sales-admin.vercel.app/auth/password-reset/"
+        process.env.FORNTEND_URL || "https://field-sales-admin.vercel.app/auth/set-new-password/"
       }?token=${token}`;
       await this.sendPasswordResetNotification(email, resetLink);
       await queryRunner.commitTransaction();
