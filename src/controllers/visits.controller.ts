@@ -315,7 +315,7 @@ export class VisitController {
 
       const user_id = req.user.user_id;
       const safeOrder = order?.toUpperCase() === "ASC" ? "ASC" : "DESC";
-      const statuses = ["Signed", "Not Available", "Not Interested"];
+      const statuses = [LeadStatus.Signed, LeadStatus.Not_Available, LeadStatus.Not_Interested];
       const visitQuery = visitRepo
         .createQueryBuilder("visit")
         .leftJoinAndSelect("visit.lead", "l")
