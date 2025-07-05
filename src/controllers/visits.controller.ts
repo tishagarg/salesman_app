@@ -383,7 +383,7 @@ export class VisitController {
       const [visits, total] = await visitQuery.getManyAndCount();
       const responseData = visits.map((visit) => ({
         ...visit,
-        status: view === "past_visits" ? visit.status : visit.lead.status,
+        status: view === "history" ? visit.status : visit.lead.status,
       }));
 
       return ApiResponse.result(
