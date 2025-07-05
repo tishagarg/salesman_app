@@ -13,6 +13,7 @@ import { User } from "./User.entity";
 import { Leads } from "./Leads.entity";
 import { Contract } from "./Contracts.entity";
 import { FollowUpVisit } from "./FollowUpVisit.entity";
+import { LeadStatus } from "../enum/leadStatus";
 @Entity("visit")
 export class Visit {
   @PrimaryGeneratedColumn()
@@ -72,4 +73,6 @@ export class Visit {
   rep: User;
   @OneToMany(() => FollowUpVisit, (followUpVisit) => followUpVisit.visit)
   followUpVisits: FollowUpVisit[];
+  @Column({ type: "varchar", nullable: true })
+  status?: LeadStatus;
 }
