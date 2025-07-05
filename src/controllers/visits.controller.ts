@@ -303,6 +303,7 @@ export class VisitController {
         order = "DESC",
         lead_id,
         status,
+        view = "history",
       } = req.query as {
         from?: string;
         to?: string;
@@ -311,6 +312,7 @@ export class VisitController {
         order?: string;
         lead_id?: number;
         status?: LeadStatus;
+        view?: "history" | "past_visits";
       };
 
       const user_id = req.user.user_id;
@@ -323,23 +325,40 @@ export class VisitController {
         .leftJoinAndSelect("visit.contract", "c")
         .leftJoinAndSelect("visit.followUpVisits", "fv")
         .leftJoinAndSelect("fv.followUp", "f")
-        .where("l.status IN (:...statuses)", { statuses })
-        .andWhere(
-          "(f.scheduled_date < :now OR visit.check_out_time IS NOT NULL)",
-          { now: new Date() }
-        )
         .andWhere("visit.rep_id = :repId", { repId: user_id });
 
-      // Optional lead or status filters
-      if (lead_id) {
+      if (view === "past_visits") {
+        visitQuery
+          .where("l.status IN (:...statuses)", { statuses })
+          .andWhere(
+            "(f.scheduled_date < :now OR visit.check_out_time IS NOT NULL)",
+            { now: new Date() }
+          )
+          .andWhere("visit.rep_id = :repId", { repId: user_id });
+        if (status) {
+          visitQuery.andWhere("l.status = :status", { status });
+        }
+      } else if (view === "history") {
+        if (!lead_id) {
+          return ApiResponse.error(
+            res,
+            400,
+            "lead_id is required for past_visits view"
+          );
+        }
+        visitQuery
+          .where("visit.lead_id = :lead_id", { lead_id })
+          .andWhere(status ? "visit.status = :status" : "1=1", { status });
+      } else {
+        return ApiResponse.error(
+          res,
+          400,
+          "Invalid view parameter. Use 'history' or 'past_visits'"
+        );
+      }
+      if (lead_id && view === "history") {
         visitQuery.andWhere("visit.lead_id = :lead_id", { lead_id });
       }
-
-      if (status) {
-        visitQuery.andWhere("l.status = :status", { status });
-      }
-
-      // Handle time filtering on check-in or follow-up scheduled date
       if (from && to) {
         visitQuery.andWhere(
           `(visit.check_in_time BETWEEN :from AND :to OR f.scheduled_date BETWEEN :from AND :to)`,
@@ -356,21 +375,31 @@ export class VisitController {
           { to: new Date(to) }
         );
       }
-
-      // Pagination + ordering
       visitQuery
         .orderBy("visit.check_in_time", safeOrder)
         .skip((+page - 1) * +limit)
         .take(+limit);
 
       const [visits, total] = await visitQuery.getManyAndCount();
-      return ApiResponse.result(res, visits, 200, null, "Past Visits", {
-        totalItems: total,
-        currentPage: +page,
-        totalPages: Math.ceil(total / +limit),
-        previousPage: +page > 1 ? +page - 1 : null,
-        nextPage: +page < Math.ceil(total / +limit) ? +page + 1 : null,
-      });
+      const responseData = visits.map((visit) => ({
+        ...visit,
+        status: view === "past_visits" ? visit.status : visit.lead.status,
+      }));
+
+      return ApiResponse.result(
+        res,
+        responseData,
+        200,
+        null,
+        view === "history" ? "Visit History" : "Past Visits",
+        {
+          totalItems: total,
+          currentPage: +page,
+          totalPages: Math.ceil(total / +limit),
+          previousPage: +page > 1 ? +page - 1 : null,
+          nextPage: +page < Math.ceil(total / +limit) ? +page + 1 : null,
+        }
+      );
     } catch (error) {
       console.error("Error in getPastVisits:", error);
       return ApiResponse.error(res, 500, "Failed to retrieve visits");

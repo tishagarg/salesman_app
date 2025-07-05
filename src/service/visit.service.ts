@@ -52,6 +52,7 @@ interface VisitData {
   created_by: string;
   is_active?: boolean;
   notes?: string;
+  status?: LeadStatus;
   contract_id?: number;
   photo_urls?: string[];
 }
@@ -307,6 +308,9 @@ export class VisitService {
       }
       if (visitData.longitude !== undefined) {
         uncompletedVisit.longitude = visitData.longitude;
+      }
+      if(visitData.status !== undefined){
+        uncompletedVisit.status = visitData.status
       }
       uncompletedVisit.created_by = visitData.created_by;
       if (visitData.notes) uncompletedVisit.notes = visitData.notes;
@@ -703,7 +707,7 @@ export class VisitService {
         }
         leadsToPlan.forEach((lead) => {
           lead.status = LeadStatus.Start_Signing;
-          lead.updated_at = new Date(); 
+          lead.updated_at = new Date();
           lead.updated_by = "system";
         });
 
@@ -873,8 +877,9 @@ export class VisitService {
           notes: data.notes,
           created_by: data.rep_id.toString(),
           photo_urls: photo_url || [],
+          status: data.status,
         };
-
+        console.log(visitData);
         const visit = await this.handleVisit(
           queryRunner,
           visitData,
