@@ -10,12 +10,12 @@ export enum LeadStatus {
 }
 export const leadStatusColors: Record<LeadStatus, { name: string; hex: string }> = {
   [LeadStatus.Prospect]: { name: "Orange", hex: "#FB9D4A" }, // Light orange
-  [LeadStatus.Signed]: { name: "Green", hex: "#59A559" },   // Light green
+  [LeadStatus.Signed]: { name: "Green", hex: "#1b871b" },   // Light green
   [LeadStatus.Hot_Lead]: { name: "Purple", hex: "#B57FB5" }, // Light purple
   [LeadStatus.Start_Signing]: { name: "Light Blue", hex: "#A8F5FF" }, // Light light blue
   [LeadStatus.Meeting]: { name: "Blue", hex: "#68D1F3" },   // Light blue
   [LeadStatus.Not_Interested]: { name: "Red", hex: "#F94E5E" }, // Light red
-  [LeadStatus.Not_Available]: { name: "Yellow", hex: "#F9F984" }, // Light yellow
+  [LeadStatus.Not_Available]: { name: "Yellow", hex: "#dede1b" }, // Light yellow
   [LeadStatus.Get_Back]: { name: "Orange", hex: "#FB9D4A" }, // Light orange
 };
 
