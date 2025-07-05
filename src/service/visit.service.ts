@@ -1087,41 +1087,43 @@ export class VisitService {
         waypoints
       );
       let currentTime = new Date();
-      const skippedLeads: any[] = [];
       const routeOrder: RouteOrderItem[] = [];
       for (let i = 0; i < waypointOrder.length; i++) {
         const index = waypointOrder[i];
         const visit = validVisits[index];
         const leg = route.legs[i];
-        if (!leg?.distance?.value || !leg?.duration?.value) {
-          console.warn(`Skipping invalid route leg at index ${i}`);
-          routeOrder.push({
-            lead_id: visit.lead_id,
-            latitude: visit.latitude,
-            longitude: visit.longitude,
-            visit_id: visit.visit_id,
-            lead_status: visit.lead.status,
-            distance: leg.distance.value,
-            eta: "0",
-          });
-          continue;
-        }
-        const distance = leg.distance.value / 1000;
-        const duration = leg.duration.value / 60;
-        currentTime = new Date(currentTime.getTime() + duration * 60000);
-        const eta = currentTime.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        });
-        routeOrder.push({
+        const routeItem = {
           lead_id: visit.lead_id,
-          latitude: visit.latitude,
-          longitude: visit.longitude,
+          latitude: visit.lead.address.latitude,
+          longitude: visit.lead.address.longitude,
           visit_id: visit.visit_id,
           lead_status: visit.lead.status,
-          distance: Number(distance.toFixed(2)),
-          eta,
-        });
+          distance: 0,
+          eta: "0",
+        };
+        if (leg?.distance?.value && leg?.duration?.value) {
+          const distance = leg.distance.value / 1000;
+          const duration = leg.duration.value / 60;
+          currentTime = new Date(currentTime.getTime() + duration * 60000);
+          routeItem.distance = Number(distance.toFixed(2));
+          routeItem.eta = currentTime.toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+          });
+        } else {
+          console.warn(`Invalid route leg at index ${i}, using default values`);
+        }
+        // Check if lead_id already exists in routeOrder
+        const existingIndex = routeOrder.findIndex(
+          (item) => item.lead_id === visit.lead_id
+        );
+        if (existingIndex !== -1) {
+          // Update existing entry
+          routeOrder[existingIndex] = routeItem;
+        } else {
+          // Add new entry
+          routeOrder.push(routeItem);
+        }
       }
       await this.saveRoute(repId, today, routeOrder, "system");
       const routes = await this.getRouteForToday(repId);
@@ -1129,14 +1131,13 @@ export class VisitService {
       return {
         status: httpStatusCodes.OK,
         data: routes,
-        message: skippedLeads.length
-          ? "Daily route optimized with some leads skipped due to invalid route data"
-          : "Daily route optimized successfully",
+        message: "Daily route optimized successfully",
       };
     } catch (error: any) {
       return this.handleError(error, "Failed to optimize daily route");
     }
   }
+
 
   async refreshDailyRoute(
     repId: number,
