@@ -101,17 +101,18 @@ export class CustomerService {
         lng: addressResponse.data?.longitude,
         org_id: org_id,
       });
+      let savedAddress;
       if (territory) {
         address.territory_id = territory.territory_id;
         address.polygon_id = territory.polygon_id || undefined;
-        await queryRunner.manager.save(Address, address);
+        savedAddress = await queryRunner.manager.save(Address, address);
       }
       const customer = new Leads();
       customer.name = data.name ?? "";
       customer.contact_name = data.contact_name ?? "";
       customer.contact_email = data.contact_email ?? "";
       customer.contact_phone = data.contact_phone ?? "";
-      customer.address_id = address.address_id;
+      customer.address_id = (savedAddress?.address_id ?? addressResponse.data?.address_id)!;
       customer.assigned_rep_id = userId;
       customer.status = LeadStatus.Prospect;
       customer.pending_assignment = false;
@@ -120,9 +121,9 @@ export class CustomerService {
       customer.created_by = userId.toString();
       customer.updated_by = userId.toString();
       customer.org_id = org_id;
-
+      console.log("customer ", customer);
       const savedCustomer = await queryRunner.manager.save(Leads, customer);
-
+      console.log("saved customer ", savedCustomer);
       await queryRunner.commitTransaction();
       return {
         status: httpStatusCodes.CREATED,
@@ -963,7 +964,7 @@ export class CustomerService {
             const customer = queryRunner.manager.create(Leads, {
               pending_assignment: true,
               is_active: true,
-              name:"",
+              name: "",
               created_by: adminId.toString(),
               updated_by: adminId.toString(),
               org_id,
