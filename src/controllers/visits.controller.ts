@@ -339,7 +339,6 @@ export class VisitController {
             { now: new Date() }
           )
           .andWhere("visit.rep_id = :repId", { repId: user_id })
-          .orderBy("visit.visit_id", "DESC");
         if (status) {
           visitQuery.andWhere("l.status = :status", { status });
         }
@@ -353,8 +352,7 @@ export class VisitController {
         }
         visitQuery
           .where("visit.lead_id = :lead_id", { lead_id })
-          .andWhere(status ? "visit.status = :status" : "1=1", { status })
-          .orderBy("visit.visit_id", "DESC");
+          .andWhere(status ? "visit.status = :status" : "1=1", { status });
       } else {
         return ApiResponse.error(
           res,
@@ -384,7 +382,8 @@ export class VisitController {
       visitQuery
         .orderBy("visit.check_in_time", safeOrder)
         .skip((+page - 1) * +limit)
-        .take(+limit);
+        .take(+limit)
+        .orderBy("visit.visit_id", "DESC");
 
       const [visits, total] = await visitQuery.getManyAndCount();
       const responseData = visits.map((visit) => ({
