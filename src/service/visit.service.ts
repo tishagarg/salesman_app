@@ -111,10 +111,11 @@ export class VisitService {
     const sql = await queryBuilder.getSql();
   }
   async submitVisitWithContract(payload: {
-    visit_id: number;
+    lead_id: number;
     signatureFile: any;
     contract_template_id: number;
     parsedMetaData: Record<string, string>;
+    rep_id: number;
   }): Promise<{ data: any; status: number; message: string }> {
     const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
@@ -124,26 +125,18 @@ export class VisitService {
       const visitRepo = dataSource.getRepository(Visit);
       const contractRepo = dataSource.getRepository(Contract);
       const templateRepo = dataSource.getRepository(ContractTemplate);
-      const visit = await visitRepo.findOne({
-        where: { visit_id: payload.visit_id },
-        relations: { contract: true },
-      });
-      if (!visit) {
-        await queryRunner.rollbackTransaction();
-        return {
-          data: null,
-          message: "Visit not found",
-          status: 404,
-        };
-      }
-      if (visit.contract !== null) {
-        await queryRunner.rollbackTransaction();
-        return {
-          data: null,
-          message: "Contract already signed",
-          status: 400,
-        };
-      }
+      const visitData = {
+        lead_id: payload.lead_id,
+        rep_id: payload.rep_id,
+        latitude: 0,
+        longitude: 0,
+        check_in_time: new Date(),
+        photos: [],
+        parsedFollowUps: [],
+        notes: "",
+      };
+      const visits = await visitRepo.create(visitData);
+      const savedVisit = await visitRepo.save(visits);
       const template = await templateRepo.findOneBy({
         id: payload.contract_template_id,
       });
@@ -164,17 +157,69 @@ export class VisitService {
 
       // Render the contract HTML with the signature image embedded
       const renderedHtml = renderContract(template.content, updatedMetaData);
-
       // Generate PDF from HTML using Puppeteer
       const pdfBuffer = await this.generatePdfFromHtml(renderedHtml); // Added await
 
       // Debug: Verify pdfBuffer type
-      console.log("pdfBuffer type:", typeof pdfBuffer, "is Buffer:", pdfBuffer instanceof Buffer);
+      console.log(
+        "pdfBuffer type:",
+        typeof pdfBuffer,
+        "is Buffer:",
+        pdfBuffer instanceof Buffer
+      );
 
       // Save the contract
+
+      // const plainText = convert(renderedHtml, {
+      //   wordwrap: 80,
+      //   selectors: [
+      //     { selector: "h1", format: "block", options: { uppercase: true } },
+      //     { selector: "h2", format: "block", options: { uppercase: true } },
+      //     { selector: "strong", format: "inline" },
+      //     { selector: "br", format: "inline", options: { baseElement: "br" } },
+      //     { selector: "img", format: "skip" },
+      //   ],
+      // });
+      // const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
+      //   const buffers: Buffer[] = [];
+      //   const doc = new pdfkit({ size: "A4", margin: 50 });
+      //   doc.on("data", buffers.push.bind(buffers));
+      //   doc.on("end", () => resolve(Buffer.concat(buffers)));
+      //   doc.on("error", reject);
+      //   doc.font("Helvetica").fontSize(12);
+      //   doc.text(plainText, {
+      //     align: "left",
+      //     lineGap: 2,
+      //   });
+      //   if (payload.signatureFile?.location) {
+      //     import("node-fetch")
+      //       .then(({ default: fetch }) => {
+      //         fetch(payload.signatureFile.location)
+      //           .then((res) => res.buffer())
+      //           .then((imageBuffer) => {
+      //             doc.moveDown(1);
+      //             doc.image(imageBuffer, {
+      //               width: 150,
+      //             });
+      //             doc.end();
+      //           })
+      //           .catch((err) => {
+      //             console.error("Error fetching signature image:", err);
+      //             doc.end();
+      //           });
+      //       })
+      //       .catch((err) => {
+      //         console.error("Error importing node-fetch:", err);
+      //         doc.end();
+      //       });
+      //   } else {
+      //     doc.end();
+      //   }
+      // });
+
       const contract = contractRepo.create({
         contract_template_id: template.id,
-        visit_id: visit.visit_id,
+        visit_id: savedVisit.visit_id,
         rendered_html: renderedHtml,
         metadata: updatedMetaData,
         signed_at: new Date(),
@@ -192,17 +237,12 @@ export class VisitService {
       // Save the contract PDF using create
       const contractPDF = dataSource.getRepository(ContractPDF).create({
         contract_id: savedContract.id,
-        pdf_data: pdfBuffer, // No type assertion needed
+        pdf_data: pdfBuffer, 
         created_at: new Date(),
-      } as DeepPartial<ContractPDF>); // Explicit typing to guide TypeORM
-
+      } as DeepPartial<ContractPDF>);
       await dataSource.getRepository(ContractPDF).save(contractPDF);
-
-      // Update visit with the contract
-      visit.contract = savedContract;
-      await visitRepo.save(visit);
-
-      // Fetch the new contract with relations
+      savedVisit.contract = savedContract;
+      await visitRepo.save(savedVisit);
       const newContract = await dataSource.getRepository(Contract).findOne({
         where: { id: savedContract.id },
         relations: { images: true, pdf: true },
@@ -284,8 +324,6 @@ export class VisitService {
       waypointOrder: data.routes[0].waypoint_order,
     };
   }
-
-  // async getPastVisits():Promise<{data:any, status:number, message:string}>{}
   private async handleVisit(
     queryRunner: QueryRunner,
     visitData: VisitData,
@@ -804,6 +842,7 @@ export class VisitService {
   }
 
   async logVisit(data: {
+    visit_id: number | undefined;
     lead_id: number;
     rep_id: number;
     latitude: number;
@@ -843,13 +882,22 @@ export class VisitService {
           };
         }
 
-        const existingVisit = await queryRunner.manager.findOne(Visit, {
-          where: {
-            lead_id: Equal(data.lead_id),
-            check_in_time: MoreThanOrEqual(this.getStartOfDay()),
-            check_out_time: IsNull(),
-          },
-        });
+        let existingVisit;
+        if (data.contract_id) {
+          existingVisit = await queryRunner.manager.findOne(Visit, {
+            where: {
+              visit_id: data.visit_id,
+            },
+          });
+        } else {
+          existingVisit = await queryRunner.manager.findOne(Visit, {
+            where: {
+              lead_id: Equal(data.lead_id),
+              check_in_time: MoreThanOrEqual(this.getStartOfDay()),
+              check_out_time: IsNull(),
+            },
+          });
+        }
         const photo_url = data.photos?.map((p: any) => {
           return p.location;
         });
