@@ -275,16 +275,15 @@ export class VisitService {
       headless: chrome.headless,
     });
     try {
-      console.log("Chromium executable:", await chromium.executablePath());
-      console.log("Chromium args:", chromium.args);
       const page = await browser.newPage();
-     await page.setContent(html, {
-      waitUntil: 'networkidle0',    });
-    const pdfData = await page.pdf({
-      format: 'a4',
-      margin: { top: 50, right: 50, bottom: 50, left: 50 },
-      printBackground: true,
-    });
+      await page.setContent(html, {
+        waitUntil: "networkidle0",
+      });
+      const pdfData = await page.pdf({
+        format: "a4",
+        margin: { top: 50, right: 50, bottom: 50, left: 50 },
+        printBackground: true,
+      });
       return Buffer.from(pdfData);
     } catch (error) {
       console.error("PDF generation error:", error);
