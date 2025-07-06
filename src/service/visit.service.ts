@@ -8,7 +8,7 @@ import { Idempotency } from "../models/Idempotency";
 import httpStatusCodes from "http-status-codes";
 import { convert } from "html-to-text";
 import puppeteer from "puppeteer-core";
-import chrome from "chrome-aws-lambda";
+import chromium from "@sparticuz/chromium";
 import {
   Between,
   DeepPartial,
@@ -269,23 +269,32 @@ export class VisitService {
   }
 
   async generatePdfFromHtml(html: string): Promise<Buffer> {
-    const browser = await chrome.puppeteer.launch({
-      args: chrome.args,
-      executablePath: await chrome.executablePath,
-      headless: chrome.headless,
+    const browser = await puppeteer.launch({
+      args: chromium.args,
+      executablePath: await chromium.executablePath(),
+      headless: true,
     });
     try {
+      console.log("Chromium executable:", await chromium.executablePath());
+      console.log("Chromium args:", chromium.args);
       const page = await browser.newPage();
-     await page.setContent(html, {
-      waitUntil: 'networkidle0',    });
-    const pdfData = await page.pdf({
-      format: 'a4',
-      margin: { top: 50, right: 50, bottom: 50, left: 50 },
-      printBackground: true,
-    });
+      console.log("Setting HTML content...");
+      await page.setContent(html, { waitUntil: "networkidle0" });
+      console.log("Generating PDF...");
+      const pdfData = await page.pdf({
+        format: "a4",
+        margin: { top: 50, right: 50, bottom: 50, left: 50 },
+        printBackground: true,
+      });
+      console.log("PDF generated, size:", pdfData.length);
       return Buffer.from(pdfData);
+    } catch (error) {
+      console.error("PDF generation error:", error);
+      throw error;
     } finally {
-      await browser.close();
+      await browser
+        .close()
+        .catch((err) => console.error("Browser close error:", err));
     }
   }
 
