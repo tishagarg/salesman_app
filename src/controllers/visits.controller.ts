@@ -353,7 +353,8 @@ export class VisitController {
         }
         visitQuery
           .where("visit.lead_id = :lead_id", { lead_id })
-          .andWhere(status ? "visit.status = :status" : "1=1", { status });
+          .andWhere(status ? "visit.status = :status" : "1=1", { status })
+          .orderBy("visit.visit_id", "DESC");
       } else {
         return ApiResponse.error(
           res,
