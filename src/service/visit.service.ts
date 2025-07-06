@@ -1,7 +1,7 @@
 import { getDataSource } from "../config/data-source";
 import { Leads } from "../models/Leads.entity";
 import { Visit } from "../models/Visits.entity";
-import pdfkit from "pdfkit";
+import PDFDocument from "pdfkit";
 import { Route } from "../models/Route.entity";
 import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
 import { Idempotency } from "../models/Idempotency";
@@ -158,9 +158,10 @@ export class VisitService {
 
       // Render the contract HTML with the signature image embedded
       const renderedHtml = renderContract(template.content, updatedMetaData);
-      // Generate PDF from HTML using Puppeteer
-      const pdfBuffer = await this.generatePdfFromHtml(renderedHtml); // Added await
-
+      const pdfBuffer = await this.generatePdfFromHtml(
+        renderedHtml,
+        payload.signatureFile?.location
+      );
       // Debug: Verify pdfBuffer type
       console.log(
         "pdfBuffer type:",
@@ -268,31 +269,56 @@ export class VisitService {
     }
   }
 
-  async generatePdfFromHtml(html: string): Promise<Buffer> {
-    const browser = await chrome.puppeteer.launch({
-      args: chrome.args,
-      executablePath: await chrome.executablePath,
-      headless: chrome.headless,
+  async generatePdfFromHtml(html: any, signatureUrl: any) {
+    const plainText = convert(html, {
+      wordwrap: 80,
+      selectors: [
+        { selector: "h1", format: "block", options: { uppercase: true } },
+        { selector: "h2", format: "block", options: { uppercase: true } },
+        { selector: "strong", format: "inline" },
+        { selector: "br", format: "inline", options: { baseElement: "br" } },
+        { selector: "img", format: "skip" },
+      ],
     });
-    try {
-      const page = await browser.newPage();
-      await page.setContent(html, {
-        waitUntil: "networkidle0",
-      });
-      const pdfData = await page.pdf({
-        format: "a4",
-        margin: { top: 50, right: 50, bottom: 50, left: 50 },
-        printBackground: true,
-      });
-      return Buffer.from(pdfData);
-    } catch (error) {
-      console.error("PDF generation error:", error);
-      throw error;
-    } finally {
-      await browser
-        .close()
-        .catch((err) => console.error("Browser close error:", err));
-    }
+
+    return new Promise((resolve, reject) => {
+      const buffers: Buffer[] = [];
+      const doc = new PDFDocument({ size: "A4", margin: 50 });
+      doc.on("data", buffers.push.bind(buffers));
+      doc.on("end", () => resolve(Buffer.concat(buffers)));
+      doc.on("error", reject);
+      doc.font("Helvetica").fontSize(12);
+      doc.text(plainText, { align: "left", lineGap: 2 });
+
+      if (signatureUrl) {
+        import("node-fetch")
+          .then(({ default: fetch }) =>
+            fetch(signatureUrl)
+              .then((res) => {
+                if (!res.ok)
+                  throw new Error(
+                    `Failed to fetch signature: ${res.statusText}`
+                  );
+                return res.buffer();
+              })
+              .then((imageBuffer) => {
+                doc.moveDown(1);
+                doc.image(imageBuffer, { width: 150 });
+                doc.end();
+              })
+              .catch((err) => {
+                console.error("Error fetching signature image:", err);
+                doc.end();
+              })
+          )
+          .catch((err) => {
+            console.error("Error importing node-fetch:", err);
+            doc.end();
+          });
+      } else {
+        doc.end();
+      }
+    });
   }
 
   private async getOptimizedRoute(
