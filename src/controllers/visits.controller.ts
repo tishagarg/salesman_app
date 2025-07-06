@@ -38,7 +38,8 @@ export class VisitController {
   }
 
   async submitVisitWithContract(req: any, res: Response): Promise<void> {
-    const { visit_id, contract_template_id, metadata } = req.body;
+    const { lead_id, contract_template_id, metadata } = req.body;
+    const rep_id = req.user.user_id;
     const signatureFile = req.file;
     let parsedMetaData;
     try {
@@ -49,10 +50,11 @@ export class VisitController {
       return ApiResponse.error(res, 400, "Invalid metadata format");
     }
     const contract = await visitService.submitVisitWithContract({
-      visit_id,
+      lead_id,
       signatureFile,
       contract_template_id,
       parsedMetaData,
+      rep_id,
     });
     if (contract.status >= 400) {
       return ApiResponse.error(res, contract.status, contract.message);
@@ -67,10 +69,19 @@ export class VisitController {
   }
 
   async logVisit(req: any, res: Response): Promise<void> {
-    const { lead_id, latitude, longitude, notes, followUps, status, contract_id } = req.body;
+    const {
+      lead_id,
+      latitude,
+      longitude,
+      notes,
+      followUps,
+      status,
+      contract_id,
+      visit_id,
+    } = req.body;
     const rep_id = req.user.user_id;
     const photos = req.files;
-    if (!lead_id || !latitude || !longitude) {
+    if ( !latitude || !longitude) {
       return ApiResponse.error(
         res,
         400,
@@ -92,6 +103,7 @@ export class VisitController {
       }
     }
     const data = {
+      visit_id: parseInt(visit_id) || undefined,
       lead_id: parseInt(lead_id),
       rep_id,
       latitude: parseFloat(latitude),
@@ -339,7 +351,7 @@ export class VisitController {
             "(f.scheduled_date < :now OR visit.check_out_time IS NOT NULL)",
             { now: new Date() }
           )
-          .andWhere("visit.rep_id = :repId", { repId: user_id })
+          .andWhere("visit.rep_id = :repId", { repId: user_id });
         if (status) {
           visitQuery.andWhere("l.status = :status", { status });
         }
