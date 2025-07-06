@@ -862,14 +862,14 @@ export class VisitService {
         const visitData: VisitData = {
           lead_id: data.lead_id,
           rep_id: data.rep_id,
-          check_in_time: existingVisit?.check_in_time ?? new Date(),
+          check_in_time: new Date(), // Always create new
           check_out_time: new Date(),
           latitude: data.latitude,
           longitude: data.longitude,
-          contract_id: data.contract_id,
+          contract_id: data.contract_id, // Contract always gets attached here
           notes: data.notes,
           created_by: data.rep_id.toString(),
-          photo_urls: photo_url || [],
+          photo_urls: photo_url,
           status: data.status,
         };
         const visit = await this.handleVisit(

@@ -67,7 +67,7 @@ export class VisitController {
   }
 
   async logVisit(req: any, res: Response): Promise<void> {
-    const { lead_id, latitude, longitude, notes, followUps, status } = req.body;
+    const { lead_id, latitude, longitude, notes, followUps, status, contract_id } = req.body;
     const rep_id = req.user.user_id;
     const photos = req.files;
     if (!lead_id || !latitude || !longitude) {
@@ -100,6 +100,7 @@ export class VisitController {
       photos: photos || undefined,
       parsedFollowUps,
       status,
+      contract_id,
     };
     const response = await visitService.logVisit(data);
     if (response.status >= 400) {
