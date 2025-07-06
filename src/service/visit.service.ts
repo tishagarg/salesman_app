@@ -7,6 +7,8 @@ import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
 import { Idempotency } from "../models/Idempotency";
 import httpStatusCodes from "http-status-codes";
 import { convert } from "html-to-text";
+import puppeteer from "puppeteer-core";
+import chrome from "chrome-aws-lambda";
 import {
   Between,
   DeepPartial,
@@ -29,7 +31,6 @@ import { FollowUpVisit } from "../models/FollowUpVisit.entity";
 import { ContractImage } from "../models/ContractImage.entity";
 import { LeadStatus } from "../enum/leadStatus";
 import { ContractPDF } from "../models/ContractPdf.entity";
-import puppeteer from "puppeteer";
 
 require("dotenv").config();
 
@@ -237,7 +238,7 @@ export class VisitService {
       // Save the contract PDF using create
       const contractPDF = dataSource.getRepository(ContractPDF).create({
         contract_id: savedContract.id,
-        pdf_data: pdfBuffer, 
+        pdf_data: pdfBuffer,
         created_at: new Date(),
       } as DeepPartial<ContractPDF>);
       await dataSource.getRepository(ContractPDF).save(contractPDF);
@@ -268,26 +269,20 @@ export class VisitService {
   }
 
   async generatePdfFromHtml(html: string): Promise<Buffer> {
-    const browser = await puppeteer.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    const browser = await chrome.puppeteer.launch({
+      args: chrome.args,
+      executablePath: await chrome.executablePath,
+      headless: chrome.headless,
     });
     try {
       const page = await browser.newPage();
-
-      // Set the HTML content
-      await page.setContent(html, {
-        waitUntil: "networkidle0", // Wait for all network requests (e.g., images) to complete
-      });
-
-      // Generate PDF
-      const pdfData = await page.pdf({
-        format: "A4",
-        margin: { top: 50, right: 50, bottom: 50, left: 50 },
-        printBackground: true,
-      });
-
-      // Explicitly convert to Buffer
+     await page.setContent(html, {
+      waitUntil: 'networkidle0',    });
+    const pdfData = await page.pdf({
+      format: 'a4',
+      margin: { top: 50, right: 50, bottom: 50, left: 50 },
+      printBackground: true,
+    });
       return Buffer.from(pdfData);
     } finally {
       await browser.close();
