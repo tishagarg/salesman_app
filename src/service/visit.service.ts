@@ -10,7 +10,6 @@ import { convert } from "html-to-text";
 import {
   Between,
   DeepPartial,
-  Double,
   Equal,
   In,
   IsNull,
@@ -30,6 +29,8 @@ import { FollowUpVisit } from "../models/FollowUpVisit.entity";
 import { ContractImage } from "../models/ContractImage.entity";
 import { LeadStatus } from "../enum/leadStatus";
 import { ContractPDF } from "../models/ContractPdf.entity";
+import puppeteer from "puppeteer";
+
 require("dotenv").config();
 
 interface RouteOrderItem {
@@ -154,69 +155,23 @@ export class VisitService {
           status: 404,
         };
       }
+
+      // Prepare metadata with signature image URL
       const updatedMetaData = {
         ...payload.parsedMetaData,
         signature_image_url: payload.signatureFile?.location || "",
       };
+
+      // Render the contract HTML with the signature image embedded
       const renderedHtml = renderContract(template.content, updatedMetaData);
 
-      // Convert HTML to plain text
-      const plainText = convert(renderedHtml, {
-        wordwrap: 80,
-        selectors: [
-          { selector: "h1", format: "block", options: { uppercase: true } },
-          { selector: "h2", format: "block", options: { uppercase: true } },
-          { selector: "strong", format: "inline" },
-          { selector: "br", format: "inline", options: { baseElement: "br" } },
-          { selector: "img", format: "skip" },
-        ],
-      });
+      // Generate PDF from HTML using Puppeteer
+      const pdfBuffer = await this.generatePdfFromHtml(renderedHtml); // Added await
 
-      // Generate PDF from plain text
-      const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
-        const buffers: Buffer[] = [];
-        const doc = new pdfkit({ size: "A4", margin: 50 });
-        doc.on("data", buffers.push.bind(buffers));
-        doc.on("end", () => resolve(Buffer.concat(buffers)));
-        doc.on("error", reject);
+      // Debug: Verify pdfBuffer type
+      console.log("pdfBuffer type:", typeof pdfBuffer, "is Buffer:", pdfBuffer instanceof Buffer);
 
-        // Set font and size for better readability
-        doc.font("Helvetica").fontSize(12);
-
-        // Add plain text content
-        doc.text(plainText, {
-          align: "left",
-          lineGap: 2,
-        });
-
-        // Add signature image if available
-        if (payload.signatureFile?.location) {
-          // Use dynamic import for node-fetch
-          import("node-fetch")
-            .then(({ default: fetch }) => {
-              fetch(payload.signatureFile.location)
-                .then((res) => res.buffer())
-                .then((imageBuffer) => {
-                  doc.moveDown(1);
-                  doc.image(imageBuffer, {
-                    width: 150,
-                  });
-                  doc.end();
-                })
-                .catch((err) => {
-                  console.error("Error fetching signature image:", err);
-                  doc.end(); // Close the document even if image fails
-                });
-            })
-            .catch((err) => {
-              console.error("Error importing node-fetch:", err);
-              doc.end(); // Close the document if import fails
-            });
-        } else {
-          doc.end();
-        }
-      });
-
+      // Save the contract
       const contract = contractRepo.create({
         contract_template_id: template.id,
         visit_id: visit.visit_id,
@@ -226,22 +181,33 @@ export class VisitService {
       });
 
       const savedContract = await contractRepo.save(contract);
+
+      // Save the contract image
       await dataSource.getRepository(ContractImage).save({
         contract_id: savedContract.id,
         image_url: payload.signatureFile?.location,
         metadata: payload.signatureFile,
       });
-      await dataSource.getRepository(ContractPDF).save({
+
+      // Save the contract PDF using create
+      const contractPDF = dataSource.getRepository(ContractPDF).create({
         contract_id: savedContract.id,
-        pdf_data: pdfBuffer,
+        pdf_data: pdfBuffer, // No type assertion needed
         created_at: new Date(),
-      });
+      } as DeepPartial<ContractPDF>); // Explicit typing to guide TypeORM
+
+      await dataSource.getRepository(ContractPDF).save(contractPDF);
+
+      // Update visit with the contract
       visit.contract = savedContract;
       await visitRepo.save(visit);
+
+      // Fetch the new contract with relations
       const newContract = await dataSource.getRepository(Contract).findOne({
         where: { id: savedContract.id },
         relations: { images: true, pdf: true },
       });
+
       await queryRunner.commitTransaction();
       return {
         data: newContract,
@@ -249,7 +215,7 @@ export class VisitService {
         status: 200,
       };
     } catch (error) {
-      console.log(error);
+      console.error("Error signing the contract:", error);
       await queryRunner.rollbackTransaction();
       return {
         data: null,
@@ -260,6 +226,34 @@ export class VisitService {
       await queryRunner.release();
     }
   }
+
+  async generatePdfFromHtml(html: string): Promise<Buffer> {
+    const browser = await puppeteer.launch({
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+    });
+    try {
+      const page = await browser.newPage();
+
+      // Set the HTML content
+      await page.setContent(html, {
+        waitUntil: "networkidle0", // Wait for all network requests (e.g., images) to complete
+      });
+
+      // Generate PDF
+      const pdfData = await page.pdf({
+        format: "A4",
+        margin: { top: 50, right: 50, bottom: 50, left: 50 },
+        printBackground: true,
+      });
+
+      // Explicitly convert to Buffer
+      return Buffer.from(pdfData);
+    } finally {
+      await browser.close();
+    }
+  }
+
   private async getOptimizedRoute(
     origin: string,
     waypoints: string[]
