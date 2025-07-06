@@ -317,7 +317,11 @@ export class VisitController {
 
       const user_id = req.user.user_id;
       const safeOrder = order?.toUpperCase() === "ASC" ? "ASC" : "DESC";
-      const statuses = [LeadStatus.Signed, LeadStatus.Not_Available, LeadStatus.Not_Interested];
+      const statuses = [
+        LeadStatus.Signed,
+        LeadStatus.Not_Available,
+        LeadStatus.Not_Interested,
+      ];
       const visitQuery = visitRepo
         .createQueryBuilder("visit")
         .leftJoinAndSelect("visit.lead", "l")
@@ -334,7 +338,8 @@ export class VisitController {
             "(f.scheduled_date < :now OR visit.check_out_time IS NOT NULL)",
             { now: new Date() }
           )
-          .andWhere("visit.rep_id = :repId", { repId: user_id });
+          .andWhere("visit.rep_id = :repId", { repId: user_id })
+          .orderBy("visit.visit_id", "DESC");
         if (status) {
           visitQuery.andWhere("l.status = :status", { status });
         }
