@@ -280,7 +280,7 @@ export class UserTeamController {
   async getUnassignedSalesRep(req: any, res: Response): Promise<void> {
     const { org_id, role_id } = req.user as IJwtVerify;
     const page = parseInt(req.query.page as string) || 1;
-    const limit = parseInt(req.query.limit as string) || 10;
+    const limit = parseInt(req.query.limit as string) || 1000;
     const skip = (page - 1) * limit;
     const search = req.query.search as string;
     const response = await userTeamService.getUnassignedSalesRep(org_id, {
