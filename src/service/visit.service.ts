@@ -817,28 +817,21 @@ export class VisitService {
     contract_id?: number;
     notes?: string;
     photos?: any;
-    followUps?:
-      | string
-      | { subject: string; notes?: string; scheduled_date?: string }[];
+    parsedFollowUps?: any;
     status: LeadStatus;
   }): Promise<{ status: number; data?: any; message: string }> {
     return await this.withTransaction(async (queryRunner) => {
       try {
-        let followUps: {
-          subject: string;
-          notes?: string;
-          scheduled_date?: string;
-        }[] = [];
-
-        if (typeof data.followUps === "string") {
+        let followUps = [];
+        if (typeof data.parsedFollowUps === "string") {
           try {
-            followUps = JSON.parse(data.followUps);
+            followUps = JSON.parse(data.parsedFollowUps);
           } catch (e) {
             console.error("Invalid followUps JSON");
             followUps = [];
           }
-        } else if (Array.isArray(data.followUps)) {
-          followUps = data.followUps;
+        } else if (Array.isArray(data.parsedFollowUps)) {
+          followUps = data.parsedFollowUps;
         }
 
         const customer = await queryRunner.manager.findOne(Leads, {
