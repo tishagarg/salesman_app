@@ -793,7 +793,7 @@ export class CustomerService {
           if (territory.subregions) {
             (JSON.parse(territory.subregions) as string[]).forEach(
               (subregion) =>
-                territoryLookup.set(`subregion:${subregion}`, territory_id)
+              territoryLookup.set(`subregion:${subregion}`, territory_id)
             );
           }
         } catch (e: any) {
@@ -852,13 +852,13 @@ export class CustomerService {
           const addressIds = existingAddresses.map((addr) => addr.address_id);
           const existingLeads = addressIds.length
             ? await queryRunner.manager
-                .find(Leads, {
-                  where: { address_id: In(addressIds), is_active: true },
-                  select: ["address_id"],
-                })
-                .catch((e) => {
-                  throw new Error(`Leads fetch failed: ${e.message}`);
-                })
+              .find(Leads, {
+                where: { address_id: In(addressIds), is_active: true },
+                select: ["address_id"],
+              })
+              .catch((e) => {
+                throw new Error(`Leads fetch failed: ${e.message}`);
+              })
             : [];
           const leadAddressMap = new Map<number, string>(
             existingLeads.map((lead) => [lead.address_id, lead.name])
@@ -911,7 +911,7 @@ export class CustomerService {
             if (existingAddress) {
               if (leadAddressMap.has(existingAddress.address_id)) {
                 errors.push(
-                  `Row ${rowNum}: Duplicate customer  at ${addressData.street_address}, ${addressData.postal_code}, ${addressData.subregion}`
+                  `Row ${rowNum}: Duplicate customer at ${addressData.street_address}, ${addressData.postal_code}, ${addressData.subregion}`
                 );
                 return;
               }
@@ -943,15 +943,7 @@ export class CustomerService {
               newAddresses.push(newAddress);
               addressesToGeocode.push({
                 index: newAddresses.length - 1,
-                address: {
-                  street_address: addressData.street_address,
-                  postal_code: addressData.postal_code,
-                  subregion: addressData.subregion,
-                  city: addressData.city,
-                  state: addressData.state,
-                  region: addressData.region,
-                  country: addressData.country,
-                },
+                address: addressData,
               });
               address = newAddress;
             }
@@ -992,7 +984,7 @@ export class CustomerService {
                   return { index, coords };
                 } catch (e: any) {
                   errors.push(
-                    `Geocoding failed for ${address.street_address}, ${address.postal_code}, ${address.subregion}: ${e.message}`
+                    `Row ${i + index + 1}: Geocoding failed for ${address.street_address}, ${address.postal_code}, ${address.subregion}: ${e.message}`
                   );
                   return { index, coords: { latitude: 0, longitude: 0 } };
                 }
@@ -1040,15 +1032,15 @@ export class CustomerService {
           ];
           const territorySalesmen = territoryIds.length
             ? await queryRunner.manager
-                .find(TerritorySalesman, {
-                  where: { territory_id: In(territoryIds) },
-                  select: ["territory_id", "salesman_id"],
-                })
-                .catch((e) => {
-                  throw new Error(
-                    `Territory salesmen fetch failed: ${e.message}`
-                  );
-                })
+              .find(TerritorySalesman, {
+                where: { territory_id: In(territoryIds) },
+                select: ["territory_id", "salesman_id"],
+              })
+              .catch((e) => {
+                throw new Error(
+                  `Territory salesmen fetch failed: ${e.message}`
+                );
+              })
             : [];
           const salesmanMap = new Map<number, number>(
             territorySalesmen.map((ts) => [ts.territory_id, ts.salesman_id])
