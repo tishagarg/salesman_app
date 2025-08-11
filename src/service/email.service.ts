@@ -4,8 +4,8 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export async function sendEmail(param: IMail) {
-  const emailFrom = process.env.EMAIL_FROM;
-  const emailPass = process.env.EMAIL_PASS;
+  const emailFrom = process.env.EMAIL_FROM || "gargtisha10@gmail.com";
+  const emailPass = process.env.EMAIL_PASS ||"pmxf aqxq ixuj voeq";
 
   if (!emailFrom || !emailPass) {
     throw new Error("Missing email credentials");
