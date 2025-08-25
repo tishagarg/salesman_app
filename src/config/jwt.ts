@@ -21,9 +21,22 @@ export const jwtSign = (
   );
 };
 
-export const jwtVerify = (token: string) => {
-  const decoded = jwt.verify(token, SECRET_KEY) as IJwtVerify;
-  return decoded;
+export const jwtVerify = (token: string): IJwtVerify => {
+  try {
+    if (!SECRET_KEY) {
+      throw new Error("JWT_SECRET is not configured");
+    }
+    const decoded = jwt.verify(token, SECRET_KEY) as IJwtVerify;
+    return decoded;
+  } catch (error) {
+    if (error instanceof jwt.TokenExpiredError) {
+      throw new Error("JWT token has expired");
+    } else if (error instanceof jwt.JsonWebTokenError) {
+      throw new Error(`JWT verification failed: ${error.message}`);
+    } else {
+      throw error;
+    }
+  }
 };
 
 export const generateRefreshToken = (user_id: number) => {

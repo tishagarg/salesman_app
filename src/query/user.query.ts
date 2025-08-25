@@ -85,8 +85,16 @@ export class UserQuery {
     userToken.scopes = params.scopes;
     userToken.status = params.status;
     userToken.is_active = true;
+    userToken.created_at = new Date();
+    userToken.updated_at = new Date();
 
     const savedToken = await manager.save(userToken);
+    // console.log("Token saved to database:", {
+    //   user_id: userToken.user_id,
+    //   token: userToken.user_token_id.substring(0, 20) + "...",
+    //   created_at: userToken.created_at,
+    //   ttl: userToken.ttl
+    // });
     return savedToken;
   }
 

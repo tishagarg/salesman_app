@@ -38,7 +38,7 @@ const client = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
 export class AuthService {
   ttl: number;
   constructor() {
-    this.ttl = 2 * 24 * 60 * 60*1000; // 2 days in miliseconds
+    this.ttl = 2 * 24 * 60 * 60 * 1000; // 2 days in milliseconds
   }
 
   private readonly refreshTokenTTL = 7 * 24 * 60 * 60; // 7 days in seconds
