@@ -234,18 +234,23 @@ export class TerritoryController {
   async autoAssignTerritory(req: any, res: Response): Promise<void> {
     const dataSource = await getDataSource();
     const queryRunner = await dataSource.createQueryRunner();
-    const { address_id, org_id } = req.body;
-    if (!address_id || !org_id) {
-      res
-        .status(httpStatusCodes.BAD_REQUEST)
-        .json({ message: "Missing required fields" });
-    }
+    try {
+      const { address_id, org_id } = req.body;
+      if (!address_id || !org_id) {
+        res
+          .status(httpStatusCodes.BAD_REQUEST)
+          .json({ message: "Missing required fields" });
+        return;
+      }
 
-    const result = await territoryService.autoAssignTerritory(
-      address_id,
-      org_id,
-      queryRunner
-    );
-    res.status(result.status).json(result);
+      const result = await territoryService.autoAssignTerritory(
+        address_id,
+        org_id,
+        queryRunner
+      );
+      res.status(result.status).json(result);
+    } finally {
+      await queryRunner.release();
+    }
   }
 }
