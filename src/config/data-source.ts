@@ -75,12 +75,16 @@ export const dataSourceOptions: DataSourceOptions = {
   ],
   migrations: [],
   subscribers: [],
-  poolSize: 10, // Connection pooling for Neon
+  poolSize: 20, // Increased connection pool for better handling
   extra: {
-    connectionTimeoutMillis: 10000, // 10s timeout
-    idleTimeoutMillis: 30000, // 30s idle timeout
-    max: 10, // Max connections
-    min: 2, // Min connections
+    connectionTimeoutMillis: 30000, // 30s timeout (increased from 10s)
+    idleTimeoutMillis: 60000, // 60s idle timeout (increased from 30s)
+    max: 20, // Max connections (increased)
+    min: 5, // Min connections (increased)
+    acquireTimeoutMillis: 60000, // Time to wait for connection from pool
+    createTimeoutMillis: 30000, // Time to wait for new connection creation
+    destroyTimeoutMillis: 5000, // Time to wait for connection destruction
+    reapIntervalMillis: 1000, // Frequency to check for idle connections
   },
 };
 

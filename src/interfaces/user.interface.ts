@@ -128,6 +128,11 @@ export interface IJwtVerify {
   user_id: number;
   org_id: number;
   email: string;
+  role_id?: number;
+  is_super_admin?: boolean;
+  is_admin?: boolean;
+  iat?: number; // Issued at (seconds since Unix epoch)
+  exp?: number; // Expiration time (seconds since Unix epoch)
 }
 export interface ISaveOtp {
   otp: string;
@@ -211,12 +216,6 @@ export interface IProfileData {
   industry_id?: number;
 }
 
-export interface IJwtVerify {
-  user_id: number;
-  org_id: number;
-  email: string;
-  role_id: number;
-}
 
 export interface IUserProfile {
   fullName: string;
