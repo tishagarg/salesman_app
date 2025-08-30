@@ -141,8 +141,7 @@ export const ContractTemplateService = {
     const queryRunner = await dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
-      const contractRepo = dataSource.getRepository(ContractTemplate);
-      const contracts = await contractRepo.find({
+      const contracts = await queryRunner.manager.find(ContractTemplate, {
         relations: { assigned_managers: true },
         order: { updated_at: "DESC" },
       });

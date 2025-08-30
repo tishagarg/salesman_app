@@ -254,49 +254,62 @@ export class UserTeamService {
         .getRepository(ManagerSalesRep)
         .createQueryBuilder("msr")
         .leftJoinAndSelect("msr.manager", "manager")
-        .leftJoinAndSelect("msr.sales_rep", "sales_rep");
+        .leftJoinAndSelect("manager.role", "manager_role")
+        .leftJoinAndSelect("manager.address", "manager_address")
+        .leftJoinAndSelect("msr.sales_rep", "sales_rep")
+        .leftJoinAndSelect("sales_rep.role", "sales_rep_role")
+        .leftJoinAndSelect("sales_rep.address", "sales_rep_address")
+        .where("manager.is_active = :managerActive", { managerActive: true })
+        .andWhere("sales_rep.is_active = :salesRepActive", { salesRepActive: true });
 
       if (search && search.trim() !== "") {
         const searchTerm = `%${search.trim().toLowerCase()}%`;
         query.andWhere(
           `(LOWER(COALESCE(manager.full_name, '')) LIKE :searchTerm
-        OR LOWER(COALESCE(manager.email, '')) LIKE :searchTerm)`,
+        OR LOWER(COALESCE(manager.email, '')) LIKE :searchTerm
+        OR LOWER(COALESCE(manager.first_name, '')) LIKE :searchTerm
+        OR LOWER(COALESCE(manager.last_name, '')) LIKE :searchTerm)`,
           { searchTerm }
         );
       }
+      
       if (managerId) {
         query.andWhere("manager.user_id = :managerId", { managerId });
       }
 
-      // Apply salesman ID filter
       if (salesmanId) {
         query.andWhere("sales_rep.user_id = :salesmanId", { salesmanId });
       }
+
       const [results, total] = await query
         .orderBy("manager.user_id", "ASC")
         .skip(skip)
         .take(limit)
         .getManyAndCount();
+
       // Group sales reps by manager
-      const groupedData: Record<number, { manager: any; sales_reps: any[] }> =
-        {};
+      const groupedData: Record<number, { manager: any; sales_reps: any[] }> = {};
 
       for (const entry of results) {
         const managerId = entry.manager.user_id;
         if (!groupedData[managerId]) {
+          // Remove password_hash from manager data
+          const { password_hash, ...safeManager } = entry.manager;
           groupedData[managerId] = {
-            manager: entry.manager,
+            manager: safeManager,
             sales_reps: [],
           };
         }
-        groupedData[managerId].sales_reps.push(entry.sales_rep);
+        // Remove password_hash from sales rep data
+        const { password_hash: salesRepPassword, ...safeSalesRep } = entry.sales_rep;
+        groupedData[managerId].sales_reps.push(safeSalesRep);
       }
 
       return {
         data: Object.values(groupedData),
         total: Object.keys(groupedData).length,
         status: 200,
-        message: "Sales reps grouped by manager with pagination",
+        message: "Sales reps grouped by manager retrieved successfully",
       };
     } catch (error) {
       console.error(error);
