@@ -245,6 +245,20 @@ export class VisitService {
       await dataSource.getRepository(ContractPDF).save(contractPDF);
       savedVisit.contract = savedContract;
       await visitRepo.save(savedVisit);
+      
+      // Update lead status to "Signed" after successful contract signing
+      const leadRepo = dataSource.getRepository(Leads);
+      const lead = await leadRepo.findOne({
+        where: { lead_id: payload.lead_id }
+      });
+      
+      if (lead) {
+        lead.status = LeadStatus.Signed;
+        lead.updated_at = new Date();
+        lead.updated_by = "system";
+        await leadRepo.save(lead);
+      }
+      
       const newContract = await dataSource.getRepository(Contract).findOne({
         where: { id: savedContract.id },
         relations: { images: true, pdf: true },
