@@ -4,6 +4,7 @@ import { IsaveTokenParams } from "../interfaces/user.interface";
 import { UserTokenQuery } from "./usertoken.query";
 import { User } from "../models/User.entity";
 import { UserToken } from "../models/UserToken.entity";
+import { getFinnishTime } from "../utils/timezone";
 
 const userTokenQuery = new UserTokenQuery();
 
@@ -53,8 +54,8 @@ export class UserQuery {
 
     const newUser = userRepo.create({
       ...userData,
-      created_at: new Date(),
-      updated_at: new Date(),
+      created_at: getFinnishTime(),
+      updated_at: getFinnishTime(),
     });
 
     await userRepo.save(newUser);
@@ -85,8 +86,8 @@ export class UserQuery {
     userToken.scopes = params.scopes;
     userToken.status = params.status;
     userToken.is_active = true;
-    userToken.created_at = new Date();
-    userToken.updated_at = new Date();
+    userToken.created_at = getFinnishTime();
+    userToken.updated_at = getFinnishTime();
 
     const savedToken = await manager.save(userToken);
     // console.log("Token saved to database:", {
@@ -134,7 +135,7 @@ export class UserQuery {
 
     await userRepo.update(user_id, {
       ...updateData,
-      updated_at: new Date(),
+      updated_at: getFinnishTime(),
     });
 
     const updatedUser = await userRepo.findOne({
@@ -288,7 +289,7 @@ export class UserQuery {
       { user_id, org_id },
       {
         ...updateData,
-        updated_at: new Date(),
+        updated_at: getFinnishTime(),
         updated_by: String(user_id).trim(),
       }
     );
@@ -314,7 +315,7 @@ export class UserQuery {
       { user_id: id, org_id },
       {
         is_active: status,
-        updated_at: new Date(),
+        updated_at: getFinnishTime(),
         updated_by: String(user_id).trim(),
       }
     );

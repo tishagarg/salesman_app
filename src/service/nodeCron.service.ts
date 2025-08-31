@@ -4,6 +4,7 @@ import { getDataSource } from "../config/data-source";
 import { User } from "../models/User.entity";
 import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
 import { VisitService } from "./visit.service";
+import { getFinnishTime } from "../utils/timezone";
 const visitService = new VisitService();
 export async function runDailyVisitPlanning() {
   const dataSource = await getDataSource();
@@ -33,7 +34,7 @@ export async function runDailyVisitPlanning() {
       );
       const result = await visitService.planDailyVisits(
         repId,
-        new Date(),
+        getFinnishTime(),
         idempotencyKey
       );
     }
