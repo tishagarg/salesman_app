@@ -22,6 +22,7 @@ import { OrganizationQuery } from "../query/organization.query";
 import { OtpMedium } from "../enum/otpMedium";
 import { OtpType } from "../enum/otpType";
 import { User } from "../models/User.entity";
+import { getFinnishTime } from "../utils/timezone";
 import { RoleQuery } from "../query/role.query";
 import { sendEmail } from "./email.service";
 import { Roles } from "../enum/roles";
@@ -146,7 +147,7 @@ export class AuthService {
           token: newRefreshToken,
           user_id: user.user_id,
           expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-          created_at: new Date(),
+          created_at: getFinnishTime(),
         });
       await queryRunner.manager.getRepository(RefreshToken).save(refreshToken);
 
@@ -207,7 +208,7 @@ export class AuthService {
         .getRepository(RefreshToken)
         .findOneByOrFail({ token: refreshToken });
 
-      if (tokenRecord.expires_at < new Date()) {
+      if (tokenRecord.expires_at < getFinnishTime()) {
         await queryRunner.rollbackTransaction();
         return {
           data: null,
@@ -306,7 +307,7 @@ export class AuthService {
       token,
       user_id: userId,
       expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      created_at: new Date(),
+      created_at: getFinnishTime(),
     });
     return await manager.getRepository(RefreshToken).save(refreshToken);
   }

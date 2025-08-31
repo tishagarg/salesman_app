@@ -13,6 +13,7 @@ import httpStatusCodes from "http-status-codes";
 import { AddressService } from "./address.service";
 import { TerritoryService } from "./territory.service";
 import { Roles } from "../enum/roles";
+import { getFinnishTime } from "../utils/timezone";
 import { validate } from "class-validator";
 import { Region } from "../models/Region.entity";
 import { Subregion } from "../models/Subregion.entity";
@@ -189,7 +190,7 @@ export class CustomerService {
       let addressId = customer.address_id;
       const updateData: Partial<Leads> = {
         updated_by: userId.toString(),
-        updated_at: new Date(),
+        updated_at: getFinnishTime(),
       };
 
       if (role === Roles.SALES_REP) {
@@ -262,7 +263,7 @@ export class CustomerService {
             state: data.state || data.region || address.state,
             comments: data.comments || address.comments,
             updated_by: userId.toString(),
-            updated_at: new Date(),
+            updated_at: getFinnishTime(),
           };
 
           const addressUpdateResult = await queryRunner.manager.update(
@@ -388,7 +389,7 @@ export class CustomerService {
         {
           is_active: false,
           updated_by: adminId.toString(),
-          updated_at: new Date(),
+          updated_at: getFinnishTime(),
         }
       );
 
@@ -398,7 +399,7 @@ export class CustomerService {
         {
           is_active: false,
           updated_by: adminId.toString(),
-          updated_at: new Date(),
+          updated_at: getFinnishTime(),
         }
       );
 
@@ -446,7 +447,7 @@ export class CustomerService {
         {
           is_active: false,
           updated_by: adminId.toString(),
-          updated_at: new Date(),
+          updated_at: getFinnishTime(),
         }
       );
 
@@ -460,7 +461,7 @@ export class CustomerService {
           {
             is_active: false,
             updated_by: adminId.toString(),
-            updated_at: new Date(),
+            updated_at: getFinnishTime(),
           }
         );
       }
@@ -700,7 +701,7 @@ export class CustomerService {
             assigned_rep_id: repId,
             pending_assignment: false,
             updated_by: adminId.toString(),
-            updated_at: new Date(),
+            updated_at: getFinnishTime(),
           }
         );
 
@@ -1150,7 +1151,7 @@ export class CustomerService {
           assigned_rep_id: repId,
           pending_assignment: false,
           updated_by: managerId.toString(),
-          updated_at: new Date(),
+          updated_at: getFinnishTime(),
         }
       );
 

@@ -13,6 +13,7 @@ import { OtpType } from "../enum/otpType";
 import { User } from "../models/User.entity";
 import { OtpVerification } from "../models/OTPVerification.entity";
 import { EntityManager } from "typeorm";
+import { getFinnishTime } from "../utils/timezone";
 import { sendEmail } from "./email.service";
 
 const otpQuery = new OtpQuery();
@@ -40,8 +41,8 @@ export class OtpService {
         otp_type: params.otp_type,
         medium: params.medium,
         expires_at: expiresAt,
-        created_at: new Date(),
-        updated_at: new Date(),
+        created_at: getFinnishTime(),
+        updated_at: getFinnishTime(),
       };
       const existingOtp = await otpQuery.findByUserIdAndType(
         userId,
@@ -54,13 +55,13 @@ export class OtpService {
         existingOtp.medium === params.medium &&
         existingOtp.otp_type === params.otp_type &&
         !existingOtp.is_used &&
-        existingOtp.expires_at > new Date()
+        existingOtp.expires_at > getFinnishTime()
       ) {
         otpData.otp_id = existingOtp.otp_id;
         otpData.is_used = existingOtp.is_used;
         otpData.expires_at = existingOtp.expires_at;
         otpData.created_at = existingOtp.created_at;
-        otpData.updated_at = new Date();
+        otpData.updated_at = getFinnishTime();
       }
 
       const savedOtp = await otpQuery.saveOtp(otpData, queryRunner.manager);
@@ -129,8 +130,8 @@ export class OtpService {
       const newOtp = await this.generateOtp();
       otpData.otp = newOtp;
       otpData.expires_at = new Date(Date.now() + 5 * 60 * 1000);
-      otpData.created_at = new Date();
-      otpData.updated_at = new Date();
+      otpData.created_at = getFinnishTime();
+      otpData.updated_at = getFinnishTime();
       await otpQuery.saveOtp(otpData, queryRunner.manager); // Pass manager
 
       await this.SendEmailNotification(params.email, newOtp);
@@ -171,7 +172,7 @@ export class OtpService {
       const isOtpValid =
         otpData.otp === otp &&
         otpData.is_used === false &&
-        otpData.expires_at > new Date();
+        otpData.expires_at > getFinnishTime();
       if (isOtpValid) {
         await queryRunner.manager.update(User, userId, {
           is_email_verified: 1,
@@ -205,8 +206,8 @@ export class OtpService {
         otp_type: params.otp_type,
         medium: params.medium,
         expires_at: expiresAt,
-        created_at: new Date(),
-        updated_at: new Date(),
+        created_at: getFinnishTime(),
+        updated_at: getFinnishTime(),
       };
       const existingOtp = await otpQuery.findByUserIdAndType(
         params.user_id,
@@ -219,13 +220,13 @@ export class OtpService {
         existingOtp.medium === params.medium &&
         existingOtp.otp_type === params.otp_type &&
         !existingOtp.is_used &&
-        existingOtp.expires_at > new Date()
+        existingOtp.expires_at > getFinnishTime()
       ) {
         otpData.otp_id = existingOtp.otp_id;
         otpData.is_used = existingOtp.is_used;
         otpData.expires_at = existingOtp.expires_at;
         otpData.created_at = existingOtp.created_at;
-        otpData.updated_at = new Date();
+        otpData.updated_at = getFinnishTime();
       }
 
       const savedOtp = await otpQuery.saveOtp(otpData, manager);

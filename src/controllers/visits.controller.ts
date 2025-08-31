@@ -11,6 +11,7 @@ import { Roles } from "../enum/roles";
 import { Role } from "../models/Role.entity";
 import { User } from "../models/User.entity";
 import { LeadStatus } from "../enum/leadStatus";
+import { getFinnishTime } from "../utils/timezone";
 
 const visitService = new VisitService();
 
@@ -169,7 +170,7 @@ export class VisitController {
     );
   }
   getToday = async (): Promise<Date> => {
-    const today = new Date();
+    const today = getFinnishTime();
     today.setHours(0, 0, 0, 0);
     return today;
   };
@@ -273,7 +274,7 @@ export class VisitController {
     try {
       const dataSource = await getDataSource();
       let reps: User[] = [];
-      const today = new Date();
+      const today = getFinnishTime();
       today.setHours(0, 0, 0, 0);
       const role = await dataSource
         .getRepository(Role)
@@ -349,7 +350,7 @@ export class VisitController {
           .where("visit.status IN (:...statuses)", { statuses })
           .andWhere(
             "(f.scheduled_date < :now OR visit.check_out_time IS NOT NULL)",
-            { now: new Date() }
+            { now: getFinnishTime() }
           )
           .andWhere("visit.rep_id = :repId", { repId: user_id });
         if (status) {

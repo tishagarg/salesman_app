@@ -9,6 +9,7 @@ import territoryRoute from "./territory.route";
 import adminRoute from "./adminManager.routes";
 import contractRouter from "./contract.route";
 import dataRouter from "./data.route";
+// import healthRouter from "./health.route";
 
 import express from "express";
 const router = express.Router();
@@ -23,5 +24,6 @@ router.use("/territory", territoryRoute);
 router.use("/admin", adminRoute);
 router.use("/contract",contractRouter)
 router.use("/regions", dataRouter)
+// router.use("/health", healthRouter)
 
 export default router;

@@ -31,6 +31,7 @@ import { FollowUpVisit } from "../models/FollowUpVisit.entity";
 import { ContractImage } from "../models/ContractImage.entity";
 import { LeadStatus } from "../enum/leadStatus";
 import { ContractPDF } from "../models/ContractPdf.entity";
+import { getFinnishTime } from "../utils/timezone";
 
 require("dotenv").config();
 
@@ -102,7 +103,7 @@ export class VisitService {
     };
   }
 
-  private getStartOfDay(date: Date = new Date()): Date {
+  private getStartOfDay(date: Date = getFinnishTime()): Date {
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     return startOfDay;
@@ -131,7 +132,7 @@ export class VisitService {
         rep_id: payload.rep_id,
         latitude: 0,
         longitude: 0,
-        check_in_time: new Date(),
+        check_in_time: getFinnishTime(),
         photos: [],
         parsedFollowUps: [],
         notes: "",
@@ -224,7 +225,7 @@ export class VisitService {
         visit_id: savedVisit.visit_id,
         rendered_html: renderedHtml,
         metadata: updatedMetaData,
-        signed_at: new Date(),
+        signed_at: getFinnishTime(),
       });
 
       const savedContract = await contractRepo.save(contract);
@@ -240,7 +241,7 @@ export class VisitService {
       const contractPDF = dataSource.getRepository(ContractPDF).create({
         contract_id: savedContract.id,
         pdf_data: pdfBuffer,
-        created_at: new Date(),
+        created_at: getFinnishTime(),
       } as DeepPartial<ContractPDF>);
       await dataSource.getRepository(ContractPDF).save(contractPDF);
       savedVisit.contract = savedContract;
@@ -254,7 +255,7 @@ export class VisitService {
       
       if (lead) {
         lead.status = LeadStatus.Signed;
-        lead.updated_at = new Date();
+        lead.updated_at = getFinnishTime();
         lead.updated_by = "system";
         await leadRepo.save(lead);
       }
@@ -409,7 +410,7 @@ export class VisitService {
 
   async planDailyVisits(
     repId: number,
-    date: Date = new Date(),
+    date: Date = getFinnishTime(),
     idempotencyKey: string = uuidv4()
   ): Promise<{ status: number; data?: any; message: string }> {
     return await this.withTransaction(async (queryRunner) => {
@@ -475,7 +476,7 @@ export class VisitService {
                 ...visit.lead,
                 updatedVisit: {
                   ...visit,
-                  check_in_time: new Date(), // will be overwritten later
+                  check_in_time: getFinnishTime(), // will be overwritten later
                 },
               };
             }
@@ -628,7 +629,7 @@ export class VisitService {
         if (existingRoute) {
           existingRoute.route_order = routeOrder;
           existingRoute.updated_by = "system";
-          existingRoute.updated_at = new Date();
+          existingRoute.updated_at = getFinnishTime();
           routeEntity = await queryRunner.manager.save(existingRoute);
         } else {
           routeEntity = await queryRunner.manager.save(Route, {
@@ -676,7 +677,7 @@ export class VisitService {
 
         const latitude = parseFloat(String(repLatitude));
         const longitude = parseFloat(String(repLongitude));
-        const startOfDay = this.getStartOfDay(new Date());
+        const startOfDay = this.getStartOfDay(getFinnishTime());
         const endOfDay = new Date(startOfDay);
         endOfDay.setHours(23, 59, 59, 999);
         const existingIdempotency = await queryRunner.manager.findOne(
@@ -735,7 +736,7 @@ export class VisitService {
                 ...visit.lead,
                 updatedVisit: {
                   ...visit,
-                  check_in_time: new Date(),
+                  check_in_time: getFinnishTime(),
                 },
               };
             }
@@ -780,7 +781,7 @@ export class VisitService {
         }
         leadsToPlan.forEach((lead) => {
           lead.status = LeadStatus.Start_Signing;
-          lead.updated_at = new Date();
+          lead.updated_at = getFinnishTime();
           lead.updated_by = "system";
         });
 
@@ -798,7 +799,7 @@ export class VisitService {
           waypoints
         );
 
-        let currentTime = new Date(new Date());
+        let currentTime = new Date(getFinnishTime());
         currentTime.setHours(9, 0, 0, 0);
 
         const previousVisitMap = new Map(
@@ -854,7 +855,7 @@ export class VisitService {
         if (existingRoute) {
           existingRoute.route_order = routeOrder;
           existingRoute.updated_by = "system";
-          existingRoute.updated_at = new Date();
+          existingRoute.updated_at = getFinnishTime();
           routeEntity = await queryRunner.manager.save(existingRoute);
         } else {
           routeEntity = await queryRunner.manager.save(Route, {
@@ -945,8 +946,8 @@ export class VisitService {
         const visitData: VisitData = {
           lead_id: data.lead_id,
           rep_id: data.rep_id,
-          check_in_time: new Date(), // Always create new
-          check_out_time: new Date(),
+          check_in_time: getFinnishTime(), // Always create new
+          check_out_time: getFinnishTime(),
           latitude: data.latitude,
           longitude: data.longitude,
           contract_id: data.contract_id, // Contract always gets attached here
@@ -1020,7 +1021,7 @@ export class VisitService {
     return type === "latitude" ? absValue <= 90 : absValue <= 180;
   }
   private getToday(): Date {
-    const today = new Date();
+    const today = getFinnishTime();
     today.setHours(0, 0, 0, 0);
     return today;
   }
@@ -1103,7 +1104,7 @@ export class VisitService {
         { route_id: existingRoute.route_id },
         {
           route_order: routeOrder,
-          updated_at: new Date(),
+          updated_at: getFinnishTime(),
           created_by: createdBy,
           is_active: true,
         }
@@ -1114,7 +1115,7 @@ export class VisitService {
         route_date: today,
         route_order: routeOrder,
         created_by: createdBy,
-        created_at: new Date(),
+        created_at: getFinnishTime(),
         is_active: true,
       });
     }
@@ -1133,7 +1134,7 @@ export class VisitService {
       { rep_id: Equal(repId), route_date: Equal(date) },
       {
         route_order: routeOrder,
-        updated_at: new Date(),
+        updated_at: getFinnishTime(),
         is_active: true,
       }
     );
@@ -1172,7 +1173,7 @@ export class VisitService {
         origin,
         waypoints
       );
-      let currentTime = new Date();
+      let currentTime = getFinnishTime();
       const routeOrder: RouteOrderItem[] = [];
       for (let i = 0; i < waypointOrder.length; i++) {
         const index = waypointOrder[i];
