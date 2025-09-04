@@ -3,6 +3,18 @@ export function renderContract(
   values: Record<string, string>
 ): string {
   return template.replace(/{(\w+)}/g, (match, key) => {
+    // Handle signature-related tags specially to ensure HTML is preserved
+    if (key.toLowerCase().includes('signature') || key.toLowerCase().includes('image')) {
+      const value = values[key];
+      // If the value contains HTML img tag, preserve it as-is
+      if (value && value.includes('<img')) {
+        return value;
+      }
+      // If the value is a URL, convert to img tag
+      if (value && (value.startsWith('http') || value.startsWith('data:image'))) {
+        return `<img src="${value}" class="signature-image" alt="Signature" style="max-width: 200px; height: auto; border: 1px solid #ddd; padding: 5px; display: block; margin: 10px 0;" />`;
+      }
+    }
     return values[key] ?? "";
   });
 }
@@ -27,8 +39,20 @@ export function renderContractWithDropdowns(
     return dropdownValues[fieldName] ?? '';
   });
   
-  // Then replace regular tags
+  // Then replace regular tags with special handling for signature images
   return processedTemplate.replace(/{(\w+)}/g, (match, key) => {
+    // Handle signature-related tags specially to ensure HTML is preserved
+    if (key.toLowerCase().includes('signature') || key.toLowerCase().includes('image')) {
+      const value = values[key];
+      // If the value contains HTML img tag, preserve it as-is
+      if (value && value.includes('<img')) {
+        return value;
+      }
+      // If the value is a URL, convert to img tag
+      if (value && (value.startsWith('http') || value.startsWith('data:image'))) {
+        return `<img src="${value}" class="signature-image" alt="Signature" style="max-width: 200px; height: auto; border: 1px solid #ddd; padding: 5px; display: block; margin: 10px 0;" />`;
+      }
+    }
     return values[key] ?? "";
   });
 }

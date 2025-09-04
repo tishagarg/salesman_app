@@ -34,4 +34,7 @@ router.patch('/templates/:templateId', verifyToken, authController.updateContrac
 // Get contract template by ID (including dropdown fields)
 router.get('/templates/:templateId', verifyToken, authController.getTemplateById);
 
+// Delete contract
+router.delete('/:contractId', verifyToken, authController.deleteContract);
+
 export default router;
