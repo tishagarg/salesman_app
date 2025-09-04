@@ -7,7 +7,7 @@ import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
 import { Idempotency } from "../models/Idempotency";
 import httpStatusCodes from "http-status-codes";
 import { convert } from "html-to-text";
-import puppeteer from "puppeteer-core";
+import puppeteer from "puppeteer";
 import chrome from "chrome-aws-lambda";
 import {
   Between,
@@ -23,7 +23,7 @@ import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
 import { Contract } from "../models/Contracts.entity";
 import { ContractTemplate } from "../models/ContractTemplate.entity";
-import { renderContract } from "../utils/renderContracts";
+import { renderContract, renderContractWithDropdowns, validateDropdownValues } from "../utils/renderContracts";
 import { Address } from "../models/Address.entity";
 import { User } from "../models/User.entity";
 import { FollowUp } from "../models/FollowUp.entity";
@@ -31,6 +31,7 @@ import { FollowUpVisit } from "../models/FollowUpVisit.entity";
 import { ContractImage } from "../models/ContractImage.entity";
 import { LeadStatus } from "../enum/leadStatus";
 import { ContractPDF } from "../models/ContractPdf.entity";
+import { getFinnishTime } from "../utils/timezone";
 
 require("dotenv").config();
 
@@ -38,10 +39,12 @@ interface RouteOrderItem {
   lead_id: number;
   latitude?: number;
   longitude?: number;
-  distance: number;
+  distance: number; // Total cumulative distance from origin
   eta: string;
   visit_id: number;
   lead_status: LeadStatus;
+  segmentDistance?: number; // Distance from previous stop
+  cumulativeTime?: number; // Total travel time in minutes
 }
 
 interface VisitData {
@@ -102,7 +105,7 @@ export class VisitService {
     };
   }
 
-  private getStartOfDay(date: Date = new Date()): Date {
+  private getStartOfDay(date: Date = getFinnishTime()): Date {
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     return startOfDay;
@@ -116,6 +119,7 @@ export class VisitService {
     signatureFile: any;
     contract_template_id: number;
     parsedMetaData: Record<string, string>;
+    dropdownValues?: Record<string, string>;
     rep_id: number;
   }): Promise<{ data: any; status: number; message: string }> {
     const dataSource = await getDataSource();
@@ -131,7 +135,7 @@ export class VisitService {
         rep_id: payload.rep_id,
         latitude: 0,
         longitude: 0,
-        check_in_time: new Date(),
+        check_in_time: getFinnishTime(),
         photos: [],
         parsedFollowUps: [],
         notes: "",
@@ -150,18 +154,50 @@ export class VisitService {
         };
       }
 
-      // Prepare metadata with signature image URL
+      // Validate dropdown values if template has dropdown fields
+      if (template.dropdown_fields && Object.keys(template.dropdown_fields).length > 0) {
+        const dropdownValues = payload.dropdownValues || {};
+        const validation = validateDropdownValues(template.dropdown_fields, dropdownValues);
+        
+        if (!validation.isValid) {
+          await queryRunner.rollbackTransaction();
+          return {
+            data: null,
+            message: `Validation failed: ${validation.errors.join(', ')}`,
+            status: 400,
+          };
+        }
+      }
+
+      // Prepare metadata with signature image as base64 or proper HTML img tag
+      let signatureImageHtml = "";
+      if (payload.signatureFile?.location) {
+        try {
+          // Try to convert URL to base64 for better PDF embedding
+          const base64Image = await this.convertImageUrlToBase64(payload.signatureFile.location);
+          if (base64Image) {
+            signatureImageHtml = `<img src="${base64Image}" class="signature-image" alt="Customer Signature" style="max-width: 200px; height: auto; border: 1px solid #ddd; padding: 5px;" />`;
+          } else {
+            // Fallback to direct URL if base64 conversion fails
+            signatureImageHtml = `<img src="${payload.signatureFile.location}" class="signature-image" alt="Customer Signature" style="max-width: 200px; height: auto; border: 1px solid #ddd; padding: 5px;" />`;
+          }
+        } catch (error) {
+          console.error("Error processing signature image:", error);
+          signatureImageHtml = `<p><strong>Signature:</strong> ${payload.signatureFile.location}</p>`;
+        }
+      }
+
       const updatedMetaData = {
         ...payload.parsedMetaData,
         signature_image_url: payload.signatureFile?.location || "",
+        signature_image: signatureImageHtml,
       };
 
-      // Render the contract HTML with the signature image embedded
-      const renderedHtml = renderContract(template.content, updatedMetaData);
-      const pdfBuffer = await this.generatePdfFromHtml(
-        renderedHtml,
-        payload.signatureFile?.location
-      );
+      // Render the contract HTML with dropdown values and metadata
+      const renderedHtml = template.dropdown_fields && Object.keys(template.dropdown_fields).length > 0
+        ? renderContractWithDropdowns(template.content, updatedMetaData, payload.dropdownValues || {})
+        : renderContract(template.content, updatedMetaData);
+      const pdfBuffer = await this.generatePdfFromHtml(renderedHtml);
       // Debug: Verify pdfBuffer type
       console.log(
         "pdfBuffer type:",
@@ -224,7 +260,7 @@ export class VisitService {
         visit_id: savedVisit.visit_id,
         rendered_html: renderedHtml,
         metadata: updatedMetaData,
-        signed_at: new Date(),
+        signed_at: getFinnishTime(),
       });
 
       const savedContract = await contractRepo.save(contract);
@@ -240,7 +276,7 @@ export class VisitService {
       const contractPDF = dataSource.getRepository(ContractPDF).create({
         contract_id: savedContract.id,
         pdf_data: pdfBuffer,
-        created_at: new Date(),
+        created_at: getFinnishTime(),
       } as DeepPartial<ContractPDF>);
       await dataSource.getRepository(ContractPDF).save(contractPDF);
       savedVisit.contract = savedContract;
@@ -254,7 +290,7 @@ export class VisitService {
       
       if (lead) {
         lead.status = LeadStatus.Signed;
-        lead.updated_at = new Date();
+        lead.updated_at = getFinnishTime();
         lead.updated_by = "system";
         await leadRepo.save(lead);
       }
@@ -283,7 +319,113 @@ export class VisitService {
     }
   }
 
-  async generatePdfFromHtml(html: any, signatureUrl: any) {
+  async generatePdfFromHtml(html: string, signatureUrl?: string): Promise<Buffer> {
+    let browser = null;
+    
+    try {
+      // Configure browser for different environments
+      const isDev = process.env.NODE_ENV !== 'production';
+      
+      if (isDev) {
+        // Development environment - use local Chrome
+        browser = await puppeteer.launch({
+          headless: true,
+          args: ['--no-sandbox', '--disable-setuid-sandbox'],
+        });
+      } else {
+        // Production environment - use chrome-aws-lambda
+        browser = await puppeteer.launch({
+          args: chrome.args,
+          defaultViewport: chrome.defaultViewport,
+          executablePath: await chrome.executablePath,
+          headless: chrome.headless,
+        });
+      }
+
+      const page = await browser.newPage();
+      
+      // Set up HTML content with proper styling for PDF generation
+      const styledHtml = `
+        <!DOCTYPE html>
+        <html>
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <style>
+            body {
+              font-family: Arial, sans-serif;
+              font-size: 14px;
+              line-height: 1.6;
+              color: #333;
+              margin: 0;
+              padding: 20px;
+            }
+            img {
+              max-width: 100%;
+              height: auto;
+              display: block;
+              margin: 10px 0;
+            }
+            .signature-image {
+              max-width: 200px;
+              border: 1px solid #ddd;
+              padding: 5px;
+            }
+            h1, h2, h3 {
+              color: #2c3e50;
+              margin-top: 20px;
+              margin-bottom: 10px;
+            }
+            p {
+              margin-bottom: 10px;
+            }
+            @media print {
+              body { margin: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          ${html}
+        </body>
+        </html>
+      `;
+
+      await page.setContent(styledHtml, { 
+        waitUntil: 'networkidle0',
+        timeout: 30000
+      });
+
+      // Generate PDF with proper options
+      const pdfBuffer = await page.pdf({
+        format: 'a4',
+        margin: {
+          top: '20mm',
+          right: '15mm',
+          bottom: '20mm',
+          left: '15mm',
+        },
+        printBackground: true,
+        displayHeaderFooter: false,
+      });
+
+      return pdfBuffer as Buffer;
+
+    } catch (error) {
+      console.error('Error generating PDF from HTML:', error);
+      
+      // Fallback to the old method if Puppeteer fails
+      console.log('Falling back to PDFKit method...');
+      return this.generatePdfFromHtmlFallback(html, signatureUrl);
+      
+    } finally {
+      if (browser) {
+        await browser.close();
+      }
+    }
+  }
+
+  // Fallback method using PDFKit (keeping the original as backup)
+  private async generatePdfFromHtmlFallback(html: any, signatureUrl: any): Promise<Buffer> {
     const plainText = convert(html, {
       wordwrap: 80,
       selectors: [
@@ -333,6 +475,28 @@ export class VisitService {
         doc.end();
       }
     });
+  }
+
+  // Helper method to convert image URL to base64 for better PDF embedding
+  private async convertImageUrlToBase64(imageUrl: string): Promise<string | null> {
+    try {
+      const fetch = (await import("node-fetch")).default;
+      const response = await fetch(imageUrl);
+      
+      if (!response.ok) {
+        console.error(`Failed to fetch image: ${response.statusText}`);
+        return null;
+      }
+
+      const buffer = await response.buffer();
+      const contentType = response.headers.get('content-type') || 'image/png';
+      const base64 = buffer.toString('base64');
+      
+      return `data:${contentType};base64,${base64}`;
+    } catch (error) {
+      console.error('Error converting image to base64:', error);
+      return null;
+    }
   }
 
   private async getOptimizedRoute(
@@ -409,7 +573,7 @@ export class VisitService {
 
   async planDailyVisits(
     repId: number,
-    date: Date = new Date(),
+    date: Date = getFinnishTime(),
     idempotencyKey: string = uuidv4()
   ): Promise<{ status: number; data?: any; message: string }> {
     return await this.withTransaction(async (queryRunner) => {
@@ -475,7 +639,7 @@ export class VisitService {
                 ...visit.lead,
                 updatedVisit: {
                   ...visit,
-                  check_in_time: new Date(), // will be overwritten later
+                  check_in_time: getFinnishTime(), // will be overwritten later
                 },
               };
             }
@@ -628,7 +792,7 @@ export class VisitService {
         if (existingRoute) {
           existingRoute.route_order = routeOrder;
           existingRoute.updated_by = "system";
-          existingRoute.updated_at = new Date();
+          existingRoute.updated_at = getFinnishTime();
           routeEntity = await queryRunner.manager.save(existingRoute);
         } else {
           routeEntity = await queryRunner.manager.save(Route, {
@@ -676,7 +840,7 @@ export class VisitService {
 
         const latitude = parseFloat(String(repLatitude));
         const longitude = parseFloat(String(repLongitude));
-        const startOfDay = this.getStartOfDay(new Date());
+        const startOfDay = this.getStartOfDay(getFinnishTime());
         const endOfDay = new Date(startOfDay);
         endOfDay.setHours(23, 59, 59, 999);
         const existingIdempotency = await queryRunner.manager.findOne(
@@ -735,7 +899,7 @@ export class VisitService {
                 ...visit.lead,
                 updatedVisit: {
                   ...visit,
-                  check_in_time: new Date(),
+                  check_in_time: getFinnishTime(),
                 },
               };
             }
@@ -780,7 +944,7 @@ export class VisitService {
         }
         leadsToPlan.forEach((lead) => {
           lead.status = LeadStatus.Start_Signing;
-          lead.updated_at = new Date();
+          lead.updated_at = getFinnishTime();
           lead.updated_by = "system";
         });
 
@@ -798,7 +962,7 @@ export class VisitService {
           waypoints
         );
 
-        let currentTime = new Date(new Date());
+        let currentTime = new Date(getFinnishTime());
         currentTime.setHours(9, 0, 0, 0);
 
         const previousVisitMap = new Map(
@@ -854,7 +1018,7 @@ export class VisitService {
         if (existingRoute) {
           existingRoute.route_order = routeOrder;
           existingRoute.updated_by = "system";
-          existingRoute.updated_at = new Date();
+          existingRoute.updated_at = getFinnishTime();
           routeEntity = await queryRunner.manager.save(existingRoute);
         } else {
           routeEntity = await queryRunner.manager.save(Route, {
@@ -945,8 +1109,8 @@ export class VisitService {
         const visitData: VisitData = {
           lead_id: data.lead_id,
           rep_id: data.rep_id,
-          check_in_time: new Date(), // Always create new
-          check_out_time: new Date(),
+          check_in_time: getFinnishTime(), // Always create new
+          check_out_time: getFinnishTime(),
           latitude: data.latitude,
           longitude: data.longitude,
           contract_id: data.contract_id, // Contract always gets attached here
@@ -1020,7 +1184,7 @@ export class VisitService {
     return type === "latitude" ? absValue <= 90 : absValue <= 180;
   }
   private getToday(): Date {
-    const today = new Date();
+    const today = getFinnishTime();
     today.setHours(0, 0, 0, 0);
     return today;
   }
@@ -1103,7 +1267,7 @@ export class VisitService {
         { route_id: existingRoute.route_id },
         {
           route_order: routeOrder,
-          updated_at: new Date(),
+          updated_at: getFinnishTime(),
           created_by: createdBy,
           is_active: true,
         }
@@ -1114,7 +1278,7 @@ export class VisitService {
         route_date: today,
         route_order: routeOrder,
         created_by: createdBy,
-        created_at: new Date(),
+        created_at: getFinnishTime(),
         is_active: true,
       });
     }
@@ -1133,7 +1297,7 @@ export class VisitService {
       { rep_id: Equal(repId), route_date: Equal(date) },
       {
         route_order: routeOrder,
-        updated_at: new Date(),
+        updated_at: getFinnishTime(),
         is_active: true,
       }
     );
@@ -1172,33 +1336,48 @@ export class VisitService {
         origin,
         waypoints
       );
-      let currentTime = new Date();
+      let currentTime = getFinnishTime();
+      let cumulativeDistance = 0; // Track total distance from origin
+      let cumulativeDuration = 0; // Track total time from origin
       const routeOrder: RouteOrderItem[] = [];
+      
       for (let i = 0; i < waypointOrder.length; i++) {
         const index = waypointOrder[i];
         const visit = validVisits[index];
         const leg = route.legs[i];
+        
+        let segmentDistance = 0;
+        let segmentDuration = 0;
+        
+        if (leg?.distance?.value && leg?.duration?.value) {
+          segmentDistance = leg.distance.value / 1000; // Convert to km
+          segmentDuration = leg.duration.value / 60; // Convert to minutes
+          
+          // Add to cumulative totals
+          cumulativeDistance += segmentDistance;
+          cumulativeDuration += segmentDuration;
+          
+          // Calculate ETA based on cumulative time from current location
+          currentTime = new Date(getFinnishTime().getTime() + cumulativeDuration * 60000);
+        } else {
+          console.warn(`Invalid route leg at index ${i}, using defaults`);
+        }
+
         const routeItem = {
           lead_id: visit.lead_id,
           latitude: visit.lead.address.latitude,
           longitude: visit.lead.address.longitude,
           visit_id: visit.visit_id,
           lead_status: visit.lead.status,
-          distance: 0,
-          eta: "0",
-        };
-        if (leg?.distance?.value && leg?.duration?.value) {
-          const distance = leg.distance.value / 1000;
-          const duration = leg.duration.value / 60;
-          currentTime = new Date(currentTime.getTime() + duration * 60000);
-          routeItem.distance = Number(distance.toFixed(2));
-          routeItem.eta = currentTime.toLocaleTimeString([], {
+          distance: Number(cumulativeDistance.toFixed(2)), // Total distance from origin
+          eta: currentTime.toLocaleTimeString([], {
             hour: "2-digit",
             minute: "2-digit",
-          });
-        } else {
-          console.warn(`Invalid route leg at index ${i}, using default values`);
-        }
+          }),
+          segmentDistance: Number(segmentDistance.toFixed(2)), // Distance from previous stop
+          cumulativeTime: Math.round(cumulativeDuration), // Total travel time in minutes
+        };
+
         // Check if lead_id already exists in routeOrder
         const existingIndex = routeOrder.findIndex(
           (item) => item.lead_id === visit.lead_id
@@ -1241,6 +1420,93 @@ export class VisitService {
       return this.handleError(error, "Failed to refresh daily route");
     }
   }
+  async updateRouteWithCurrentLocation(
+    repId: number,
+    currentLat: number,
+    currentLng: number
+  ): Promise<{ status: number; data?: any; message: string }> {
+    try {
+      const dataSource = await getDataSource();
+      const route = await dataSource.manager.findOne(Route, {
+        where: { rep_id: repId },
+      });
+
+      if (!route || !route.route_order || !Array.isArray(route.route_order)) {
+        return {
+          status: httpStatusCodes.NOT_FOUND,
+          message: "No route found for today",
+        };
+      }
+
+      const currentOrigin = `${currentLat},${currentLng}`;
+      const remainingStops = (route.route_order as RouteOrderItem[]).filter(
+        (item) => item.latitude && item.longitude
+      );
+
+      if (remainingStops.length === 0) {
+        return {
+          status: httpStatusCodes.OK,
+          data: [],
+          message: "No remaining stops in route",
+        };
+      }
+
+      // Get updated route with current location
+      const waypoints = remainingStops.map(
+        (item) => `${item.latitude},${item.longitude}`
+      );
+
+      const { route: updatedRoute } = await this.getOptimizedRoute(
+        currentOrigin,
+        waypoints
+      );
+
+      // Update the route order with new calculations
+      let cumulativeDistance = 0;
+      let cumulativeDuration = 0;
+      const currentTime = getFinnishTime();
+
+      const updatedRouteOrder = remainingStops.map((item, index) => {
+        const leg = updatedRoute.legs[index];
+        
+        if (leg?.distance?.value && leg?.duration?.value) {
+          const segmentDistance = leg.distance.value / 1000;
+          const segmentDuration = leg.duration.value / 60;
+          
+          cumulativeDistance += segmentDistance;
+          cumulativeDuration += segmentDuration;
+
+          const eta = new Date(currentTime.getTime() + cumulativeDuration * 60000);
+          
+          return {
+            ...item,
+            distance: Number(cumulativeDistance.toFixed(2)),
+            segmentDistance: Number(segmentDistance.toFixed(2)),
+            cumulativeTime: Math.round(cumulativeDuration),
+            eta: eta.toLocaleTimeString([], {
+              hour: "2-digit",
+              minute: "2-digit",
+            }),
+          };
+        }
+
+        return item; // Return original if no leg data
+      });
+
+      // Update the stored route
+      route.route_order = updatedRouteOrder;
+      await dataSource.manager.save(route);
+
+      return {
+        status: httpStatusCodes.OK,
+        data: updatedRouteOrder,
+        message: "Route updated with current location",
+      };
+    } catch (error: any) {
+      return this.handleError(error, "Failed to update route with current location");
+    }
+  }
+
   async getDailyRoute(
     repId: number
   ): Promise<{ status: number; data?: any; message: string }> {
@@ -1304,7 +1570,9 @@ export class VisitService {
                   }`.trim()
                 : null,
               eta: item.eta,
-              distance: item.distance,
+              distance: item.distance, // Total distance from salesman's current location
+              segmentDistance: item.segmentDistance, // Distance from previous stop
+              cumulativeTime: item.cumulativeTime, // Total travel time in minutes
             };
           })
         )
@@ -1320,6 +1588,72 @@ export class VisitService {
       };
     } catch (error: any) {
       return this.handleError(error, "Failed to retrieve daily route");
+    }
+  }
+
+  async getPlannedVisits(
+    repId: number,
+    date?: string
+  ): Promise<{ status: number; data?: any; message: string }> {
+    const dataSource = await getDataSource();
+    try {
+      const targetDate = date ? new Date(date) : getFinnishTime();
+      targetDate.setHours(0, 0, 0, 0);
+      
+      const nextDay = new Date(targetDate);
+      nextDay.setDate(nextDay.getDate() + 1);
+
+      const plannedVisits = await dataSource.manager.find(Visit, {
+        where: {
+          rep_id: repId,
+          created_at: Between(targetDate, nextDay),
+          is_active: true
+        },
+        relations: ["lead", "lead.address"],
+        order: {
+          check_in_time: "ASC"
+        }
+      });
+
+      const visitsData = plannedVisits.map(visit => ({
+        visit_id: visit.visit_id,
+        lead_id: visit.lead_id,
+        name: visit.lead?.name || "Anonymous",
+        contact_name: visit.lead?.contact_name,
+        phone: visit.lead?.contact_phone,
+        email: visit.lead?.contact_email,
+        address: visit.lead?.address ? {
+          street_address: visit.lead.address.street_address,
+          city: visit.lead.address.city,
+          state: visit.lead.address.state,
+          postal_code: visit.lead.address.postal_code,
+          latitude: visit.lead.address.latitude,
+          longitude: visit.lead.address.longitude,
+          formatted_address: `${visit.lead.address.street_address || ""}, ${
+            visit.lead.address.city || ""
+          }, ${visit.lead.address.state || ""} ${
+            visit.lead.address.postal_code || ""
+          }`.trim()
+        } : null,
+        scheduled_time: visit.check_in_time,
+        status: visit.status || "Pending",
+        notes: visit.notes,
+        lead_status: visit.lead?.status,
+        is_completed: !!(visit.check_out_time),
+        contract: visit.contract,
+        photos: visit.photo_urls || []
+      }));
+
+      return {
+        status: httpStatusCodes.OK,
+        data: visitsData,
+        message: visitsData.length > 0 
+          ? "Planned visits retrieved successfully" 
+          : "No planned visits found for the specified date"
+      };
+
+    } catch (error: any) {
+      return this.handleError(error, "Failed to retrieve planned visits");
     }
   }
 }

@@ -1,0 +1,939 @@
+openapi: 3.0.3
+info:
+  title: Field Sales Management API
+  description: Comprehensive API for managing field sales operations including lead management, visit planning, route optimization, territory management, and contract handling.
+  version: 1.0.0
+  contact:
+    email: api-support@company.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: https://your-domain.com/api
+    description: Production server
+  - url: http://localhost:3000/api
+    description: Development server
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    User:
+      type: object
+      properties:
+        user_id:
+          type: integer
+          example: 123
+        email:
+          type: string
+          format: email
+          example: user@example.com
+        first_name:
+          type: string
+          example: John
+        last_name:
+          type: string
+          example: Doe
+        phone_no:
+          type: string
+          example: "+1234567890"
+        is_admin:
+          type: integer
+          example: 1
+        is_email_verified:
+          type: integer
+          example: 1
+
+    Lead:
+      type: object
+      properties:
+        lead_id:
+          type: integer
+          example: 456
+        name:
+          type: string
+          example: John Customer
+        company:
+          type: string
+          example: Customer Company
+        email:
+          type: string
+          format: email
+          example: customer@example.com
+        phone:
+          type: string
+          example: "+1234567890"
+        address:
+          type: string
+          example: 123 Main St, City, State 12345
+        latitude:
+          type: number
+          format: float
+          example: 60.1699
+        longitude:
+          type: number
+          format: float
+          example: 24.9384
+        status:
+          type: string
+          enum: [Prospect, Hot_Lead, Meeting, Proposal_Sent, Signed, Lost]
+          example: Prospect
+
+    Visit:
+      type: object
+      properties:
+        visit_id:
+          type: integer
+          example: 789
+        lead_id:
+          type: integer
+          example: 456
+        user_id:
+          type: integer
+          example: 123
+        scheduled_date:
+          type: string
+          format: date-time
+          example: "2024-01-15T09:00:00.000Z"
+        check_in_time:
+          type: string
+          format: date-time
+          example: "2024-01-15T09:05:00.000Z"
+        check_out_time:
+          type: string
+          format: date-time
+          example: "2024-01-15T10:30:00.000Z"
+        status:
+          type: string
+          enum: [Pending, Completed, Cancelled, No_Show]
+          example: Completed
+        notes:
+          type: string
+          example: Great meeting, customer interested
+
+    Contract:
+      type: object
+      properties:
+        contract_id:
+          type: integer
+          example: 101
+        template_id:
+          type: integer
+          example: 1
+        lead_id:
+          type: integer
+          example: 456
+        status:
+          type: string
+          enum: [Draft, Sent, Viewed, Signed, Cancelled]
+          example: Signed
+        contract_url:
+          type: string
+          format: uri
+          example: https://s3.amazonaws.com/contracts/contract_101.pdf
+
+    ContractTemplate:
+      type: object
+      properties:
+        template_id:
+          type: integer
+          example: 1
+        template_name:
+          type: string
+          example: Standard Service Agreement
+        template_content:
+          type: string
+          example: This agreement is between {company_name} and {customer_name}...
+        dropdown_fields:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              label:
+                type: string
+                example: Service Type
+              options:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    label:
+                      type: string
+                      example: Premium Service
+                    value:
+                      type: string
+                      example: premium
+              required:
+                type: boolean
+                example: true
+
+    Territory:
+      type: object
+      properties:
+        territory_id:
+          type: integer
+          example: 1
+        territory_name:
+          type: string
+          example: Downtown District
+        boundary_points:
+          type: array
+          items:
+            type: object
+            properties:
+              lat:
+                type: number
+                format: float
+              lng:
+                type: number
+                format: float
+
+    ApiResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        status:
+          type: integer
+          example: 200
+        message:
+          type: string
+          example: Operation successful
+        data:
+          type: object
+        meta:
+          type: object
+
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        status:
+          type: integer
+          example: 400
+        message:
+          type: string
+          example: Error message
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+              example: ERROR_CODE
+            details:
+              type: string
+              example: Detailed error description
+
+paths:
+  /auth/register:
+    post:
+      tags:
+        - Authentication
+      summary: Register new user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+                - first_name
+                - last_name
+                - org_name
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+                first_name:
+                  type: string
+                last_name:
+                  type: string
+                phone_no:
+                  type: string
+                org_name:
+                  type: string
+      responses:
+        '201':
+          description: User registered successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          token:
+                            type: string
+                          refreshToken:
+                            type: string
+                          user:
+                            $ref: '#/components/schemas/User'
+        '400':
+          description: Bad request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/login:
+    post:
+      tags:
+        - Authentication
+      summary: Login user
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - email
+                - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          token:
+                            type: string
+                          refreshToken:
+                            type: string
+                          user:
+                            $ref: '#/components/schemas/User'
+        '401':
+          description: Invalid credentials
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /auth/refresh:
+    post:
+      tags:
+        - Authentication
+      summary: Refresh access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - refreshToken
+              properties:
+                refreshToken:
+                  type: string
+      responses:
+        '200':
+          description: Token refreshed successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          token:
+                            type: string
+
+  /leads:
+    get:
+      tags:
+        - Leads
+      summary: Get all leads
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 10
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [Prospect, Hot_Lead, Meeting, Proposal_Sent, Signed, Lost]
+      responses:
+        '200':
+          description: Leads retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Lead'
+
+    post:
+      tags:
+        - Leads
+      summary: Create new lead
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - name
+                - email
+                - phone
+                - address
+              properties:
+                name:
+                  type: string
+                company:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                phone:
+                  type: string
+                address:
+                  type: string
+                latitude:
+                  type: number
+                  format: float
+                longitude:
+                  type: number
+                  format: float
+                status:
+                  type: string
+                  enum: [Prospect, Hot_Lead, Meeting, Proposal_Sent, Signed, Lost]
+      responses:
+        '201':
+          description: Lead created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Lead'
+
+  /leads/{id}:
+    get:
+      tags:
+        - Leads
+      summary: Get lead by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        '200':
+          description: Lead retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Lead'
+        '404':
+          description: Lead not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+    put:
+      tags:
+        - Leads
+      summary: Update lead
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                company:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                phone:
+                  type: string
+                address:
+                  type: string
+                status:
+                  type: string
+      responses:
+        '200':
+          description: Lead updated successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Lead'
+
+  /visit/planned:
+    get:
+      tags:
+        - Visits
+      summary: Get planned visits (efficient endpoint)
+      description: Retrieve planned visits for a specific date without expensive route optimization calculations
+      parameters:
+        - name: date
+          in: query
+          description: Date in YYYY-MM-DD format (defaults to today)
+          schema:
+            type: string
+            format: date
+            example: "2024-01-15"
+      responses:
+        '200':
+          description: Planned visits retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            visit_id:
+                              type: integer
+                              example: 789
+                            lead_id:
+                              type: integer
+                              example: 123
+                            name:
+                              type: string
+                              example: "John Customer"
+                            contact_name:
+                              type: string
+                              example: "John Customer"
+                            phone:
+                              type: string
+                              example: "+1234567890"
+                            email:
+                              type: string
+                              format: email
+                              example: "customer@example.com"
+                            address:
+                              type: object
+                              properties:
+                                street_address:
+                                  type: string
+                                city:
+                                  type: string
+                                state:
+                                  type: string
+                                postal_code:
+                                  type: string
+                                latitude:
+                                  type: number
+                                  format: float
+                                longitude:
+                                  type: number
+                                  format: float
+                                formatted_address:
+                                  type: string
+                            scheduled_time:
+                              type: string
+                              format: date-time
+                            status:
+                              type: string
+                            notes:
+                              type: string
+                              nullable: true
+                            lead_status:
+                              type: string
+                            is_completed:
+                              type: boolean
+                            contract:
+                              type: object
+                              nullable: true
+                              description: "Associated contract object if exists"
+                            photos:
+                              type: array
+                              items:
+                                type: string
+
+  /visit/plan:
+    post:
+      tags:
+        - Visits
+      summary: Plan visits for the day
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - latitude
+                - longitude
+                - lead_ids
+              properties:
+                latitude:
+                  type: number
+                  format: float
+                longitude:
+                  type: number
+                  format: float
+                lead_ids:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        '200':
+          description: Visits planned successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          planned_visits:
+                            type: integer
+                          route_optimized:
+                            type: boolean
+
+  /visit/log:
+    post:
+      tags:
+        - Visits
+      summary: Log a completed visit
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required:
+                - lead_id
+                - latitude
+                - longitude
+                - status
+              properties:
+                lead_id:
+                  type: integer
+                latitude:
+                  type: number
+                  format: float
+                longitude:
+                  type: number
+                  format: float
+                notes:
+                  type: string
+                status:
+                  type: string
+                  enum: [Completed, Cancelled, No_Show]
+                contract_id:
+                  type: integer
+                visit_id:
+                  type: integer
+                followUps:
+                  type: string
+                  description: JSON string of follow-up items
+                photos:
+                  type: array
+                  items:
+                    type: string
+                    format: binary
+      responses:
+        '200':
+          description: Visit logged successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Visit'
+
+  /contract/templates:
+    get:
+      tags:
+        - Contracts
+      summary: Get contract templates
+      responses:
+        '200':
+          description: Templates retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/ContractTemplate'
+
+    post:
+      tags:
+        - Contracts
+      summary: Create contract template
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - template_name
+                - template_content
+              properties:
+                template_name:
+                  type: string
+                template_content:
+                  type: string
+                dropdown_fields:
+                  type: object
+                assigned_manager_ids:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        '201':
+          description: Template created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/ContractTemplate'
+
+  /contract/assign:
+    post:
+      tags:
+        - Contracts
+      summary: Assign contract to lead
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - lead_id
+                - template_id
+              properties:
+                lead_id:
+                  type: integer
+                template_id:
+                  type: integer
+                field_values:
+                  type: object
+                dropdown_values:
+                  type: object
+      responses:
+        '201':
+          description: Contract assigned successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Contract'
+
+  /territory:
+    get:
+      tags:
+        - Territory
+      summary: Get territories
+      responses:
+        '200':
+          description: Territories retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Territory'
+
+    post:
+      tags:
+        - Territory
+      summary: Create territory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - territory_name
+                - boundary_points
+              properties:
+                territory_name:
+                  type: string
+                boundary_points:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      lat:
+                        type: number
+                        format: float
+                      lng:
+                        type: number
+                        format: float
+                assigned_user_ids:
+                  type: array
+                  items:
+                    type: integer
+      responses:
+        '201':
+          description: Territory created successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/Territory'
+
+  /dashboard/analytics:
+    get:
+      tags:
+        - Dashboard
+      summary: Get dashboard analytics
+      parameters:
+        - name: from
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: to
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: Analytics retrieved successfully
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiResponse'
+                  - type: object
+                    properties:
+                      data:
+                        type: object
+                        properties:
+                          metrics:
+                            type: object
+                            properties:
+                              total_leads:
+                                type: integer
+                              leads_this_month:
+                                type: integer
+                              visits_today:
+                                type: integer
+                              contracts_signed:
+                                type: integer
+                          charts:
+                            type: object
+
+tags:
+  - name: Authentication
+    description: User authentication and authorization
+  - name: Leads
+    description: Lead and customer management
+  - name: Visits
+    description: Visit planning and logging
+  - name: Contracts
+    description: Contract templates and assignments
+  - name: Territory
+    description: Territory and route management
+  - name: Dashboard
+    description: Analytics and reporting

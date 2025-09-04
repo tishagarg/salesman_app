@@ -20,6 +20,8 @@ router.post(
   visitController.logVisit
 );
 router.get("/past-vists", verifyToken, visitController.getPastVisits);
+router.get("/planned", verifyToken, visitController.getPlannedVisits);
 router.get("/route/daily", verifyToken, visitController.getDailyRoute);
 router.get("/route/refresh", verifyToken, visitController.refreshDailyRoute);
+router.post("/route/update-location", verifyToken, visitController.updateRouteWithCurrentLocation);
 export default router;
