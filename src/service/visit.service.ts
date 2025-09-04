@@ -176,14 +176,15 @@ export class VisitService {
           // Try to convert URL to base64 for better PDF embedding
           const base64Image = await this.convertImageUrlToBase64(payload.signatureFile.location);
           if (base64Image) {
-            signatureImageHtml = `<img src="${base64Image}" class="signature-image" alt="Customer Signature" style="max-width: 200px; height: auto; border: 1px solid #ddd; padding: 5px;" />`;
+            signatureImageHtml = `<img src="${base64Image}" class="signature-image" alt="Customer Signature" style="max-width: 200px; height: auto; border: 1px solid #ddd; padding: 5px; display: block; margin: 10px 0;" />`;
           } else {
             // Fallback to direct URL if base64 conversion fails
-            signatureImageHtml = `<img src="${payload.signatureFile.location}" class="signature-image" alt="Customer Signature" style="max-width: 200px; height: auto; border: 1px solid #ddd; padding: 5px;" />`;
+            signatureImageHtml = `<img src="${payload.signatureFile.location}" class="signature-image" alt="Customer Signature" style="max-width: 200px; height: auto; border: 1px solid #ddd; padding: 5px; display: block; margin: 10px 0;" />`;
           }
         } catch (error) {
           console.error("Error processing signature image:", error);
-          signatureImageHtml = `<p><strong>Signature:</strong> ${payload.signatureFile.location}</p>`;
+          // Fallback to text link if all image processing fails
+          signatureImageHtml = `<div class="signature-fallback"><strong>Customer Signature:</strong> <a href="${payload.signatureFile.location}" target="_blank">View Signature Image</a></div>`;
         }
       }
 
@@ -191,13 +192,24 @@ export class VisitService {
         ...payload.parsedMetaData,
         signature_image_url: payload.signatureFile?.location || "",
         signature_image: signatureImageHtml,
+        signature: signatureImageHtml, // Alternative tag name for templates
+        customer_signature: signatureImageHtml, // Another alternative tag name
       };
+
+      // Debug: Log the metadata to verify signature handling
+      console.log('Contract metadata with signature:', {
+        signature_image_url: updatedMetaData.signature_image_url,
+        hasSignatureImage: !!signatureImageHtml,
+        signatureImageHtml: signatureImageHtml.substring(0, 100) + '...'
+      });
 
       // Render the contract HTML with dropdown values and metadata
       const renderedHtml = template.dropdown_fields && Object.keys(template.dropdown_fields).length > 0
         ? renderContractWithDropdowns(template.content, updatedMetaData, payload.dropdownValues || {})
         : renderContract(template.content, updatedMetaData);
-      const pdfBuffer = await this.generatePdfFromHtml(renderedHtml);
+      
+      // Pass signature URL to PDF generation for fallback handling
+      const pdfBuffer = await this.generatePdfFromHtml(renderedHtml, payload.signatureFile?.location);
       // Debug: Verify pdfBuffer type
       console.log(
         "pdfBuffer type:",
@@ -365,22 +377,38 @@ export class VisitService {
               height: auto;
               display: block;
               margin: 10px 0;
+              page-break-inside: avoid;
             }
             .signature-image {
-              max-width: 200px;
+              max-width: 200px !important;
+              max-height: 100px !important;
               border: 1px solid #ddd;
               padding: 5px;
+              display: block !important;
+              margin: 15px 0 !important;
+              page-break-inside: avoid;
+            }
+            .signature-fallback {
+              margin: 15px 0;
+              padding: 10px;
+              border: 1px solid #ccc;
+              background-color: #f9f9f9;
             }
             h1, h2, h3 {
               color: #2c3e50;
               margin-top: 20px;
               margin-bottom: 10px;
+              page-break-after: avoid;
             }
             p {
               margin-bottom: 10px;
             }
             @media print {
               body { margin: 0; }
+              .signature-image { 
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
             }
           </style>
         </head>
@@ -390,10 +418,25 @@ export class VisitService {
         </html>
       `;
 
+      // Enable request interception to handle image loading issues
+      await page.setRequestInterception(true);
+      
+      page.on('request', (request) => {
+        // Allow all requests but log image requests for debugging
+        if (request.resourceType() === 'image') {
+          console.log(`Loading image: ${request.url()}`);
+        }
+        request.continue();
+      });
+
+      // Set content with longer timeout and wait for all images to load
       await page.setContent(styledHtml, { 
         waitUntil: 'networkidle0',
-        timeout: 30000
+        timeout: 45000
       });
+      
+      // Wait a bit more to ensure all images are fully loaded
+      await new Promise(resolve => setTimeout(resolve, 2000));
 
       // Generate PDF with proper options
       const pdfBuffer = await page.pdf({
@@ -481,17 +524,35 @@ export class VisitService {
   private async convertImageUrlToBase64(imageUrl: string): Promise<string | null> {
     try {
       const fetch = (await import("node-fetch")).default;
-      const response = await fetch(imageUrl);
+      const response = await fetch(imageUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }
+      });
       
       if (!response.ok) {
-        console.error(`Failed to fetch image: ${response.statusText}`);
+        console.error(`Failed to fetch image: ${response.status} ${response.statusText}`);
         return null;
       }
 
       const buffer = await response.buffer();
       const contentType = response.headers.get('content-type') || 'image/png';
+      
+      // Validate that it's actually an image
+      if (!contentType.startsWith('image/')) {
+        console.error(`Invalid content type: ${contentType}`);
+        return null;
+      }
+      
       const base64 = buffer.toString('base64');
       
+      // Verify base64 conversion was successful
+      if (!base64 || base64.length === 0) {
+        console.error('Base64 conversion resulted in empty string');
+        return null;
+      }
+      
+      console.log(`Successfully converted image to base64: ${contentType}, size: ${buffer.length} bytes`);
       return `data:${contentType};base64,${base64}`;
     } catch (error) {
       console.error('Error converting image to base64:', error);

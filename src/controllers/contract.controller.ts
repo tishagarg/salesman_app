@@ -238,4 +238,36 @@ export class ContractTemplateController {
       return ApiResponse.error(res, 500, "Internal server error");
     }
   }
+
+  async deleteContract(req: any, res: Response): Promise<void> {
+    try {
+      const { contractId } = req.params;
+
+      if (!contractId) {
+        return ApiResponse.error(res, 400, "Contract ID is required");
+      }
+
+      const contractIdNum = parseInt(contractId);
+      if (isNaN(contractIdNum)) {
+        return ApiResponse.error(res, 400, "Invalid contract ID format");
+      }
+
+      const result = await ContractTemplateService.deleteContract(contractIdNum);
+
+      if (result.status >= 400) {
+        return ApiResponse.error(res, result.status, result.message);
+      }
+
+      return ApiResponse.result(
+        res,
+        result.data,
+        result.status,
+        null,
+        result.message
+      );
+    } catch (error) {
+      console.error("Error deleting contract:", error);
+      return ApiResponse.error(res, 500, "Internal server error");
+    }
+  }
 }
