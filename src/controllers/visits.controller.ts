@@ -39,10 +39,12 @@ export class VisitController {
   }
 
   async submitVisitWithContract(req: any, res: Response): Promise<void> {
-    const { lead_id, contract_template_id, metadata } = req.body;
+    const { lead_id, contract_template_id, metadata, dropdownValues } = req.body;
     const rep_id = req.user.user_id;
     const signatureFile = req.file;
     let parsedMetaData;
+    let parsedDropdownValues;
+    
     try {
       parsedMetaData =
         typeof metadata === "string" ? JSON.parse(metadata) : metadata;
@@ -50,11 +52,21 @@ export class VisitController {
       console.error("Error parsing metadata:", error);
       return ApiResponse.error(res, 400, "Invalid metadata format");
     }
+
+    try {
+      parsedDropdownValues = 
+        typeof dropdownValues === "string" ? JSON.parse(dropdownValues) : dropdownValues;
+    } catch (error) {
+      console.error("Error parsing dropdown values:", error);
+      return ApiResponse.error(res, 400, "Invalid dropdown values format");
+    }
+    
     const contract = await visitService.submitVisitWithContract({
       lead_id,
       signatureFile,
       contract_template_id,
       parsedMetaData,
+      dropdownValues: parsedDropdownValues,
       rep_id,
     });
     if (contract.status >= 400) {
@@ -423,5 +435,66 @@ export class VisitController {
       console.error("Error in getPastVisits:", error);
       return ApiResponse.error(res, 500, "Failed to retrieve visits");
     }
+  }
+
+  async updateRouteWithCurrentLocation(req: any, res: Response): Promise<void> {
+    const rep_id = req.user.user_id;
+    const { latitude, longitude } = req.body;
+
+    if (!latitude || !longitude) {
+      return ApiResponse.error(
+        res,
+        400,
+        "Current latitude and longitude are required"
+      );
+    }
+
+    const parsedLatitude = parseFloat(latitude);
+    const parsedLongitude = parseFloat(longitude);
+
+    if (isNaN(parsedLatitude) || isNaN(parsedLongitude)) {
+      return ApiResponse.error(
+        res,
+        400,
+        "Invalid latitude or longitude format"
+      );
+    }
+
+    const response = await visitService.updateRouteWithCurrentLocation(
+      rep_id,
+      parsedLatitude,
+      parsedLongitude
+    );
+
+    if (response.status >= 400) {
+      return ApiResponse.error(res, response.status, response.message);
+    }
+
+    return ApiResponse.result(
+      res,
+      response.data,
+      response.status,
+      null,
+      response.message
+    );
+  }
+
+  async getPlannedVisits(req: any, res: Response): Promise<void> {
+    const rep_id = req.user.user_id;
+    const { date } = req.query;
+    
+    const response = await visitService.getPlannedVisits(rep_id, date);
+    
+    if (response.status >= 400) {
+      return ApiResponse.error(res, response.status, response.message);
+    }
+
+    return ApiResponse.result(
+      res,
+      response.data,
+      response.status,
+      null,
+      response.message
+    );
   }
 }

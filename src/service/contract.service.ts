@@ -13,6 +13,17 @@ export const ContractTemplateService = {
     content: string;
     status: string;
     assigned_manager_ids: number[];
+    dropdown_fields?: {
+      [fieldName: string]: {
+        label: string;
+        options: Array<{
+          label: string;
+          value: string;
+        }>;
+        required?: boolean;
+        placeholder?: string;
+      };
+    };
   }): Promise<{ status: number; data?: any; message: string }> {
     const dataSource = await getDataSource();
     const queryRunner = dataSource.createQueryRunner();
@@ -31,6 +42,7 @@ export const ContractTemplateService = {
         content: payload.content,
         status: payload.status,
         assigned_managers: managers,
+        dropdown_fields: payload.dropdown_fields || undefined,
       });
 
       const savedTemplate = await contractRepo.save(newTemplate);
@@ -204,6 +216,201 @@ export const ContractTemplateService = {
       };
     } finally {
       await queryRunner.release();
+    }
+  },
+
+  async reassignContractTemplate(
+    templateId: number,
+    assigned_manager_ids: number[]
+  ): Promise<{ status: number; data?: any; message: string }> {
+    const dataSource = await getDataSource();
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.startTransaction();
+
+    try {
+      const userRepo = queryRunner.manager.getRepository(User);
+      const contractRepo = queryRunner.manager.getRepository(ContractTemplate);
+
+      // Find the existing template
+      const existingTemplate = await contractRepo.findOne({
+        where: { id: templateId },
+        relations: { assigned_managers: true },
+      });
+
+      if (!existingTemplate) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: 404,
+          message: "Contract template not found",
+        };
+      }
+
+      // Find the new managers to assign
+      const managers = await userRepo.find({
+        where: { user_id: In(assigned_manager_ids) },
+      });
+
+      if (managers.length !== assigned_manager_ids.length) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: 400,
+          message: "One or more manager IDs are invalid",
+        };
+      }
+
+      // Update the assigned managers
+      existingTemplate.assigned_managers = managers;
+      existingTemplate.updated_at = new Date();
+
+      const updatedTemplate = await contractRepo.save(existingTemplate);
+      await queryRunner.commitTransaction();
+
+      return {
+        status: 200,
+        data: updatedTemplate,
+        message: "Contract template reassigned successfully",
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      console.error("Error reassigning contract template:", error);
+      return {
+        status: 500,
+        message: "Failed to reassign contract template",
+      };
+    } finally {
+      await queryRunner.release();
+    }
+  },
+
+  async updateContractTemplate(
+    templateId: number,
+    updates: {
+      title?: string;
+      content?: string;
+      status?: string;
+      assigned_manager_ids?: number[];
+      dropdown_fields?: {
+        [fieldName: string]: {
+          label: string;
+          options: Array<{
+            label: string;
+            value: string;
+          }>;
+          required?: boolean;
+          placeholder?: string;
+        };
+      };
+    }
+  ): Promise<{ status: number; data?: any; message: string }> {
+    const dataSource = await getDataSource();
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.startTransaction();
+
+    try {
+      const userRepo = queryRunner.manager.getRepository(User);
+      const contractRepo = queryRunner.manager.getRepository(ContractTemplate);
+
+      // Find the existing template
+      const existingTemplate = await contractRepo.findOne({
+        where: { id: templateId },
+        relations: { assigned_managers: true },
+      });
+
+      if (!existingTemplate) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: 404,
+          message: "Contract template not found",
+        };
+      }
+
+      // Update basic fields
+      if (updates.title !== undefined) {
+        existingTemplate.title = updates.title;
+      }
+      if (updates.content !== undefined) {
+        existingTemplate.content = updates.content;
+      }
+      if (updates.status !== undefined) {
+        existingTemplate.status = updates.status;
+      }
+      if (updates.dropdown_fields !== undefined) {
+        existingTemplate.dropdown_fields = updates.dropdown_fields;
+      }
+
+      // Update assigned managers if provided
+      if (updates.assigned_manager_ids) {
+        const managers = await userRepo.find({
+          where: { user_id: In(updates.assigned_manager_ids) },
+        });
+
+        if (managers.length !== updates.assigned_manager_ids.length) {
+          await queryRunner.rollbackTransaction();
+          return {
+            status: 400,
+            message: "One or more manager IDs are invalid",
+          };
+        }
+
+        existingTemplate.assigned_managers = managers;
+      }
+
+      existingTemplate.updated_at = new Date();
+
+      const updatedTemplate = await contractRepo.save(existingTemplate);
+      await queryRunner.commitTransaction();
+
+      return {
+        status: 200,
+        data: updatedTemplate,
+        message: "Contract template updated successfully",
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      console.error("Error updating contract template:", error);
+      return {
+        status: 500,
+        message: "Failed to update contract template",
+      };
+    } finally {
+      await queryRunner.release();
+    }
+  },
+
+  async getContractTemplateById(templateId: number): Promise<{
+    data: ContractTemplate | null;
+    status: number;
+    message: string;
+  }> {
+    try {
+      const dataSource = await getDataSource();
+      const contractRepo = dataSource.getRepository(ContractTemplate);
+
+      const template = await contractRepo.findOne({
+        where: { id: templateId },
+        relations: { assigned_managers: true },
+      });
+
+      if (!template) {
+        return {
+          data: null,
+          status: 404,
+          message: "Contract template not found",
+        };
+      }
+
+      return {
+        data: template,
+        status: 200,
+        message: "Contract template fetched successfully",
+      };
+    } catch (error) {
+      console.error("Error fetching contract template:", error);
+      return {
+        data: null,
+        status: 500,
+        message: "Failed to fetch contract template",
+      };
     }
   },
 };

@@ -45,11 +45,18 @@ export class AuthService {
   private readonly refreshTokenTTL = 7 * 24 * 60 * 60; // 7 days in seconds
 
   async sendPasswordResetNotification(email: string, resetLink: string) {
-    await sendEmail({
-      to: email,
-      subject: "Password Reset Request",
-      body: `<p>Click <a href="${resetLink}">here</a> to reset your password. This link will expire in 1 hour.</p>`,
-    });
+    try {
+      console.log(`Sending password reset email to: ${email}`);
+      await sendEmail({
+        to: email,
+        subject: "Password Reset Request",
+        body: `<p>Click <a href="${resetLink}">here</a> to reset your password. This link will expire in 1 hour.</p>`,
+      });
+      console.log(`Password reset email sent successfully to: ${email}`);
+    } catch (error) {
+      console.error(`Failed to send password reset email to ${email}:`, error);
+      throw new Error(`Failed to send password reset email: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
   }
 
   async login({ email, password }: ILoginUser): Promise<{
@@ -705,9 +712,20 @@ export class AuthService {
       const resetLink = `${
         process.env.FORNTEND_URL || "https://field-sales-admin.vercel.app/auth/set-new-password/"
       }?token=${token}`;
-      await this.sendPasswordResetNotification(email, resetLink);
-      await queryRunner.commitTransaction();
-      return { status: 200, message: "Reset link sent to email", data: null };
+      
+      try {
+        await this.sendPasswordResetNotification(email, resetLink);
+        await queryRunner.commitTransaction();
+        return { status: 200, message: "Reset link sent to email", data: null };
+      } catch (emailError) {
+        await queryRunner.rollbackTransaction();
+        console.error("Failed to send reset email:", emailError);
+        return { 
+          status: 500, 
+          message: "Failed to send reset email. Please check your email configuration or try again later.", 
+          data: null 
+        };
+      }
     } catch (error) {
       await queryRunner.rollbackTransaction();
       return { status: 500, message: "Internal server error", data: null };

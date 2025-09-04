@@ -23,6 +23,19 @@ export class ContractTemplate {
   @Column({ type: "varchar", default: "active" })
   status: string;
 
+  @Column({ type: "json", nullable: true })
+  dropdown_fields: {
+    [fieldName: string]: {
+      label: string;
+      options: Array<{
+        label: string;
+        value: string;
+      }>;
+      required?: boolean;
+      placeholder?: string;
+    };
+  };
+
   @ManyToMany(() => User)
   @JoinTable({
     name: "contract_template_managers",
