@@ -8,6 +8,7 @@ import {
   format,
 } from "date-fns";
 import { Response } from "express";
+import { getFinnishTime } from "./timezone";
 
 // Interface for Nager.Date API holiday response
 interface Holiday {
@@ -31,7 +32,7 @@ export async function getCurrentMonthData() {
   try {
     const countryCode = "FI";
     const region = "FI-BW";
-    const today = new Date(); // Dynamic current date
+    const today = getFinnishTime(); // Dynamic current date in Finnish timezone
     const year = today.getFullYear();
     const month = today.getMonth() + 1; // 1-based month (e.g., 6 for June, 7 for July)
     const startDate = today;

@@ -24,4 +24,14 @@ router.post(
   visitController.submitVisitWithContract
 );
 router.get('/:contractId/pdf', authController.getContractPDF);
+
+// Reassign contract template to other managers
+router.put('/templates/:templateId', verifyToken, authController.reassignContractTemplate);
+
+// Update/Edit contract template
+router.patch('/templates/:templateId', verifyToken, authController.updateContractTemplate);
+
+// Get contract template by ID (including dropdown fields)
+router.get('/templates/:templateId', verifyToken, authController.getTemplateById);
+
 export default router;

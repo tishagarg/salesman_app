@@ -7,13 +7,14 @@ import { ContractPDF } from "../models/ContractPdf.entity";
 
 export class ContractTemplateController {
   async create(req: any, res: Response): Promise<void> {
-    const { title, content, assigned_manager_ids, status } = req.body;
+    const { title, content, assigned_manager_ids, status, dropdown_fields } = req.body;
 
     const newTemplate = await ContractTemplateService.createContractTemplate({
       title,
       content,
       status,
       assigned_manager_ids,
+      dropdown_fields,
     });
     if (newTemplate.status >= 400) {
       ApiResponse.error(res, newTemplate.status, newTemplate.message);
@@ -140,6 +141,101 @@ export class ContractTemplateController {
         message: "Error retrieving the PDF",
         status: 500,
       });
+    }
+  }
+
+  async reassignContractTemplate(req: any, res: Response): Promise<void> {
+    try {
+      const { templateId } = req.params;
+      const { assigned_manager_ids } = req.body;
+
+      if (!templateId || !assigned_manager_ids || !Array.isArray(assigned_manager_ids)) {
+        return ApiResponse.error(res, 400, "Template ID and assigned_manager_ids array are required");
+      }
+
+      if (assigned_manager_ids.length === 0) {
+        return ApiResponse.error(res, 400, "At least one manager ID must be provided");
+      }
+
+      const result = await ContractTemplateService.reassignContractTemplate(
+        parseInt(templateId),
+        assigned_manager_ids
+      );
+
+      if (result.status >= 400) {
+        return ApiResponse.error(res, result.status, result.message);
+      }
+
+      return ApiResponse.result(
+        res,
+        result.data,
+        result.status,
+        null,
+        result.message
+      );
+    } catch (error) {
+      console.error("Error reassigning contract template:", error);
+      return ApiResponse.error(res, 500, "Internal server error");
+    }
+  }
+
+  async updateContractTemplate(req: any, res: Response): Promise<void> {
+    try {
+      const { templateId } = req.params;
+      const updates = req.body;
+
+      if (!templateId) {
+        return ApiResponse.error(res, 400, "Template ID is required");
+      }
+
+      const result = await ContractTemplateService.updateContractTemplate(
+        parseInt(templateId),
+        updates
+      );
+
+      if (result.status >= 400) {
+        return ApiResponse.error(res, result.status, result.message);
+      }
+
+      return ApiResponse.result(
+        res,
+        result.data,
+        result.status,
+        null,
+        result.message
+      );
+    } catch (error) {
+      console.error("Error updating contract template:", error);
+      return ApiResponse.error(res, 500, "Internal server error");
+    }
+  }
+
+  async getTemplateById(req: any, res: Response): Promise<void> {
+    try {
+      const { templateId } = req.params;
+
+      if (!templateId) {
+        return ApiResponse.error(res, 400, "Template ID is required");
+      }
+
+      const result = await ContractTemplateService.getContractTemplateById(
+        parseInt(templateId)
+      );
+
+      if (result.status >= 400) {
+        return ApiResponse.error(res, result.status, result.message);
+      }
+
+      return ApiResponse.result(
+        res,
+        result.data,
+        result.status,
+        null,
+        result.message
+      );
+    } catch (error) {
+      console.error("Error fetching contract template:", error);
+      return ApiResponse.error(res, 500, "Internal server error");
     }
   }
 }

@@ -12,6 +12,7 @@ import { In, QueryRunner } from "typeorm";
 import { GeocodingService } from "../utils/geoCode.service";
 import { UserQuery } from "../query/user.query";
 import { IJwtVerify } from "../interfaces/user.interface";
+import { getFinnishTime } from "../utils/timezone";
 
 const geocodingService = new GeocodingService();
 const userQuery = new UserQuery();
@@ -323,7 +324,7 @@ async autoAssignTerritory(
         {
           manager_id,
           updated_by: userData.user_id.toString(),
-          updated_at: new Date(),
+          updated_at: getFinnishTime(),
         }
       );
 
@@ -709,7 +710,7 @@ async autoAssignTerritory(
               : undefined,
           manager_id: data.manager_id ?? territory.manager_id,
           updated_by: adminId.toString(),
-          updated_at: new Date(),
+          updated_at: getFinnishTime(),
         }
       );
 
@@ -762,7 +763,7 @@ async autoAssignTerritory(
         {
           is_active: false,
           updated_by: adminId.toString(),
-          updated_at: new Date(),
+          updated_at: getFinnishTime(),
         }
       );
 

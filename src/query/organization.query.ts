@@ -2,6 +2,7 @@ import { Organization } from "../models/Organisation.entity";
 import { User } from "../models/User.entity";
 
 import { EntityManager } from "typeorm";
+import { getFinnishTime } from "../utils/timezone";
 
 export class OrganizationQuery {
   // Method to save a new organization
@@ -32,7 +33,7 @@ export class OrganizationQuery {
     // Update the organization record
     await organizationRepo.update(org_id, {
       ...updateData,
-      updated_at: new Date(), // Ensure updated_at is set
+      updated_at: getFinnishTime(), // Ensure updated_at is set
     });
 
     // Fetch the updated organization

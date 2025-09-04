@@ -1,6 +1,7 @@
 import { EntityManager } from "typeorm";
 import { Address } from "../models/Address.entity";
 import { AddressDto } from "../interfaces/common.interface";
+import { getFinnishTime } from "../utils/timezone";
 
 export class AddressQuery {
   async updateAddress(
@@ -18,7 +19,7 @@ export class AddressQuery {
     }
     await addressRepo.update(address_id, {
       ...addressData,
-      updated_at: new Date(),
+      updated_at: getFinnishTime(),
     });
     const updatedAddress = await addressRepo.findOne({
       where: { address_id },
@@ -46,8 +47,8 @@ export class AddressQuery {
     const newAddress = addressRepo.create({
       ...addressData,
       org_id,
-      created_at: new Date(),
-      updated_at: new Date(),
+      created_at: getFinnishTime(),
+      updated_at: getFinnishTime(),
     });
 
     return await addressRepo.save(newAddress);
