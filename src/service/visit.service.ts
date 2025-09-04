@@ -335,6 +335,30 @@ export class VisitService {
     let browser = null;
     
     try {
+      // First, ensure all images in HTML are converted to base64
+      let processedHtml = html;
+      
+      // Find all img tags and convert external URLs to base64
+      const imgRegex = /<img[^>]+src="([^"]*)"[^>]*>/gi;
+      const imgMatches = [...html.matchAll(imgRegex)];
+      
+      for (const match of imgMatches) {
+        const fullImgTag = match[0];
+        const imgSrc = match[1];
+        
+        // Only process external URLs (not already base64)
+        if (imgSrc && (imgSrc.startsWith('http') || imgSrc.startsWith('//')) && !imgSrc.startsWith('data:')) {
+          console.log(`Converting image to base64: ${imgSrc}`);
+          const base64Image = await this.convertImageUrlToBase64(imgSrc);
+          if (base64Image) {
+            // Replace the src in the img tag
+            const newImgTag = fullImgTag.replace(imgSrc, base64Image);
+            processedHtml = processedHtml.replace(fullImgTag, newImgTag);
+            console.log(`Successfully converted image to base64`);
+          }
+        }
+      }
+
       // Configure browser for different environments
       const isDev = process.env.NODE_ENV !== 'production';
       
@@ -342,12 +366,21 @@ export class VisitService {
         // Development environment - use local Chrome
         browser = await puppeteer.launch({
           headless: true,
-          args: ['--no-sandbox', '--disable-setuid-sandbox'],
+          args: [
+            '--no-sandbox', 
+            '--disable-setuid-sandbox',
+            '--disable-web-security',
+            '--disable-features=VizDisplayCompositor'
+          ],
         });
       } else {
         // Production environment - use chrome-aws-lambda
         browser = await puppeteer.launch({
-          args: chrome.args,
+          args: [
+            ...chrome.args,
+            '--disable-web-security',
+            '--disable-features=VizDisplayCompositor'
+          ],
           defaultViewport: chrome.defaultViewport,
           executablePath: await chrome.executablePath,
           headless: chrome.headless,
@@ -364,6 +397,10 @@ export class VisitService {
           <meta charset="utf-8">
           <meta name="viewport" content="width=device-width, initial-scale=1">
           <style>
+            * {
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
             body {
               font-family: Arial, sans-serif;
               font-size: 14px;
@@ -373,20 +410,24 @@ export class VisitService {
               padding: 20px;
             }
             img {
-              max-width: 100%;
-              height: auto;
-              display: block;
-              margin: 10px 0;
+              max-width: 100% !important;
+              height: auto !important;
+              display: block !important;
+              margin: 10px 0 !important;
               page-break-inside: avoid;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
             }
             .signature-image {
               max-width: 200px !important;
               max-height: 100px !important;
-              border: 1px solid #ddd;
-              padding: 5px;
+              border: 1px solid #ddd !important;
+              padding: 5px !important;
               display: block !important;
               margin: 15px 0 !important;
               page-break-inside: avoid;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
             }
             .signature-fallback {
               margin: 15px 0;
@@ -404,40 +445,47 @@ export class VisitService {
               margin-bottom: 10px;
             }
             @media print {
-              body { margin: 0; }
-              .signature-image { 
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
+              * {
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+              }
+              body { 
+                margin: 0; 
+              }
+              img, .signature-image { 
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
               }
             }
           </style>
         </head>
         <body>
-          ${html}
+          ${processedHtml}
         </body>
         </html>
       `;
 
-      // Enable request interception to handle image loading issues
-      await page.setRequestInterception(true);
-      
-      page.on('request', (request) => {
-        // Allow all requests but log image requests for debugging
-        if (request.resourceType() === 'image') {
-          console.log(`Loading image: ${request.url()}`);
-        }
-        request.continue();
-      });
-
-      // Set content with longer timeout and wait for all images to load
+      // Don't use request interception as it might interfere with base64 images
+      console.log('Setting page content with processed HTML...');
       await page.setContent(styledHtml, { 
-        waitUntil: 'networkidle0',
-        timeout: 45000
+        waitUntil: 'domcontentloaded',
+        timeout: 30000
       });
       
-      // Wait a bit more to ensure all images are fully loaded
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Wait for any remaining resources and images to load
+      await page.evaluate(() => {
+        return new Promise((resolve) => {
+          if (document.readyState === 'complete') {
+            resolve(true);
+          } else {
+            window.addEventListener('load', () => resolve(true));
+            // Fallback timeout
+            setTimeout(() => resolve(true), 3000);
+          }
+        });
+      });
 
+      console.log('Generating PDF...');
       // Generate PDF with proper options
       const pdfBuffer = await page.pdf({
         format: 'a4',
@@ -449,14 +497,16 @@ export class VisitService {
         },
         printBackground: true,
         displayHeaderFooter: false,
+        preferCSSPageSize: false,
       });
 
+      console.log('PDF generated successfully');
       return pdfBuffer as Buffer;
 
     } catch (error) {
       console.error('Error generating PDF from HTML:', error);
       
-      // Fallback to the old method if Puppeteer fails
+      // Fallback to the PDFKit method if Puppeteer fails
       console.log('Falling back to PDFKit method...');
       return this.generatePdfFromHtmlFallback(html, signatureUrl);
       
@@ -469,6 +519,25 @@ export class VisitService {
 
   // Fallback method using PDFKit (keeping the original as backup)
   private async generatePdfFromHtmlFallback(html: any, signatureUrl: any): Promise<Buffer> {
+    console.log('Using PDFKit fallback method for PDF generation');
+    
+    // Extract signature images from HTML
+    const signatureUrls: string[] = [];
+    const imgRegex = /<img[^>]+src="([^"]*)"[^>]*>/gi;
+    let match;
+    
+    while ((match = imgRegex.exec(html)) !== null) {
+      const imgSrc = match[1];
+      if (imgSrc && (imgSrc.startsWith('http') || imgSrc.startsWith('data:image'))) {
+        signatureUrls.push(imgSrc);
+      }
+    }
+    
+    // If no images found in HTML but signatureUrl provided, use it
+    if (signatureUrls.length === 0 && signatureUrl) {
+      signatureUrls.push(signatureUrl);
+    }
+
     const plainText = convert(html, {
       wordwrap: 80,
       selectors: [
@@ -486,35 +555,102 @@ export class VisitService {
       doc.on("data", buffers.push.bind(buffers));
       doc.on("end", () => resolve(Buffer.concat(buffers)));
       doc.on("error", reject);
+      
       doc.font("Helvetica").fontSize(12);
       doc.text(plainText, { align: "left", lineGap: 2 });
 
-      if (signatureUrl) {
-        import("node-fetch")
-          .then(({ default: fetch }) =>
-            fetch(signatureUrl)
-              .then((res) => {
-                if (!res.ok)
-                  throw new Error(
-                    `Failed to fetch signature: ${res.statusText}`
-                  );
-                return res.buffer();
-              })
-              .then((imageBuffer) => {
-                doc.moveDown(1);
-                doc.image(imageBuffer, { width: 150 });
-                doc.end();
-              })
-              .catch((err) => {
-                console.error("Error fetching signature image:", err);
-                doc.end();
-              })
-          )
-          .catch((err) => {
-            console.error("Error importing node-fetch:", err);
+      // Process all signature images
+      if (signatureUrls.length > 0) {
+        let processedImages = 0;
+        
+        const processNextImage = (index: number) => {
+          if (index >= signatureUrls.length) {
             doc.end();
-          });
+            return;
+          }
+          
+          const imageUrl = signatureUrls[index];
+          console.log(`Processing signature image ${index + 1}/${signatureUrls.length}: ${imageUrl}`);
+          
+          // Handle base64 images
+          if (imageUrl.startsWith('data:image')) {
+            try {
+              const base64Data = imageUrl.split(',')[1];
+              const imageBuffer = Buffer.from(base64Data, 'base64');
+              
+              doc.moveDown(1);
+              doc.text('Customer Signature:', { align: 'left' });
+              doc.moveDown(0.5);
+              
+              try {
+                doc.image(imageBuffer, {
+                  width: 200,
+                  height: 100
+                });
+              } catch (imgError) {
+                console.error('Error embedding base64 image:', imgError);
+                doc.text('Signature image could not be displayed', { align: 'left' });
+              }
+              
+              processedImages++;
+              processNextImage(index + 1);
+            } catch (error) {
+              console.error('Error processing base64 image:', error);
+              processedImages++;
+              processNextImage(index + 1);
+            }
+          } else {
+            // Handle URL images
+            import("node-fetch")
+              .then(({ default: fetch }) =>
+                fetch(imageUrl, {
+                  headers: {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                  }
+                })
+                  .then((res) => {
+                    if (!res.ok) {
+                      throw new Error(`Failed to fetch signature: ${res.status} ${res.statusText}`);
+                    }
+                    return res.buffer();
+                  })
+                  .then((imageBuffer) => {
+                    try {
+                      doc.moveDown(1);
+                      doc.text('Customer Signature:', { align: 'left' });
+                      doc.moveDown(0.5);
+                      doc.image(imageBuffer, {
+                        width: 200,
+                        height: 100
+                      });
+                    } catch (imgError) {
+                      console.error('Error embedding fetched image:', imgError);
+                      doc.text('Signature image could not be displayed', { align: 'left' });
+                    }
+                    
+                    processedImages++;
+                    processNextImage(index + 1);
+                  })
+                  .catch((err) => {
+                    console.error(`Error fetching signature image ${index + 1}:`, err);
+                    doc.moveDown(1);
+                    doc.text(`Signature: ${imageUrl}`, { align: 'left' });
+                    
+                    processedImages++;
+                    processNextImage(index + 1);
+                  })
+              )
+              .catch((err) => {
+                console.error("Error importing node-fetch:", err);
+                processedImages++;
+                processNextImage(index + 1);
+              });
+          }
+        };
+        
+        processNextImage(0);
       } else {
+        console.log('No signature images to process, ending PDF');
         doc.end();
       }
     });
@@ -523,10 +659,16 @@ export class VisitService {
   // Helper method to convert image URL to base64 for better PDF embedding
   private async convertImageUrlToBase64(imageUrl: string): Promise<string | null> {
     try {
+      console.log(`Attempting to convert image to base64: ${imageUrl}`);
+      
       const fetch = (await import("node-fetch")).default;
       const response = await fetch(imageUrl, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+          'Accept': 'image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9',
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
         }
       });
       
@@ -536,12 +678,37 @@ export class VisitService {
       }
 
       const buffer = await response.buffer();
-      const contentType = response.headers.get('content-type') || 'image/png';
       
-      // Validate that it's actually an image
-      if (!contentType.startsWith('image/')) {
-        console.error(`Invalid content type: ${contentType}`);
+      if (!buffer || buffer.length === 0) {
+        console.error('Empty buffer received from image URL');
         return null;
+      }
+      
+      const contentType = response.headers.get('content-type') || 'image/png';
+      console.log(`Image content type: ${contentType}, size: ${buffer.length} bytes`);
+      
+      // Validate that it's actually an image by checking content type and buffer signature
+      if (!contentType.startsWith('image/')) {
+        // Try to detect image type from buffer
+        if (buffer.length >= 8) {
+          const header = buffer.toString('hex', 0, 8).toLowerCase();
+          if (header.startsWith('89504e47')) {
+            // PNG signature
+            console.log('Detected PNG from buffer signature');
+          } else if (header.startsWith('ffd8ff')) {
+            // JPEG signature
+            console.log('Detected JPEG from buffer signature');
+          } else if (header.startsWith('47494638')) {
+            // GIF signature
+            console.log('Detected GIF from buffer signature');
+          } else {
+            console.error(`Invalid content type and unrecognized image signature: ${contentType}, header: ${header}`);
+            return null;
+          }
+        } else {
+          console.error(`Invalid content type and buffer too small: ${contentType}`);
+          return null;
+        }
       }
       
       const base64 = buffer.toString('base64');
@@ -552,8 +719,16 @@ export class VisitService {
         return null;
       }
       
-      console.log(`Successfully converted image to base64: ${contentType}, size: ${buffer.length} bytes`);
-      return `data:${contentType};base64,${base64}`;
+      // Final validation - try to create a data URL and ensure it's reasonable size
+      const dataUrl = `data:${contentType};base64,${base64}`;
+      
+      if (dataUrl.length > 50 * 1024 * 1024) { // 50MB limit
+        console.error(`Image too large after base64 conversion: ${dataUrl.length} chars`);
+        return null;
+      }
+      
+      console.log(`Successfully converted image to base64: ${contentType}, original: ${buffer.length} bytes, base64: ${base64.length} chars`);
+      return dataUrl;
     } catch (error) {
       console.error('Error converting image to base64:', error);
       return null;
