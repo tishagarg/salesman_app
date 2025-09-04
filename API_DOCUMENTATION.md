@@ -1085,6 +1085,43 @@ Get specific contract template with dropdown fields.
 }
 ```
 
+## Delete Contract
+Delete a signed contract and all associated data.
+
+**Endpoint:** `DELETE /api/contract/:contractId`
+**Authorization:** Required
+
+**URL Parameters:**
+- `contractId`: ID of the contract to delete
+
+**Response (Success):**
+```json
+{
+  "success": true,
+  "message": "Contract deleted successfully",
+  "data": {
+    "contractId": 123
+  }
+}
+```
+
+**Response (Contract Not Found):**
+```json
+{
+  "success": false,
+  "message": "Contract not found",
+  "statusCode": 404
+}
+```
+
+**Description:**
+This endpoint permanently deletes a contract and all its associated data including:
+- Contract images (signature images)
+- Contract PDF files
+- Updates the associated visit to remove the contract reference
+
+**Note:** This is a destructive operation and cannot be undone. Use with caution.
+
 ---
 
 # Territory Management APIs
