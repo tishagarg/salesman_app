@@ -413,4 +413,74 @@ export const ContractTemplateService = {
       };
     }
   },
+
+  async deleteContract(contractId: number): Promise<{
+    status: number;
+    message: string;
+    data?: any;
+  }> {
+    const dataSource = await getDataSource();
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.startTransaction();
+
+    try {
+      const contractRepo = queryRunner.manager.getRepository(Contract);
+      
+      // Find the contract with all related data
+      const contract = await contractRepo.findOne({
+        where: { id: contractId },
+        relations: ["images", "pdf", "visit"],
+      });
+
+      if (!contract) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: 404,
+          message: "Contract not found",
+        };
+      }
+
+      // Delete related contract images (cascade should handle this, but explicit for safety)
+      if (contract.images && contract.images.length > 0) {
+        await queryRunner.manager.delete("contract_images", {
+          contract_id: contractId,
+        });
+      }
+
+      // Delete related contract PDF (cascade should handle this, but explicit for safety)
+      if (contract.pdf) {
+        await queryRunner.manager.delete("contract_pdfs", {
+          contract_id: contractId,
+        });
+      }
+
+      // Update the visit to remove contract association
+      if (contract.visit) {
+        await queryRunner.manager.update("visits", 
+          { visit_id: contract.visit_id }, 
+          { contract_id: null }
+        );
+      }
+
+      // Finally, delete the contract itself
+      await queryRunner.manager.delete("contracts", { id: contractId });
+
+      await queryRunner.commitTransaction();
+
+      return {
+        status: 200,
+        message: "Contract deleted successfully",
+        data: { contractId },
+      };
+    } catch (error) {
+      await queryRunner.rollbackTransaction();
+      console.error("Error deleting contract:", error);
+      return {
+        status: 500,
+        message: "Failed to delete contract",
+      };
+    } finally {
+      await queryRunner.release();
+    }
+  },
 };
