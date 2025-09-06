@@ -22,6 +22,11 @@ router.post(
   verifyToken,
   userTeamController.assignManagerToSalesRep
 );
+router.delete(
+  "/assign-manager/:id",
+  verifyToken,
+  userTeamController.removeManagerFromSalesRep
+);
 router.patch("/:id", verifyToken, userTeamController.editTeamMember);
 router.post("/status", verifyToken, userTeamController.activeDeactive);
 router.post("/update-profile", verifyToken, userTeamController.updateProfile);
