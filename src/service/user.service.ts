@@ -343,10 +343,11 @@ export class UserTeamService {
       const query = queryRunner.manager
         .getRepository(User)
         .createQueryBuilder("user")
+        .leftJoinAndSelect("user.role", "role")
+        .leftJoinAndSelect("user.address", "address")
         .leftJoin(ManagerSalesRep, "msr", "msr.sales_rep_id = user.user_id")
         .where("user.role_id = :roleId", { roleId: role.role_id })
         .andWhere("user.org_id = :orgId", { orgId: org_id })
-        .andWhere("msr.sales_rep_id IS NULL")
         .andWhere("user.is_active = true");
       if (search && search.trim() !== "") {
         const searchTerm = `%${search.trim().toLowerCase()}%`;
@@ -371,7 +372,7 @@ export class UserTeamService {
         status: 200,
         data: users.map(({ password_hash, ...safeUser }) => safeUser),
         total,
-        message: "Unassigned managers fetched successfully",
+        message: "Sales representatives fetched successfully",
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -380,7 +381,7 @@ export class UserTeamService {
         status: 500,
         data: null,
         total: 0,
-        message: "Failed to fetch unassigned managers.",
+        message: "Failed to fetch sales representatives.",
       };
     } finally {
       await queryRunner.release();
