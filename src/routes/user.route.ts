@@ -16,6 +16,7 @@ router.get(
 router.post("/", verifyToken, userTeamController.addTeamMember);
 router.get("/", verifyToken, userTeamController.getAllTeamMember);
 router.get("/manager", verifyToken, userTeamController.getAllManagers);
+router.get("/manager/dashboard", verifyToken, userTeamController.getManagerDashboard);
 router.get("/:id", verifyToken, userTeamController.getTeamMemberById);
 router.post(
   "/assign-manager",
