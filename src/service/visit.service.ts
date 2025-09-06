@@ -23,7 +23,11 @@ import axios from "axios";
 import { v4 as uuidv4 } from "uuid";
 import { Contract } from "../models/Contracts.entity";
 import { ContractTemplate } from "../models/ContractTemplate.entity";
-import { renderContract, renderContractWithDropdowns, validateDropdownValues } from "../utils/renderContracts";
+import {
+  renderContract,
+  renderContractWithDropdowns,
+  validateDropdownValues,
+} from "../utils/renderContracts";
 import { Address } from "../models/Address.entity";
 import { User } from "../models/User.entity";
 import { FollowUp } from "../models/FollowUp.entity";
@@ -130,6 +134,7 @@ export class VisitService {
       const visitRepo = dataSource.getRepository(Visit);
       const contractRepo = dataSource.getRepository(Contract);
       const templateRepo = dataSource.getRepository(ContractTemplate);
+
       const visitData = {
         lead_id: payload.lead_id,
         rep_id: payload.rep_id,
@@ -140,11 +145,14 @@ export class VisitService {
         parsedFollowUps: [],
         notes: "",
       };
+
       const visits = await visitRepo.create(visitData);
       const savedVisit = await visitRepo.save(visits);
+
       const template = await templateRepo.findOneBy({
         id: payload.contract_template_id,
       });
+
       if (!template) {
         await queryRunner.rollbackTransaction();
         return {
@@ -155,36 +163,70 @@ export class VisitService {
       }
 
       // Validate dropdown values if template has dropdown fields
-      if (template.dropdown_fields && Object.keys(template.dropdown_fields).length > 0) {
+      if (
+        template.dropdown_fields &&
+        Object.keys(template.dropdown_fields).length > 0
+      ) {
         const dropdownValues = payload.dropdownValues || {};
-        const validation = validateDropdownValues(template.dropdown_fields, dropdownValues);
-        
+        const validation = validateDropdownValues(
+          template.dropdown_fields,
+          dropdownValues
+        );
+
         if (!validation.isValid) {
           await queryRunner.rollbackTransaction();
           return {
             data: null,
-            message: `Validation failed: ${validation.errors.join(', ')}`,
+            message: `Validation failed: ${validation.errors.join(", ")}`,
             status: 400,
           };
         }
       }
 
-      // Prepare metadata with signature image as base64 or proper HTML img tag
+      // Prepare metadata with signature image as base64
       let signatureImageHtml = "";
+      let signatureBase64 = "";
+
       if (payload.signatureFile?.location) {
         try {
-          // Try to convert URL to base64 for better PDF embedding
-          const base64Image = await this.convertImageUrlToBase64(payload.signatureFile.location);
-          if (base64Image) {
-            signatureImageHtml = `<img src="${base64Image}" class="signature-image" alt="Customer Signature" style="max-width: 200px; height: auto; border: 1px solid #ddd; padding: 5px; display: block; margin: 10px 0;" />`;
+          // Convert signature URL to base64 for reliable PDF embedding
+          signatureBase64 =
+            (await this.convertImageUrlToBase64(
+              payload.signatureFile.location
+            )) ?? "";
+
+          if (signatureBase64) {
+            signatureImageHtml = `<div class="signature-container">
+            <p class="signature-label"><strong>Customer Signature:</strong></p>
+            <img src="${signatureBase64}" class="signature-image" alt="Customer Signature" />
+            <p class="signature-date">Signed on: ${new Date().toLocaleDateString(
+              "fi-FI"
+            )}</p>
+          </div>`;
           } else {
-            // Fallback to direct URL if base64 conversion fails
-            signatureImageHtml = `<img src="${payload.signatureFile.location}" class="signature-image" alt="Customer Signature" style="max-width: 200px; height: auto; border: 1px solid #ddd; padding: 5px; display: block; margin: 10px 0;" />`;
+            // Fallback to URL if base64 conversion fails
+            signatureImageHtml = `<div class="signature-container">
+            <p class="signature-label"><strong>Customer Signature:</strong></p>
+            <img src="${
+              payload.signatureFile.location
+            }" class="signature-image" alt="Customer Signature" />
+            <p class="signature-date">Signed on: ${new Date().toLocaleDateString(
+              "fi-FI"
+            )}</p>
+          </div>`;
           }
         } catch (error) {
           console.error("Error processing signature image:", error);
           // Fallback to text link if all image processing fails
-          signatureImageHtml = `<div class="signature-fallback"><strong>Customer Signature:</strong> <a href="${payload.signatureFile.location}" target="_blank">View Signature Image</a></div>`;
+          signatureImageHtml = `<div class="signature-fallback">
+          <p><strong>Customer Signature:</strong></p>
+          <p><a href="${
+            payload.signatureFile.location
+          }" target="_blank">View Signature Image</a></p>
+          <p class="signature-date">Signed on: ${new Date().toLocaleDateString(
+            "fi-FI"
+          )}</p>
+        </div>`;
         }
       }
 
@@ -192,25 +234,35 @@ export class VisitService {
         ...payload.parsedMetaData,
         signature_image_url: payload.signatureFile?.location || "",
         signature_image: signatureImageHtml,
-        signature: signatureImageHtml, // Alternative tag name for templates
-        customer_signature: signatureImageHtml, // Another alternative tag name
+        signature: signatureImageHtml,
+        customer_signature: signatureImageHtml,
+        signed_date: new Date().toLocaleDateString("fi-FI"),
+        signed_time: new Date().toLocaleTimeString("fi-FI"),
       };
 
-      // Debug: Log the metadata to verify signature handling
-      console.log('Contract metadata with signature:', {
+      console.log("Contract metadata with signature:", {
         signature_image_url: updatedMetaData.signature_image_url,
         hasSignatureImage: !!signatureImageHtml,
-        signatureImageHtml: signatureImageHtml.substring(0, 100) + '...'
+        hasBase64: !!signatureBase64,
       });
 
       // Render the contract HTML with dropdown values and metadata
-      const renderedHtml = template.dropdown_fields && Object.keys(template.dropdown_fields).length > 0
-        ? renderContractWithDropdowns(template.content, updatedMetaData, payload.dropdownValues || {})
-        : renderContract(template.content, updatedMetaData);
-      
-      // Pass signature URL to PDF generation for fallback handling
-      const pdfBuffer = await this.generatePdfFromHtml(renderedHtml, payload.signatureFile?.location);
-      // Debug: Verify pdfBuffer type
+      const renderedHtml =
+        template.dropdown_fields &&
+        Object.keys(template.dropdown_fields).length > 0
+          ? renderContractWithDropdowns(
+              template.content,
+              updatedMetaData,
+              payload.dropdownValues || {}
+            )
+          : renderContract(template.content, updatedMetaData);
+
+      // Generate PDF with improved method
+      const pdfBuffer = await this.generatePdfFromHtml(
+        renderedHtml,
+        signatureBase64
+      );
+
       console.log(
         "pdfBuffer type:",
         typeof pdfBuffer,
@@ -219,54 +271,6 @@ export class VisitService {
       );
 
       // Save the contract
-
-      // const plainText = convert(renderedHtml, {
-      //   wordwrap: 80,
-      //   selectors: [
-      //     { selector: "h1", format: "block", options: { uppercase: true } },
-      //     { selector: "h2", format: "block", options: { uppercase: true } },
-      //     { selector: "strong", format: "inline" },
-      //     { selector: "br", format: "inline", options: { baseElement: "br" } },
-      //     { selector: "img", format: "skip" },
-      //   ],
-      // });
-      // const pdfBuffer = await new Promise<Buffer>((resolve, reject) => {
-      //   const buffers: Buffer[] = [];
-      //   const doc = new pdfkit({ size: "A4", margin: 50 });
-      //   doc.on("data", buffers.push.bind(buffers));
-      //   doc.on("end", () => resolve(Buffer.concat(buffers)));
-      //   doc.on("error", reject);
-      //   doc.font("Helvetica").fontSize(12);
-      //   doc.text(plainText, {
-      //     align: "left",
-      //     lineGap: 2,
-      //   });
-      //   if (payload.signatureFile?.location) {
-      //     import("node-fetch")
-      //       .then(({ default: fetch }) => {
-      //         fetch(payload.signatureFile.location)
-      //           .then((res) => res.buffer())
-      //           .then((imageBuffer) => {
-      //             doc.moveDown(1);
-      //             doc.image(imageBuffer, {
-      //               width: 150,
-      //             });
-      //             doc.end();
-      //           })
-      //           .catch((err) => {
-      //             console.error("Error fetching signature image:", err);
-      //             doc.end();
-      //           });
-      //       })
-      //       .catch((err) => {
-      //         console.error("Error importing node-fetch:", err);
-      //         doc.end();
-      //       });
-      //   } else {
-      //     doc.end();
-      //   }
-      // });
-
       const contract = contractRepo.create({
         contract_template_id: template.id,
         visit_id: savedVisit.visit_id,
@@ -284,29 +288,31 @@ export class VisitService {
         metadata: payload.signatureFile,
       });
 
-      // Save the contract PDF using create
+      // Save the contract PDF
       const contractPDF = dataSource.getRepository(ContractPDF).create({
         contract_id: savedContract.id,
         pdf_data: pdfBuffer,
         created_at: getFinnishTime(),
       } as DeepPartial<ContractPDF>);
+
       await dataSource.getRepository(ContractPDF).save(contractPDF);
+
       savedVisit.contract = savedContract;
       await visitRepo.save(savedVisit);
-      
-      // Update lead status to "Signed" after successful contract signing
+
+      // Update lead status to "Signed"
       const leadRepo = dataSource.getRepository(Leads);
       const lead = await leadRepo.findOne({
-        where: { lead_id: payload.lead_id }
+        where: { lead_id: payload.lead_id },
       });
-      
+
       if (lead) {
         lead.status = LeadStatus.Signed;
         lead.updated_at = getFinnishTime();
         lead.updated_by = "system";
         await leadRepo.save(lead);
       }
-      
+
       const newContract = await dataSource.getRepository(Contract).findOne({
         where: { id: savedContract.id },
         relations: { images: true, pdf: true },
@@ -331,23 +337,34 @@ export class VisitService {
     }
   }
 
-  async generatePdfFromHtml(html: string, signatureUrl?: string): Promise<Buffer> {
+  async generatePdfFromHtml(
+    html: string,
+    signatureBase64?: string
+  ): Promise<Buffer> {
     let browser = null;
-    
+
     try {
       // Configure browser for different environments
-      const isDev = process.env.NODE_ENV !== 'production';
-      
+      const isDev = process.env.NODE_ENV !== "production";
+
       if (isDev) {
-        // Development environment - use local Chrome
         browser = await puppeteer.launch({
           headless: true,
-          args: ['--no-sandbox', '--disable-setuid-sandbox'],
+          args: [
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-web-security",
+            "--allow-running-insecure-content",
+          ],
         });
       } else {
-        // Production environment - use chrome-aws-lambda
         browser = await puppeteer.launch({
-          args: chrome.args,
+          args: [
+            ...chrome.args,
+            "--disable-web-security",
+            "--allow-running-insecure-content",
+          ],
           defaultViewport: chrome.defaultViewport,
           executablePath: await chrome.executablePath,
           headless: chrome.headless,
@@ -355,111 +372,316 @@ export class VisitService {
       }
 
       const page = await browser.newPage();
-      
-      // Set up HTML content with proper styling for PDF generation
+
+      // Add your company logo as base64 (replace with your actual logo)
+      const companyLogo = `data:image/svg+xml;base64,${Buffer.from(
+        `
+      <svg width="120" height="40" viewBox="0 0 120 40" xmlns="http://www.w3.org/2000/svg">
+        <rect width="120" height="40" fill="#2c3e50"/>
+        <text x="60" y="25" text-anchor="middle" fill="white" font-family="Arial" font-size="16" font-weight="bold">
+          YOUR LOGO
+        </text>
+      </svg>
+    `
+      ).toString("base64")}`;
+
+      // Enhanced HTML content with professional styling
       const styledHtml = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta charset="utf-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <style>
-            body {
-              font-family: Arial, sans-serif;
-              font-size: 14px;
-              line-height: 1.6;
-              color: #333;
-              margin: 0;
-              padding: 20px;
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <style>
+          * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+          }
+          
+          body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-size: 12px;
+            line-height: 1.6;
+            color: #333;
+            background: #fff;
+            padding: 0;
+          }
+          
+          .header {
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            color: white;
+            padding: 20px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+          }
+          
+          .logo {
+            max-height: 50px;
+            width: auto;
+          }
+          
+          .header-info {
+            text-align: right;
+          }
+          
+          .header-info h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 300;
+          }
+          
+          .header-info p {
+            margin: 5px 0 0 0;
+            opacity: 0.9;
+            font-size: 11px;
+          }
+          
+          .content {
+            padding: 0 20px;
+            min-height: calc(100vh - 200px);
+          }
+          
+          .footer {
+            margin-top: 40px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-top: 3px solid #2c3e50;
+            font-size: 10px;
+            color: #666;
+            text-align: center;
+          }
+          
+          h1, h2, h3, h4, h5, h6 {
+            color: #2c3e50;
+            margin: 20px 0 10px 0;
+            page-break-after: avoid;
+          }
+          
+          h1 { font-size: 20px; border-bottom: 2px solid #3498db; padding-bottom: 5px; }
+          h2 { font-size: 16px; color: #34495e; }
+          h3 { font-size: 14px; }
+          
+          p {
+            margin-bottom: 10px;
+            text-align: justify;
+          }
+          
+          .signature-container {
+            margin: 30px 0;
+            padding: 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            background: #fafafa;
+            page-break-inside: avoid;
+          }
+          
+          .signature-label {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 15px !important;
+            font-size: 14px;
+          }
+          
+          .signature-image {
+            max-width: 250px !important;
+            max-height: 120px !important;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            padding: 10px;
+            background: white;
+            display: block !important;
+            margin: 15px 0 !important;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            page-break-inside: avoid;
+          }
+          
+          .signature-date {
+            font-size: 11px;
+            color: #666;
+            font-style: italic;
+            margin-top: 10px !important;
+          }
+          
+          .signature-fallback {
+            margin: 20px 0;
+            padding: 20px;
+            border: 2px dashed #ccc;
+            background-color: #fff8e1;
+            border-radius: 6px;
+            text-align: center;
+          }
+          
+          .signature-fallback a {
+            color: #2980b9;
+            text-decoration: none;
+            font-weight: 600;
+          }
+          
+          table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 11px;
+          }
+          
+          th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+          }
+          
+          th {
+            background: #f8f9fa;
+            font-weight: 600;
+            color: #2c3e50;
+          }
+          
+          .highlight {
+            background: #fff3cd;
+            padding: 15px;
+            border-left: 4px solid #ffc107;
+            margin: 20px 0;
+          }
+          
+          .contract-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 6px;
+          }
+          
+          .info-group h4 {
+            margin: 0 0 10px 0;
+            color: #2c3e50;
+            font-size: 12px;
+          }
+          
+          .info-group p {
+            margin: 5px 0;
+            font-size: 11px;
+          }
+          
+          @media print {
+            body { margin: 0; }
+            .signature-image { 
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
             }
-            img {
-              max-width: 100%;
-              height: auto;
-              display: block;
-              margin: 10px 0;
-              page-break-inside: avoid;
+            .header {
+              -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
             }
-            .signature-image {
-              max-width: 200px !important;
-              max-height: 100px !important;
-              border: 1px solid #ddd;
-              padding: 5px;
-              display: block !important;
-              margin: 15px 0 !important;
-              page-break-inside: avoid;
+            .page-break {
+              page-break-before: always;
             }
-            .signature-fallback {
-              margin: 15px 0;
-              padding: 10px;
-              border: 1px solid #ccc;
-              background-color: #f9f9f9;
+          }
+          
+          @page {
+            margin: 15mm;
+            @top-center {
+              content: "Contract Document";
             }
-            h1, h2, h3 {
-              color: #2c3e50;
-              margin-top: 20px;
-              margin-bottom: 10px;
-              page-break-after: avoid;
+            @bottom-center {
+              content: counter(page) " / " counter(pages);
             }
-            p {
-              margin-bottom: 10px;
-            }
-            @media print {
-              body { margin: 0; }
-              .signature-image { 
-                -webkit-print-color-adjust: exact;
-                print-color-adjust: exact;
-              }
-            }
-          </style>
-        </head>
-        <body>
+          }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <img src="${companyLogo}" alt="Company Logo" class="logo">
+          <div class="header-info">
+            <h1>Contract Agreement</h1>
+            <p>Generated on ${new Date().toLocaleDateString(
+              "fi-FI"
+            )} at ${new Date().toLocaleTimeString("fi-FI")}</p>
+          </div>
+        </div>
+        
+        <div class="content">
           ${html}
-        </body>
-        </html>
-      `;
+        </div>
+        
+        <div class="footer">
+          <p>This document was electronically generated and signed. All signatures are legally binding.</p>
+          <p>For questions regarding this contract, please contact our support team.</p>
+        </div>
+      </body>
+      </html>
+    `;
 
-      // Enable request interception to handle image loading issues
-      await page.setRequestInterception(true);
-      
-      page.on('request', (request) => {
-        // Allow all requests but log image requests for debugging
-        if (request.resourceType() === 'image') {
-          console.log(`Loading image: ${request.url()}`);
-        }
-        request.continue();
+      // Disable request interception to avoid blocking resources
+      await page.setRequestInterception(false);
+
+      // Set content with extended timeout for image loading
+      await page.setContent(styledHtml, {
+        waitUntil: ["networkidle0", "domcontentloaded"],
+        timeout: 60000,
       });
 
-      // Set content with longer timeout and wait for all images to load
-      await page.setContent(styledHtml, { 
-        waitUntil: 'networkidle0',
-        timeout: 45000
-      });
-      
-      // Wait a bit more to ensure all images are fully loaded
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Wait for all images to load
+      await page.evaluate(() => {
+        return new Promise((resolve) => {
+          const images = Array.from(document.images);
+          let loadedCount = 0;
 
-      // Generate PDF with proper options
+          if (images.length === 0) {
+            resolve(true);
+            return;
+          }
+
+          images.forEach((img) => {
+            if (img.complete) {
+              loadedCount++;
+            } else {
+              img.onload = img.onerror = () => {
+                loadedCount++;
+                if (loadedCount === images.length) {
+                  resolve(true);
+                }
+              };
+            }
+          });
+
+          if (loadedCount === images.length) {
+            resolve(true);
+          }
+
+          // Timeout after 10 seconds
+          setTimeout(() => resolve(true), 10000);
+        });
+      });
+
+      // Additional wait to ensure rendering is complete
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+
+      // Generate PDF with optimized settings
       const pdfBuffer = await page.pdf({
-        format: 'a4',
+        format: "a4",
         margin: {
-          top: '20mm',
-          right: '15mm',
-          bottom: '20mm',
-          left: '15mm',
+          top: "10mm",
+          right: "10mm",
+          bottom: "15mm",
+          left: "10mm",
         },
         printBackground: true,
         displayHeaderFooter: false,
+        preferCSSPageSize: false,
       });
 
       return pdfBuffer as Buffer;
-
     } catch (error) {
-      console.error('Error generating PDF from HTML:', error);
-      
-      // Fallback to the old method if Puppeteer fails
-      console.log('Falling back to PDFKit method...');
-      return this.generatePdfFromHtmlFallback(html, signatureUrl);
-      
+      console.error("Error generating PDF from HTML:", error);
+
+      // Fallback to the PDFKit method if Puppeteer fails
+      console.log("Falling back to PDFKit method...");
+      return this.generatePdfFromHtmlFallback(html, null);
     } finally {
       if (browser) {
         await browser.close();
@@ -467,10 +689,13 @@ export class VisitService {
     }
   }
 
-  // Fallback method using PDFKit (keeping the original as backup)
-  private async generatePdfFromHtmlFallback(html: any, signatureUrl: any): Promise<Buffer> {
+  // Enhanced fallback method with better formatting
+  private async generatePdfFromHtmlFallback(
+    html: any,
+    signatureBase64: any
+  ): Promise<Buffer> {
     const plainText = convert(html, {
-      wordwrap: 80,
+      wordwrap: 85,
       selectors: [
         { selector: "h1", format: "block", options: { uppercase: true } },
         { selector: "h2", format: "block", options: { uppercase: true } },
@@ -482,80 +707,111 @@ export class VisitService {
 
     return new Promise((resolve, reject) => {
       const buffers: Buffer[] = [];
-      const doc = new PDFDocument({ size: "A4", margin: 50 });
+      const doc = new PDFDocument({
+        size: "A4",
+        margin: 50,
+        info: {
+          Title: "Contract Agreement",
+          Author: "Your Company",
+          Subject: "Signed Contract",
+          CreationDate: new Date(),
+        },
+      });
+
       doc.on("data", buffers.push.bind(buffers));
       doc.on("end", () => resolve(Buffer.concat(buffers)));
       doc.on("error", reject);
-      doc.font("Helvetica").fontSize(12);
-      doc.text(plainText, { align: "left", lineGap: 2 });
 
-      if (signatureUrl) {
-        import("node-fetch")
-          .then(({ default: fetch }) =>
-            fetch(signatureUrl)
-              .then((res) => {
-                if (!res.ok)
-                  throw new Error(
-                    `Failed to fetch signature: ${res.statusText}`
-                  );
-                return res.buffer();
-              })
-              .then((imageBuffer) => {
-                doc.moveDown(1);
-                doc.image(imageBuffer, { width: 150 });
-                doc.end();
-              })
-              .catch((err) => {
-                console.error("Error fetching signature image:", err);
-                doc.end();
-              })
-          )
-          .catch((err) => {
-            console.error("Error importing node-fetch:", err);
-            doc.end();
+      // Add header
+      doc
+        .fontSize(18)
+        .fillColor("#2c3e50")
+        .text("CONTRACT AGREEMENT", 50, 50, { align: "center" });
+
+      doc
+        .fontSize(10)
+        .fillColor("#666")
+        .text(
+          `Generated on ${new Date().toLocaleDateString("fi-FI")}`,
+          50,
+          80,
+          { align: "center" }
+        );
+
+      // Add content
+      doc.fontSize(11).fillColor("#333").text(plainText, 50, 120, {
+        align: "left",
+        lineGap: 3,
+        width: 500,
+      });
+
+      // Add signature if available
+      if (signatureBase64) {
+        try {
+          // Extract base64 data
+          const base64Data = signatureBase64.replace(
+            /^data:image\/[a-z]+;base64,/,
+            ""
+          );
+          const signatureBuffer = Buffer.from(base64Data, "base64");
+
+          doc.moveDown(2);
+          doc
+            .fontSize(12)
+            .fillColor("#2c3e50")
+            .text("Customer Signature:", { continued: false });
+
+          doc.image(signatureBuffer, {
+            width: 200,
+            height: 100,
+            align: "center",
           });
-      } else {
-        doc.end();
+
+          doc
+            .fontSize(9)
+            .fillColor("#666")
+            .text(`Signed on: ${new Date().toLocaleDateString("fi-FI")}`, {
+              align: "left",
+            });
+        } catch (error) {
+          console.error("Error adding signature to PDF:", error);
+          doc.moveDown(2);
+          doc
+            .fontSize(12)
+            .text(
+              "Customer Signature: [Signature image could not be embedded]"
+            );
+        }
       }
+
+      doc.end();
     });
   }
 
   // Helper method to convert image URL to base64 for better PDF embedding
-  private async convertImageUrlToBase64(imageUrl: string): Promise<string | null> {
+  async convertImageUrlToBase64(imageUrl: string): Promise<string | null> {
     try {
       const fetch = (await import("node-fetch")).default;
       const response = await fetch(imageUrl, {
         headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        },
       });
-      
+
       if (!response.ok) {
-        console.error(`Failed to fetch image: ${response.status} ${response.statusText}`);
+        console.error(
+          `Failed to fetch image: ${response.status} ${response.statusText}`
+        );
         return null;
       }
 
       const buffer = await response.buffer();
-      const contentType = response.headers.get('content-type') || 'image/png';
-      
-      // Validate that it's actually an image
-      if (!contentType.startsWith('image/')) {
-        console.error(`Invalid content type: ${contentType}`);
-        return null;
-      }
-      
-      const base64 = buffer.toString('base64');
-      
-      // Verify base64 conversion was successful
-      if (!base64 || base64.length === 0) {
-        console.error('Base64 conversion resulted in empty string');
-        return null;
-      }
-      
-      console.log(`Successfully converted image to base64: ${contentType}, size: ${buffer.length} bytes`);
+      const base64 = buffer.toString("base64");
+      const contentType = response.headers.get("content-type") || "image/png";
       return `data:${contentType};base64,${base64}`;
     } catch (error) {
-      console.error('Error converting image to base64:', error);
+      console.error("Error converting image to base64:", error);
       return null;
     }
   }
@@ -1401,25 +1657,27 @@ export class VisitService {
       let cumulativeDistance = 0; // Track total distance from origin
       let cumulativeDuration = 0; // Track total time from origin
       const routeOrder: RouteOrderItem[] = [];
-      
+
       for (let i = 0; i < waypointOrder.length; i++) {
         const index = waypointOrder[i];
         const visit = validVisits[index];
         const leg = route.legs[i];
-        
+
         let segmentDistance = 0;
         let segmentDuration = 0;
-        
+
         if (leg?.distance?.value && leg?.duration?.value) {
           segmentDistance = leg.distance.value / 1000; // Convert to km
           segmentDuration = leg.duration.value / 60; // Convert to minutes
-          
+
           // Add to cumulative totals
           cumulativeDistance += segmentDistance;
           cumulativeDuration += segmentDuration;
-          
+
           // Calculate ETA based on cumulative time from current location
-          currentTime = new Date(getFinnishTime().getTime() + cumulativeDuration * 60000);
+          currentTime = new Date(
+            getFinnishTime().getTime() + cumulativeDuration * 60000
+          );
         } else {
           console.warn(`Invalid route leg at index ${i}, using defaults`);
         }
@@ -1529,16 +1787,18 @@ export class VisitService {
 
       const updatedRouteOrder = remainingStops.map((item, index) => {
         const leg = updatedRoute.legs[index];
-        
+
         if (leg?.distance?.value && leg?.duration?.value) {
           const segmentDistance = leg.distance.value / 1000;
           const segmentDuration = leg.duration.value / 60;
-          
+
           cumulativeDistance += segmentDistance;
           cumulativeDuration += segmentDuration;
 
-          const eta = new Date(currentTime.getTime() + cumulativeDuration * 60000);
-          
+          const eta = new Date(
+            currentTime.getTime() + cumulativeDuration * 60000
+          );
+
           return {
             ...item,
             distance: Number(cumulativeDistance.toFixed(2)),
@@ -1564,7 +1824,10 @@ export class VisitService {
         message: "Route updated with current location",
       };
     } catch (error: any) {
-      return this.handleError(error, "Failed to update route with current location");
+      return this.handleError(
+        error,
+        "Failed to update route with current location"
+      );
     }
   }
 
@@ -1660,7 +1923,7 @@ export class VisitService {
     try {
       const targetDate = date ? new Date(date) : getFinnishTime();
       targetDate.setHours(0, 0, 0, 0);
-      
+
       const nextDay = new Date(targetDate);
       nextDay.setDate(nextDay.getDate() + 1);
 
@@ -1668,51 +1931,53 @@ export class VisitService {
         where: {
           rep_id: repId,
           created_at: Between(targetDate, nextDay),
-          is_active: true
+          is_active: true,
         },
         relations: ["lead", "lead.address"],
         order: {
-          check_in_time: "ASC"
-        }
+          check_in_time: "ASC",
+        },
       });
 
-      const visitsData = plannedVisits.map(visit => ({
+      const visitsData = plannedVisits.map((visit) => ({
         visit_id: visit.visit_id,
         lead_id: visit.lead_id,
         name: visit.lead?.name || "Anonymous",
         contact_name: visit.lead?.contact_name,
         phone: visit.lead?.contact_phone,
         email: visit.lead?.contact_email,
-        address: visit.lead?.address ? {
-          street_address: visit.lead.address.street_address,
-          city: visit.lead.address.city,
-          state: visit.lead.address.state,
-          postal_code: visit.lead.address.postal_code,
-          latitude: visit.lead.address.latitude,
-          longitude: visit.lead.address.longitude,
-          formatted_address: `${visit.lead.address.street_address || ""}, ${
-            visit.lead.address.city || ""
-          }, ${visit.lead.address.state || ""} ${
-            visit.lead.address.postal_code || ""
-          }`.trim()
-        } : null,
+        address: visit.lead?.address
+          ? {
+              street_address: visit.lead.address.street_address,
+              city: visit.lead.address.city,
+              state: visit.lead.address.state,
+              postal_code: visit.lead.address.postal_code,
+              latitude: visit.lead.address.latitude,
+              longitude: visit.lead.address.longitude,
+              formatted_address: `${visit.lead.address.street_address || ""}, ${
+                visit.lead.address.city || ""
+              }, ${visit.lead.address.state || ""} ${
+                visit.lead.address.postal_code || ""
+              }`.trim(),
+            }
+          : null,
         scheduled_time: visit.check_in_time,
         status: visit.status || "Pending",
         notes: visit.notes,
         lead_status: visit.lead?.status,
-        is_completed: !!(visit.check_out_time),
+        is_completed: !!visit.check_out_time,
         contract: visit.contract,
-        photos: visit.photo_urls || []
+        photos: visit.photo_urls || [],
       }));
 
       return {
         status: httpStatusCodes.OK,
         data: visitsData,
-        message: visitsData.length > 0 
-          ? "Planned visits retrieved successfully" 
-          : "No planned visits found for the specified date"
+        message:
+          visitsData.length > 0
+            ? "Planned visits retrieved successfully"
+            : "No planned visits found for the specified date",
       };
-
     } catch (error: any) {
       return this.handleError(error, "Failed to retrieve planned visits");
     }
