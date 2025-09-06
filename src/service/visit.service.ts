@@ -344,6 +344,30 @@ export class VisitService {
     let browser = null;
 
     try {
+      // First, ensure all images in HTML are converted to base64
+      let processedHtml = html;
+      
+      // Find all img tags and convert external URLs to base64
+      const imgRegex = /<img[^>]+src="([^"]*)"[^>]*>/gi;
+      const imgMatches = [...html.matchAll(imgRegex)];
+      
+      for (const match of imgMatches) {
+        const fullImgTag = match[0];
+        const imgSrc = match[1];
+        
+        // Only process external URLs (not already base64)
+        if (imgSrc && (imgSrc.startsWith('http') || imgSrc.startsWith('//')) && !imgSrc.startsWith('data:')) {
+          console.log(`Converting image to base64: ${imgSrc}`);
+          const base64Image = await this.convertImageUrlToBase64(imgSrc);
+          if (base64Image) {
+            // Replace the src in the img tag
+            const newImgTag = fullImgTag.replace(imgSrc, base64Image);
+            processedHtml = processedHtml.replace(fullImgTag, newImgTag);
+            console.log(`Successfully converted image to base64`);
+          }
+        }
+      }
+
       // Configure browser for different environments
       const isDev = process.env.NODE_ENV !== "production";
 
@@ -675,6 +699,7 @@ export class VisitService {
         preferCSSPageSize: false,
       });
 
+      console.log('PDF generated successfully');
       return pdfBuffer as Buffer;
     } catch (error) {
       console.error("Error generating PDF from HTML:", error);
@@ -791,6 +816,8 @@ export class VisitService {
   // Helper method to convert image URL to base64 for better PDF embedding
   async convertImageUrlToBase64(imageUrl: string): Promise<string | null> {
     try {
+      console.log(`Attempting to convert image to base64: ${imageUrl}`);
+      
       const fetch = (await import("node-fetch")).default;
       const response = await fetch(imageUrl, {
         headers: {
