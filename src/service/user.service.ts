@@ -234,6 +234,69 @@ export class UserTeamService {
     }
   }
 
+  async removeManagerFromSalesRep(
+    userData: IJwtVerify,
+    sales_rep_id: number
+  ): Promise<{ status: number; data?: any; message: string }> {
+    const dataSource = await getDataSource();
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.startTransaction();
+
+    try {
+      const salesRep = await userQuery.getUserById(
+        queryRunner.manager,
+        userData.org_id,
+        sales_rep_id
+      );
+
+      if (!salesRep) {
+        await queryRunner.rollbackTransaction();
+        return { status: 404, message: "Sales representative not found", data: null };
+      }
+
+      if (salesRep?.role?.role_name !== Roles.SALES_REP) {
+        await queryRunner.rollbackTransaction();
+        return { status: 400, message: "User is not a sales representative", data: null };
+      }
+
+      const existingAssignment = await queryRunner.manager
+        .createQueryBuilder()
+        .select("msr")
+        .from(ManagerSalesRep, "msr")
+        .where("msr.sales_rep_id = :sales_rep_id", { sales_rep_id })
+        .getOne();
+
+      if (!existingAssignment) {
+        await queryRunner.rollbackTransaction();
+        return { status: 404, message: "No manager assignment found for this sales representative", data: null };
+      }
+
+      await queryRunner.manager
+        .createQueryBuilder()
+        .delete()
+        .from(ManagerSalesRep)
+        .where("sales_rep_id = :sales_rep_id", { sales_rep_id })
+        .execute();
+
+      await queryRunner.commitTransaction();
+      return {
+        status: 200,
+        message: "Manager assignment removed successfully",
+        data: null,
+      };
+    } catch (error) {
+      console.error(error);
+      await queryRunner.rollbackTransaction();
+      return {
+        status: 500,
+        message: "An error occurred while removing manager assignment.",
+        data: null,
+      };
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
   async getSalesRepManagaerList(
     page: number,
     limit: number,
