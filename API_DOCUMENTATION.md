@@ -319,6 +319,90 @@ Get list of managers.
 **Endpoint:** `GET /api/user/manager`
 **Authorization:** Required
 
+## Manager Dashboard
+Get dashboard data specific to a manager, including their assigned sales representatives and performance metrics.
+
+**Endpoint:** `GET /api/user/manager/dashboard`
+**Authorization:** Required
+**User Role:** Manager
+
+**Response:**
+```json
+{
+  "status": 200,
+  "message": "Manager dashboard data fetched successfully",
+  "data": {
+    "salesRepsCount": 5,
+    "totalLeads": 150,
+    "visitedLeads": 120,
+    "unVisitedLeads": 30,
+    "signedLeads": 45,
+    "unSignedLeads": 105,
+    "pendingVisits": 25,
+    "completedVisits": 95,
+    "totalContracts": 40,
+    "salesRepDetails": [
+      {
+        "user_id": 117,
+        "first_name": "John",
+        "last_name": "Doe",
+        "email": "john.doe@company.com",
+        "phone": "+1234567890",
+        "is_active": true,
+        "total_leads": "25",
+        "signed_leads": "8",
+        "total_visits": "20",
+        "completed_visits": "15",
+        "total_contracts": "7"
+      },
+      {
+        "user_id": 118,
+        "first_name": "Jane",
+        "last_name": "Smith",
+        "email": "jane.smith@company.com",
+        "phone": "+1234567891",
+        "is_active": true,
+        "total_leads": "30",
+        "signed_leads": "12",
+        "total_visits": "25",
+        "completed_visits": "20",
+        "total_contracts": "10"
+      }
+    ]
+  }
+}
+```
+
+**Data Description:**
+- `salesRepsCount`: Number of sales representatives assigned to this manager
+- `totalLeads`: Total leads assigned to manager's sales reps
+- `visitedLeads`: Leads that have been visited (not in Prospect or Start_Signing status)
+- `unVisitedLeads`: Leads not yet visited (Prospect or Start_Signing status)
+- `signedLeads`: Leads with Signed status
+- `unSignedLeads`: Leads not yet signed
+- `pendingVisits`: Visits not yet completed (no check_out_time)
+- `completedVisits`: Visits that have been completed
+- `totalContracts`: Total contracts signed by manager's sales reps
+- `salesRepDetails`: Individual performance metrics for each sales rep under this manager
+
+## Remove Manager Assignment
+Remove manager assignment from a sales representative.
+
+**Endpoint:** `DELETE /api/user/assign-manager/:id`
+**Authorization:** Required
+
+**URL Parameters:**
+- `id`: Sales representative user ID
+
+**Response:**
+```json
+{
+  "status": 200,
+  "message": "Manager assignment removed successfully",
+  "data": null
+}
+```
+
 ## Get Team Member by ID
 Get specific team member details.
 

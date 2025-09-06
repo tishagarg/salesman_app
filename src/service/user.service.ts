@@ -30,6 +30,7 @@ import { Visit } from "../models/Visits.entity";
 import { Route } from "../models/Route.entity";
 import { Contract } from "../models/Contracts.entity";
 import { ContractTemplate } from "../models/ContractTemplate.entity";
+import { LeadStatus } from "../enum/leadStatus";
 
 const userQuery = new UserQuery();
 const roleQuery = new RoleQuery();
@@ -291,6 +292,171 @@ export class UserTeamService {
         status: 500,
         message: "An error occurred while removing manager assignment.",
         data: null,
+      };
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  async getManagerDashboard(
+    userData: IJwtVerify
+  ): Promise<{ status: number; data?: any; message: string }> {
+    const dataSource = await getDataSource();
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.startTransaction();
+
+    try {
+      // Get sales reps under this manager
+      const salesRepsUnderManager = await queryRunner.manager
+        .createQueryBuilder()
+        .select("msr.sales_rep_id", "sales_rep_id")
+        .from(ManagerSalesRep, "msr")
+        .where("msr.manager_id = :manager_id", { manager_id: userData.user_id })
+        .getRawMany();
+
+      const salesRepIds = salesRepsUnderManager.map(rep => rep.sales_rep_id);
+      const salesRepsCount = salesRepIds.length;
+
+      if (salesRepsCount === 0) {
+        await queryRunner.commitTransaction();
+        return {
+          data: {
+            salesRepsCount: 0,
+            totalLeads: 0,
+            visitedLeads: 0,
+            unVisitedLeads: 0,
+            signedLeads: 0,
+            unSignedLeads: 0,
+            pendingVisits: 0,
+            completedVisits: 0,
+            totalContracts: 0,
+            salesRepDetails: [],
+          },
+          status: 200,
+          message: "Manager dashboard data fetched successfully",
+        };
+      }
+
+      // Run parallel queries for manager's team data
+      const [
+        totalLeads,
+        visitedLeads,
+        unVisitedLeads,
+        signedLeads,
+        unSignedLeads,
+        pendingVisits,
+        completedVisits,
+        totalContracts,
+        salesRepDetails,
+      ] = await Promise.all([
+        // Total leads assigned to manager's sales reps
+        queryRunner.manager.getRepository(Leads).count({
+          where: { assigned_rep_id: In(salesRepIds) },
+        }),
+
+        // Visited leads (not Prospect or Start_Signing)
+        queryRunner.manager.getRepository(Leads).count({
+          where: {
+            assigned_rep_id: In(salesRepIds),
+            status: Not(In([LeadStatus.Prospect, LeadStatus.Start_Signing])),
+          },
+        }),
+
+        // Unvisited leads (Prospect or Start_Signing)
+        queryRunner.manager.getRepository(Leads).count({
+          where: {
+            assigned_rep_id: In(salesRepIds),
+            status: In([LeadStatus.Prospect, LeadStatus.Start_Signing]),
+          },
+        }),
+
+        // Signed leads
+        queryRunner.manager.getRepository(Leads).count({
+          where: {
+            assigned_rep_id: In(salesRepIds),
+            status: LeadStatus.Signed,
+          },
+        }),
+
+        // Unsigned leads
+        queryRunner.manager.getRepository(Leads).count({
+          where: {
+            assigned_rep_id: In(salesRepIds),
+            status: Not(In([LeadStatus.Signed])),
+          },
+        }),
+
+        // Pending visits (not checked out)
+        queryRunner.manager.getRepository(Visit).count({
+          where: {
+            rep_id: In(salesRepIds),
+            check_out_time: IsNull(),
+          },
+        }),
+
+        // Completed visits (checked out)
+        queryRunner.manager.getRepository(Visit).count({
+          where: {
+            rep_id: In(salesRepIds),
+            check_out_time: Not(IsNull()),
+          },
+        }),
+
+        // Total contracts signed by manager's sales reps - join through visit
+        queryRunner.manager
+          .createQueryBuilder(Contract, "c")
+          .innerJoin(Visit, "v", "v.visit_id = c.visit_id")
+          .where("v.rep_id IN (:...salesRepIds)", { salesRepIds })
+          .getCount(),
+
+        // Sales rep details with their performance
+        queryRunner.manager
+          .createQueryBuilder(User, "u")
+          .select([
+            "u.user_id as user_id",
+            "u.first_name as first_name", 
+            "u.last_name as last_name",
+            "u.email as email",
+            "u.phone as phone",
+            "u.is_active as is_active",
+            "COUNT(DISTINCT l.lead_id) as total_leads",
+            "COUNT(DISTINCT CASE WHEN l.status = 'Signed' THEN l.lead_id END) as signed_leads",
+            "COUNT(DISTINCT v.visit_id) as total_visits",
+            "COUNT(DISTINCT CASE WHEN v.check_out_time IS NOT NULL THEN v.visit_id END) as completed_visits",
+            "COUNT(DISTINCT c.id) as total_contracts",
+          ])
+          .leftJoin(Leads, "l", "l.assigned_rep_id = u.user_id")
+          .leftJoin(Visit, "v", "v.rep_id = u.user_id")
+          .leftJoin(Contract, "c", "c.visit_id = v.visit_id")
+          .where("u.user_id IN (:...salesRepIds)", { salesRepIds })
+          .groupBy("u.user_id, u.first_name, u.last_name, u.email, u.phone, u.is_active")
+          .getRawMany(),
+      ]);
+
+      await queryRunner.commitTransaction();
+      return {
+        data: {
+          salesRepsCount,
+          totalLeads,
+          visitedLeads,
+          unVisitedLeads,
+          signedLeads,
+          unSignedLeads,
+          pendingVisits,
+          completedVisits,
+          totalContracts,
+          salesRepDetails,
+        },
+        status: 200,
+        message: "Manager dashboard data fetched successfully",
+      };
+    } catch (error) {
+      console.error("Error in getManagerDashboard:", error);
+      await queryRunner.rollbackTransaction();
+      return {
+        data: null,
+        status: 500,
+        message: "Error fetching manager dashboard data",
       };
     } finally {
       await queryRunner.release();
