@@ -134,6 +134,25 @@ export class UserTeamController {
     );
   }
 
+  async removeManagerFromSalesRep(req: any, res: Response): Promise<void> {
+    const { user_id, org_id } = req.user;
+    const salesRepId = parseInt(req.params.id);
+    const response = await userTeamService.removeManagerFromSalesRep(
+      { user_id, org_id } as IJwtVerify,
+      salesRepId
+    );
+    if (response.status >= 400) {
+      return ApiResponse.error(res, response.status, response.message);
+    }
+    return ApiResponse.result(
+      res,
+      response.data,
+      response.status,
+      null,
+      response.message
+    );
+  }
+
   async addTeamMember(req: any, res: Response): Promise<void> {
     const { org_id, user_id } = req.user;
     const params: ITeamMemberBody = req.body;
