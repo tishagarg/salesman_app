@@ -234,6 +234,69 @@ export class UserTeamService {
     }
   }
 
+  async removeManagerFromSalesRep(
+    userData: IJwtVerify,
+    sales_rep_id: number
+  ): Promise<{ status: number; data?: any; message: string }> {
+    const dataSource = await getDataSource();
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.startTransaction();
+
+    try {
+      const salesRep = await userQuery.getUserById(
+        queryRunner.manager,
+        userData.org_id,
+        sales_rep_id
+      );
+
+      if (!salesRep) {
+        await queryRunner.rollbackTransaction();
+        return { status: 404, message: "Sales representative not found", data: null };
+      }
+
+      if (salesRep?.role?.role_name !== Roles.SALES_REP) {
+        await queryRunner.rollbackTransaction();
+        return { status: 400, message: "User is not a sales representative", data: null };
+      }
+
+      const existingAssignment = await queryRunner.manager
+        .createQueryBuilder()
+        .select("msr")
+        .from(ManagerSalesRep, "msr")
+        .where("msr.sales_rep_id = :sales_rep_id", { sales_rep_id })
+        .getOne();
+
+      if (!existingAssignment) {
+        await queryRunner.rollbackTransaction();
+        return { status: 404, message: "No manager assignment found for this sales representative", data: null };
+      }
+
+      await queryRunner.manager
+        .createQueryBuilder()
+        .delete()
+        .from(ManagerSalesRep)
+        .where("sales_rep_id = :sales_rep_id", { sales_rep_id })
+        .execute();
+
+      await queryRunner.commitTransaction();
+      return {
+        status: 200,
+        message: "Manager assignment removed successfully",
+        data: null,
+      };
+    } catch (error) {
+      console.error(error);
+      await queryRunner.rollbackTransaction();
+      return {
+        status: 500,
+        message: "An error occurred while removing manager assignment.",
+        data: null,
+      };
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
   async getSalesRepManagaerList(
     page: number,
     limit: number,
@@ -343,10 +406,11 @@ export class UserTeamService {
       const query = queryRunner.manager
         .getRepository(User)
         .createQueryBuilder("user")
+        .leftJoinAndSelect("user.role", "role")
+        .leftJoinAndSelect("user.address", "address")
         .leftJoin(ManagerSalesRep, "msr", "msr.sales_rep_id = user.user_id")
         .where("user.role_id = :roleId", { roleId: role.role_id })
         .andWhere("user.org_id = :orgId", { orgId: org_id })
-        .andWhere("msr.sales_rep_id IS NULL")
         .andWhere("user.is_active = true");
       if (search && search.trim() !== "") {
         const searchTerm = `%${search.trim().toLowerCase()}%`;
@@ -371,7 +435,7 @@ export class UserTeamService {
         status: 200,
         data: users.map(({ password_hash, ...safeUser }) => safeUser),
         total,
-        message: "Unassigned managers fetched successfully",
+        message: "Sales representatives fetched successfully",
       };
     } catch (error) {
       await queryRunner.rollbackTransaction();
@@ -380,7 +444,7 @@ export class UserTeamService {
         status: 500,
         data: null,
         total: 0,
-        message: "Failed to fetch unassigned managers.",
+        message: "Failed to fetch sales representatives.",
       };
     } finally {
       await queryRunner.release();
