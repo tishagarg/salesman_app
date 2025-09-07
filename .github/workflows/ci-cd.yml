@@ -1,0 +1,276 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+env:
+  NODE_VERSION: '18'
+  AWS_REGION: 'us-east-1'
+
+jobs:
+  test:
+    name: Test & Build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linter
+        run: npm run lint
+
+      - name: Run type check
+        run: npm run type-check
+
+      - name: Run tests
+        run: npm test -- --coverage
+
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        if: success()
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Build application
+        run: npm run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-files
+          path: |
+            dist/
+            package*.json
+          retention-days: 1
+
+  security:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run security audit
+        run: npm audit --audit-level=high
+
+      - name: Run vulnerability scan
+        run: npx snyk test
+        env:
+          SNYK_TOKEN: ${{ secrets.SNYK_TOKEN }}
+        continue-on-error: true
+
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [test, security]
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-files
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy to Elastic Beanstalk Staging
+        run: |
+          # Create deployment package
+          zip -r deploy-package.zip dist/ package.json package-lock.json
+          
+          # Upload to S3
+          aws s3 cp deploy-package.zip s3://${{ secrets.AWS_S3_BUCKET }}/staging/deploy-package-${{ github.sha }}.zip
+          
+          # Create application version
+          aws elasticbeanstalk create-application-version \
+            --application-name ${{ secrets.AWS_EB_APP_NAME }} \
+            --version-label staging-${{ github.sha }} \
+            --source-bundle S3Bucket=${{ secrets.AWS_S3_BUCKET }},S3Key=staging/deploy-package-${{ github.sha }}.zip
+          
+          # Deploy to environment
+          aws elasticbeanstalk update-environment \
+            --application-name ${{ secrets.AWS_EB_APP_NAME }} \
+            --environment-name ${{ secrets.AWS_EB_ENV_STAGING }} \
+            --version-label staging-${{ github.sha }}
+
+      - name: Wait for deployment
+        run: |
+          aws elasticbeanstalk wait environment-updated \
+            --application-name ${{ secrets.AWS_EB_APP_NAME }} \
+            --environment-name ${{ secrets.AWS_EB_ENV_STAGING }}
+
+      - name: Run smoke tests
+        run: |
+          # Wait a bit for the service to be ready
+          sleep 30
+          curl -f ${{ secrets.STAGING_URL }}/health || exit 1
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [test, security]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-files
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Deploy to Elastic Beanstalk Production
+        run: |
+          # Create deployment package
+          zip -r deploy-package.zip dist/ package.json package-lock.json
+          
+          # Upload to S3
+          aws s3 cp deploy-package.zip s3://${{ secrets.AWS_S3_BUCKET }}/production/deploy-package-${{ github.sha }}.zip
+          
+          # Create application version
+          aws elasticbeanstalk create-application-version \
+            --application-name ${{ secrets.AWS_EB_APP_NAME }} \
+            --version-label production-${{ github.sha }} \
+            --source-bundle S3Bucket=${{ secrets.AWS_S3_BUCKET }},S3Key=production/deploy-package-${{ github.sha }}.zip
+          
+          # Deploy to environment
+          aws elasticbeanstalk update-environment \
+            --application-name ${{ secrets.AWS_EB_APP_NAME }} \
+            --environment-name ${{ secrets.AWS_EB_ENV_PRODUCTION }} \
+            --version-label production-${{ github.sha }}
+
+      - name: Wait for deployment
+        run: |
+          aws elasticbeanstalk wait environment-updated \
+            --application-name ${{ secrets.AWS_EB_APP_NAME }} \
+            --environment-name ${{ secrets.AWS_EB_ENV_PRODUCTION }}
+
+      - name: Run smoke tests
+        run: |
+          # Wait a bit for the service to be ready
+          sleep 30
+          curl -f ${{ secrets.PRODUCTION_URL }}/health || exit 1
+
+      - name: Create GitHub release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: v${{ github.run_number }}
+          release_name: Release v${{ github.run_number }}
+          body: |
+            Automated release for commit ${{ github.sha }}
+            
+            Changes in this release:
+            ${{ github.event.head_commit.message }}
+          draft: false
+          prerelease: false
+
+  # Alternative deployment methods (uncomment as needed)
+  
+  # deploy-lambda:
+  #   name: Deploy Lambda Function
+  #   runs-on: ubuntu-latest
+  #   needs: [test, security]
+  #   if: github.ref == 'refs/heads/main'
+  #   
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Download build artifacts
+  #       uses: actions/download-artifact@v4
+  #       with:
+  #         name: build-files
+  #
+  #     - name: Configure AWS credentials
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  #         aws-region: ${{ env.AWS_REGION }}
+  #
+  #     - name: Deploy Lambda
+  #       run: |
+  #         zip -r lambda-package.zip dist/ node_modules/
+  #         aws lambda update-function-code \
+  #           --function-name ${{ secrets.LAMBDA_FUNCTION_NAME }} \
+  #           --zip-file fileb://lambda-package.zip
+
+  # deploy-ecs:
+  #   name: Deploy to ECS
+  #   runs-on: ubuntu-latest
+  #   needs: [test, security]
+  #   if: github.ref == 'refs/heads/main'
+  #   
+  #   steps:
+  #     - name: Checkout code
+  #       uses: actions/checkout@v4
+  #
+  #     - name: Configure AWS credentials
+  #       uses: aws-actions/configure-aws-credentials@v4
+  #       with:
+  #         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+  #         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+  #         aws-region: ${{ env.AWS_REGION }}
+  #
+  #     - name: Login to Amazon ECR
+  #       id: login-ecr
+  #       uses: aws-actions/amazon-ecr-login@v2
+  #
+  #     - name: Build and push Docker image
+  #       env:
+  #         ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+  #         ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+  #         IMAGE_TAG: ${{ github.sha }}
+  #       run: |
+  #         docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+  #         docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+  #
+  #     - name: Update ECS service
+  #       run: |
+  #         aws ecs update-service \
+  #           --cluster ${{ secrets.ECS_CLUSTER }} \
+  #           --service ${{ secrets.ECS_SERVICE }} \
+  #           --force-new-deployment

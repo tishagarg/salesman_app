@@ -125,7 +125,9 @@ export class VisitService {
         console.error("❌ Invalid URL format:", imageUrl);
         return null;
       }
+      console.log("🔄 Attempting to import node-fetch...");
       const fetch = (await import("node-fetch")).default;
+      console.log("✅ node-fetch imported successfully");
       const response = await fetch(imageUrl, {
         headers: {
           "User-Agent":
@@ -490,7 +492,7 @@ export class VisitService {
         base64Preview: signatureResult.base64?.substring(0, 50) + "...",
       });
 
-      // CORE FIX: Prepare metadata with the correct signature_image_url value
+      // CORE FIX: Prepare metadata with the correct signature value
       const baseMetadata = {
         ...payload.parsedMetaData,
         date_signed: new Date().toLocaleDateString("en-US"),
@@ -499,19 +501,18 @@ export class VisitService {
         contract_date: new Date().toLocaleDateString("en-US"),
         current_date: new Date().toLocaleDateString("en-US"),
         timestamp: new Date().toISOString(),
-        signature_image_url: "",
+        signature: "",
       };
 
-      // CRITICAL: Set signature_image_url to ONLY the base64 data URI for your template
+      // CRITICAL: Set signature to ONLY the base64 data URI for your template
       if (signatureResult.success && signatureResult.base64) {
-        baseMetadata.signature_image_url = signatureResult.base64;
-        console.log("✅ Set signature_image_url to base64 data URI");
+        baseMetadata.signature = signatureResult.base64;
+        console.log("✅ Set signature to base64 data URI");
         console.log("📏 Data URI length:", signatureResult.base64.length);
       } else {
         // Fallback to S3 URL if base64 failed
-        baseMetadata.signature_image_url =
-          payload.signatureFile?.location || "";
-        console.log("⚠️ Using S3 URL fallback for signature_image_url");
+        baseMetadata.signature = payload.signatureFile?.location || "";
+        console.log("⚠️ Using S3 URL fallback for signature");
       }
 
       // Add other signature fields for different template formats
@@ -530,12 +531,12 @@ export class VisitService {
 
       console.log("🔧 Final metadata check:");
       console.log(
-        "- signature_image_url starts with 'data:image/':",
-        updatedMetaData.signature_image_url?.startsWith("data:image/")
+        "- signature starts with 'data:image/':",
+        updatedMetaData.signature?.startsWith("data:image/")
       );
       console.log(
-        "- signature_image_url length:",
-        updatedMetaData.signature_image_url?.length || 0
+        "- signature length:",
+        updatedMetaData.signature?.length || 0
       );
 
       // Render contract HTML
@@ -854,15 +855,6 @@ export class VisitService {
           "--disable-dev-shm-usage",
           "--disable-web-security",
           "--allow-running-insecure-content",
-          "--disable-features=VizDisplayCompositor",
-          "--disable-extensions",
-          "--disable-plugins",
-          "--disable-gpu",
-          "--no-first-run",
-          "--disable-default-apps",
-          "--disable-background-timer-throttling",
-          "--disable-backgrounding-occluded-windows",
-          "--disable-renderer-backgrounding",
         ],
       };
 
@@ -870,12 +862,14 @@ export class VisitService {
         browser = await puppeteer.launch(browserOptions);
       } else {
         try {
-          const chrome = require("chrome-aws-lambda");
+          const chromeModule = await import("chrome-aws-lambda");
+          const chromium = chromeModule.default; // 👈 use default export
+          const { args, executablePath, headless } = chromium;
+
           browser = await puppeteer.launch({
-            args: [...chrome.args, ...browserOptions.args],
-            defaultViewport: chrome.defaultViewport,
-            executablePath: await chrome.executablePath,
-            headless: chrome.headless,
+            args: [...args, ...browserOptions.args],
+            executablePath: await executablePath,
+            headless,
           });
         } catch (e) {
           console.warn(
@@ -886,7 +880,7 @@ export class VisitService {
       }
 
       const page = await browser.newPage();
-
+      console.log("page ", page);
       // Set viewport for consistent rendering
       await page.setViewport({
         width: 1024,
