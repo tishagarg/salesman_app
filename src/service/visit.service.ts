@@ -675,6 +675,166 @@ export class VisitService {
     }
   }
 
+  async submitContractPdf(payload: {
+    lead_id: number;
+    contractPdfFile: any;
+    contract_template_id: number;
+    parsedMetaData: Record<string, string>;
+    dropdownValues?: Record<string, string>;
+    rep_id: number;
+  }): Promise<{ data: any; status: number; message: string }> {
+    const dataSource = await getDataSource();
+    const queryRunner = dataSource.createQueryRunner();
+    await queryRunner.startTransaction();
+
+    try {
+      const visitRepo = dataSource.getRepository(Visit);
+      const contractRepo = dataSource.getRepository(Contract);
+      const templateRepo = dataSource.getRepository(ContractTemplate);
+
+      if (!payload.contractPdfFile) {
+        await queryRunner.rollbackTransaction();
+        return {
+          data: null,
+          message: "Contract PDF file is required",
+          status: 400,
+        };
+      }
+
+      const visitData = {
+        lead_id: payload.lead_id,
+        rep_id: payload.rep_id,
+        latitude: 0,
+        longitude: 0,
+        check_in_time: getFinnishTime(),
+        photos: [],
+        parsedFollowUps: [],
+        notes: "",
+      };
+
+      const visits = await visitRepo.create(visitData);
+      const savedVisit = await visitRepo.save(visits);
+
+      const template = await templateRepo.findOneBy({
+        id: payload.contract_template_id,
+      });
+
+      if (!template) {
+        await queryRunner.rollbackTransaction();
+        return {
+          data: null,
+          message: "Contract template not found",
+          status: 404,
+        };
+      }
+
+      if (
+        template.dropdown_fields &&
+        Object.keys(template.dropdown_fields).length > 0
+      ) {
+        const dropdownValues = payload.dropdownValues || {};
+        const validation = validateDropdownValues(
+          template.dropdown_fields,
+          dropdownValues
+        );
+
+        if (!validation.isValid) {
+          await queryRunner.rollbackTransaction();
+          return {
+            data: null,
+            message: `Validation failed: ${validation.errors.join(", ")}`,
+            status: 400,
+          };
+        }
+      }
+
+      // Prepare metadata without signature processing
+      const updatedMetaData = {
+        ...payload.parsedMetaData,
+        date_signed: new Date().toLocaleDateString("en-US"),
+        signed_date: new Date().toLocaleDateString("en-US"),
+        signed_time: new Date().toLocaleTimeString("en-US"),
+        contract_date: new Date().toLocaleDateString("en-US"),
+        current_date: new Date().toLocaleDateString("en-US"),
+        timestamp: new Date().toISOString(),
+      };
+
+      // Render contract HTML (for reference, but we'll use the provided PDF)
+      let renderedHtml: string;
+      if (
+        template.dropdown_fields &&
+        Object.keys(template.dropdown_fields).length > 0
+      ) {
+        renderedHtml = renderContractWithDropdowns(
+          template.content,
+          updatedMetaData,
+          payload.dropdownValues || {}
+        );
+      } else {
+        renderedHtml = renderContract(template.content, updatedMetaData);
+      }
+
+      const contract = contractRepo.create({
+        contract_template_id: template.id,
+        visit_id: savedVisit.visit_id,
+        rendered_html: renderedHtml,
+        metadata: updatedMetaData,
+        signed_at: getFinnishTime(),
+      });
+
+      const savedContract = await contractRepo.save(contract);
+
+      // Save the contract PDF directly from uploaded file
+      const contractPDF = dataSource.getRepository(ContractPDF).create({
+        contract_id: savedContract.id,
+        pdf_data: payload.contractPdfFile.buffer || Buffer.from(""),
+        pdf_url: payload.contractPdfFile.location,
+        created_at: getFinnishTime(),
+      } as DeepPartial<ContractPDF>);
+
+      await dataSource.getRepository(ContractPDF).save(contractPDF);
+
+      savedVisit.contract = savedContract;
+      await visitRepo.save(savedVisit);
+
+      // Update lead status to "Signed"
+      const leadRepo = dataSource.getRepository(Leads);
+      const lead = await leadRepo.findOne({
+        where: { lead_id: payload.lead_id },
+      });
+
+      if (lead) {
+        lead.status = LeadStatus.Signed;
+        lead.updated_at = getFinnishTime();
+        lead.updated_by = "system";
+        await leadRepo.save(lead);
+      }
+
+      const newContract = await dataSource.getRepository(Contract).findOne({
+        where: { id: savedContract.id },
+        relations: { pdf: true },
+      });
+
+      await queryRunner.commitTransaction();
+
+      return {
+        data: newContract,
+        message: "Contract PDF submitted successfully",
+        status: 200,
+      };
+    } catch (error) {
+      console.error("❌ Error submitting contract PDF:", error);
+      await queryRunner.rollbackTransaction();
+      return {
+        data: null,
+        message: "Error submitting contract PDF",
+        status: 500,
+      };
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
   // Enhanced PDF generation with better buffer handling
   async generatePdfFromHtml(
     html: string,

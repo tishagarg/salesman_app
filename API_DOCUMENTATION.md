@@ -1234,6 +1234,91 @@ Submit a signed contract during visit.
 }
 ```
 
+## Submit Contract PDF
+Submit a pre-signed contract PDF directly.
+
+**Endpoint:** `POST /api/contract/submit-pdf`
+**Authorization:** Required (Bearer token)
+**Content-Type:** `multipart/form-data`
+
+**Request Body:** Multipart form data
+- `lead_id`: Lead ID (required)
+- `contract_template_id`: Template ID (required)
+- `metadata`: JSON string with contract data (required)
+- `dropdownValues`: JSON string with dropdown selections (required)
+- `contract_pdf`: Contract PDF file (required)
+
+**Example metadata:**
+```json
+{
+  "customer_name": "John Doe",
+  "contract_date": "2024-01-15",
+  "signature_date": "2024-01-15",
+  "phone": "+1-555-123-4567",
+  "email": "john.doe@example.com",
+  "address": "123 Main St, Anytown, ST 12345"
+}
+```
+
+**Example dropdownValues:**
+```json
+{
+  "service_type": "premium",
+  "payment_plan": "monthly",
+  "contract_duration": "12_months"
+}
+```
+
+**JavaScript Example:**
+```javascript
+const formData = new FormData();
+formData.append('lead_id', '123');
+formData.append('contract_template_id', '456');
+formData.append('metadata', JSON.stringify({
+  "customer_name": "John Doe",
+  "contract_date": "2024-01-15",
+  "signature_date": "2024-01-15"
+}));
+formData.append('dropdownValues', JSON.stringify({
+  "service_type": "premium",
+  "payment_plan": "monthly"
+}));
+formData.append('contract_pdf', pdfFile);
+
+fetch('/api/contract/submit-pdf', {
+  method: 'POST',
+  headers: {
+    'Authorization': 'Bearer your_jwt_token'
+  },
+  body: formData
+});
+```
+
+**cURL Example:**
+```bash
+curl -X POST \
+  'http://localhost:3000/api/contract/submit-pdf' \
+  -H 'Authorization: Bearer your_jwt_token' \
+  -F 'lead_id=123' \
+  -F 'contract_template_id=456' \
+  -F 'metadata={"customer_name":"John Doe","contract_date":"2024-01-15","signature_date":"2024-01-15"}' \
+  -F 'dropdownValues={"service_type":"premium","payment_plan":"monthly"}' \
+  -F 'contract_pdf=@/path/to/signed_contract.pdf'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Contract PDF submitted successfully",
+  "data": {
+    "contract_id": 789,
+    "visit_id": 456,
+    "pdf_uploaded": true
+  }
+}
+```
+
 ## Get Contract PDF
 
 Get PDF of signed contract.
