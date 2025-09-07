@@ -36,6 +36,7 @@ import { ContractImage } from "../models/ContractImage.entity";
 import { LeadStatus } from "../enum/leadStatus";
 import { ContractPDF } from "../models/ContractPdf.entity";
 import { getFinnishTime } from "../utils/timezone";
+import { getBrowser } from "../utils/chromium";
 
 require("dotenv").config();
 
@@ -841,7 +842,7 @@ export class VisitService {
     html: string,
     signatureBase64?: string
   ): Promise<Buffer> {
-    let browser: import("puppeteer").Browser | null = null;
+    let browser = null;
 
     try {
       console.log("Starting PDF generation...");
@@ -859,7 +860,7 @@ export class VisitService {
       };
 
       if (isDev) {
-        browser = await puppeteer.launch(browserOptions);
+        browser = await getBrowser();
       } else {
         try {
           const chromeModule = await import("chrome-aws-lambda");
@@ -1182,55 +1183,6 @@ TRACK        </text>
       });
 
       console.log("Waiting for images to load...");
-
-      // Enhanced image loading wait
-      await page.evaluate(() => {
-        return new Promise<void>((resolve) => {
-          const images = Array.from(document.images);
-          let loadedCount = 0;
-
-          const checkComplete = () => {
-            if (loadedCount >= images.length) {
-              console.log("All images loaded");
-              resolve();
-            }
-          };
-
-          if (images.length === 0) {
-            console.log("No images found");
-            resolve();
-            return;
-          }
-
-          images.forEach((img, index) => {
-            if (img.complete && img.naturalWidth > 0) {
-              loadedCount++;
-              console.log(`Image ${index} already loaded`);
-            } else {
-              img.onload = () => {
-                loadedCount++;
-                console.log(`Image ${index} loaded successfully`);
-                checkComplete();
-              };
-              img.onerror = (e) => {
-                loadedCount++;
-                console.log(`Image ${index} failed to load:`, e);
-                checkComplete();
-              };
-            }
-          });
-
-          checkComplete();
-
-          // Fallback timeout
-          setTimeout(() => {
-            console.log(
-              `Timeout: ${loadedCount}/${images.length} images loaded`
-            );
-            resolve();
-          }, 15000);
-        });
-      });
 
       // Additional wait for rendering
       await new Promise((resolve) => setTimeout(resolve, 3000));
