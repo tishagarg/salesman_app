@@ -7,7 +7,8 @@ import { ContractPDF } from "../models/ContractPdf.entity";
 
 export class ContractTemplateController {
   async create(req: any, res: Response): Promise<void> {
-    const { title, content, assigned_manager_ids, status, dropdown_fields } = req.body;
+    const { title, content, assigned_manager_ids, status, dropdown_fields } =
+      req.body;
 
     const newTemplate = await ContractTemplateService.createContractTemplate({
       title,
@@ -99,15 +100,17 @@ export class ContractTemplateController {
       templates.message
     );
   }
-  async getContractPDF(req: any, res: Response) {
+  async getContractHTML(req: any, res: Response) {
     try {
       const { contractId } = req.params;
       const dataSource = await getDataSource();
       const contractRepo = dataSource.getRepository(Contract);
-      const contractPDFRepo = dataSource.getRepository(ContractPDF);
+
+      // Find the contract with its rendered HTML
       const contract = await contractRepo.findOne({
         where: { id: parseInt(contractId) },
       });
+
       if (!contract) {
         res.status(404).json({
           data: null,
@@ -115,46 +118,56 @@ export class ContractTemplateController {
           status: 404,
         });
       }
-      const contractPDF = await contractPDFRepo.findOne({
-        where: { contract_id: parseInt(contractId) },
-      });
 
-      if (!contractPDF || !contractPDF.pdf_data) {
+      if (!contract?.rendered_html) {
         res.status(404).json({
           data: null,
-          message: "PDF not found for this contract",
+          message: "HTML content not found for this contract",
           status: 404,
         });
-        return;
       }
-      res.setHeader("Content-Type", "application/pdf");
+
+      // Set headers for HTML response
+      res.setHeader("Content-Type", "text/html; charset=utf-8");
       res.setHeader(
         "Content-Disposition",
-        `inline; filename="contract-${contractId}.pdf"`
+        `inline; filename="contract-${contractId}.html"`
       );
-      res.setHeader("Content-Length", contractPDF.pdf_data.length);
-      res.status(200).send(contractPDF.pdf_data);
+
+      // Return the formatted HTML
+      res.status(200).send(contract?.rendered_html);
     } catch (error) {
-      console.error("Error retrieving PDF:", error);
+      console.error("Error retrieving contract HTML:", error);
       res.status(500).json({
         data: null,
-        message: "Error retrieving the PDF",
+        message: "Error retrieving the contract HTML",
         status: 500,
       });
     }
   }
-
   async reassignContractTemplate(req: any, res: Response): Promise<void> {
     try {
       const { templateId } = req.params;
       const { assigned_manager_ids } = req.body;
 
-      if (!templateId || !assigned_manager_ids || !Array.isArray(assigned_manager_ids)) {
-        return ApiResponse.error(res, 400, "Template ID and assigned_manager_ids array are required");
+      if (
+        !templateId ||
+        !assigned_manager_ids ||
+        !Array.isArray(assigned_manager_ids)
+      ) {
+        return ApiResponse.error(
+          res,
+          400,
+          "Template ID and assigned_manager_ids array are required"
+        );
       }
 
       if (assigned_manager_ids.length === 0) {
-        return ApiResponse.error(res, 400, "At least one manager ID must be provided");
+        return ApiResponse.error(
+          res,
+          400,
+          "At least one manager ID must be provided"
+        );
       }
 
       const result = await ContractTemplateService.reassignContractTemplate(
@@ -252,7 +265,9 @@ export class ContractTemplateController {
         return ApiResponse.error(res, 400, "Invalid contract ID format");
       }
 
-      const result = await ContractTemplateService.deleteContract(contractIdNum);
+      const result = await ContractTemplateService.deleteContract(
+        contractIdNum
+      );
 
       if (result.status >= 400) {
         return ApiResponse.error(res, result.status, result.message);
