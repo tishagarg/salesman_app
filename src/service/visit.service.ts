@@ -511,8 +511,7 @@ export class VisitService {
         console.log("📏 Data URI length:", signatureResult.base64.length);
       } else {
         // Fallback to S3 URL if base64 failed
-        baseMetadata.signature =
-          payload.signatureFile?.location || "";
+        baseMetadata.signature = payload.signatureFile?.location || "";
         console.log("⚠️ Using S3 URL fallback for signature");
       }
 
@@ -696,15 +695,6 @@ export class VisitService {
           "--disable-dev-shm-usage",
           "--disable-web-security",
           "--allow-running-insecure-content",
-          "--disable-features=VizDisplayCompositor",
-          "--disable-extensions",
-          "--disable-plugins",
-          "--disable-gpu",
-          "--no-first-run",
-          "--disable-default-apps",
-          "--disable-background-timer-throttling",
-          "--disable-backgrounding-occluded-windows",
-          "--disable-renderer-backgrounding",
         ],
       };
 
@@ -728,7 +718,7 @@ export class VisitService {
       }
 
       const page = await browser.newPage();
-
+      console.log("page ", page);
       // Set viewport for consistent rendering
       await page.setViewport({
         width: 1024,

@@ -73,5 +73,31 @@
     "nodemon": "^3.1.10",
     "ts-node": "^10.9.2",
     "typescript": "^5.8.3"
+  },
+  "overrides": {
+    "node-fetch": "^3.3.2",
+    "@vercel/node": {
+      "node-fetch": "^3.3.2",
+      "@vercel/nft": {
+        "@mapbox/node-pre-gyp": {
+          "node-fetch": "^3.3.2"
+        }
+      }
+    },
+    "bcrypt": {
+      "@mapbox/node-pre-gyp": {
+        "node-fetch": "^3.3.2"
+      }
+    },
+    "chrome-aws-lambda": {
+      "puppeteer-core": {
+        "node-fetch": "^3.3.2"
+      }
+    },
+    "google-auth-library": {
+      "gaxios": {
+        "node-fetch": "^3.3.2"
+      }
+    }
   }
 }
