@@ -210,7 +210,6 @@ export class GeocodingService {
           GEOMETRIC_CENTER: 3,
           APPROXIMATE: 4,
         };
-        console.log("bestResult ", bestResult);
         return (
           (precision[a.geometry.location_type ?? "APPROXIMATE"] ?? 4) -
           (precision[b.geometry.location_type ?? "APPROXIMATE"] ?? 4)
