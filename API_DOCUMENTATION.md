@@ -1319,13 +1319,36 @@ curl -X POST \
 }
 ```
 
-## Get Contract PDF
+## Get Contract PDF/HTML
 
-Get PDF of signed contract.
+Get HTML or PDF of signed contract.
 
 **Endpoint:** `GET /api/contract/:contractId/pdf`
+**Authorization:** Required
 
-**Response:** PDF file download
+**Query Parameters:**
+- `download` (optional): Set to `true` to download as PDF file
+
+**Examples:**
+
+**View HTML in browser:**
+```
+GET /api/contract/123/pdf
+```
+
+**Download PDF file:**
+```
+GET /api/contract/123/pdf?download=true
+```
+
+**Response (HTML view):** 
+- Returns styled HTML content in browser
+- Content-Type: `text/html; charset=utf-8`
+
+**Response (PDF download):**
+- Returns PDF file download
+- Content-Type: `application/pdf`
+- Content-Disposition: `attachment; filename="contract_123_[timestamp].pdf"`
 
 ## Reassign Contract Template
 
