@@ -248,8 +248,7 @@ export class VisitService {
         contract_date: new Date().toLocaleDateString("en-US"),
         current_date: new Date().toLocaleDateString("en-US"),
         timestamp: new Date().toISOString(),
-        signature_html: signatureResult.html,
-        signature_image: signatureResult.imageUrl ?? "",
+        signature_image: signatureResult.html ?? "",
         signature_status: signatureResult.success ? "completed" : "error",
         has_signature: signatureResult.success ? "yes" : "no",
       };
