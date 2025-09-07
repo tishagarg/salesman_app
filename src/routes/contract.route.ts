@@ -3,7 +3,7 @@ import { AuthController } from "../controllers/auth.controller";
 import { verifyToken } from "../middleware/auth.middleware";
 import { ContractTemplateController } from "../controllers/contract.controller";
 import { VisitController } from "../controllers/visits.controller";
-import {  uploadContractImage } from "../aws/aws.service";
+import {  uploadContractImage, uploadContractPdf } from "../aws/aws.service";
 
 const router = express.Router();
 
@@ -22,6 +22,12 @@ router.post(
   verifyToken,
   uploadContractImage.single("signature"),
   visitController.submitVisitWithContract
+);
+router.post(
+  "/submit-pdf",
+  verifyToken,
+  uploadContractPdf.single("contract_pdf"),
+  visitController.submitContractPdf
 );
 router.get('/:contractId/pdf', authController.getContractPDF);
 
