@@ -60,6 +60,30 @@ export const uploadContractImage = multer({
     },
   }),
 });
+
+export const uploadContractPdf = multer({
+  storage: multerS3({
+    s3: s3,
+    bucket: process.env.CONTRACT_AWS_BUCKET_NAME,
+    metadata: (req, file, cb) => {
+      cb(null, { fieldName: file.fieldname });
+    },
+    key: (req, file, cb) => {
+      const uniqueName = `contracts/pdf/${Date.now().toString()}_${path.basename(
+        file.originalname
+      )}`;
+      cb(null, uniqueName);
+    },
+  }),
+  fileFilter: (req, file, cb) => {
+    // Only allow PDF files
+    if (file.mimetype === 'application/pdf') {
+      cb(null, true);
+    } else {
+      cb(new Error('Only PDF files are allowed'));
+    }
+  },
+});
 export const uploadFileBufferToS3 = async (
   buffer: Buffer,
   key: string

@@ -81,6 +81,49 @@ export class VisitController {
     );
   }
 
+  async submitContractPdf(req: any, res: Response): Promise<void> {
+    const { lead_id, contract_template_id, metadata, dropdownValues } = req.body;
+    const rep_id = req.user.user_id;
+    const contractPdfFile = req.file;
+    let parsedMetaData;
+    let parsedDropdownValues;
+    
+    try {
+      parsedMetaData =
+        typeof metadata === "string" ? JSON.parse(metadata) : metadata;
+    } catch (error) {
+      console.error("Error parsing metadata:", error);
+      return ApiResponse.error(res, 400, "Invalid metadata format");
+    }
+
+    try {
+      parsedDropdownValues = 
+        typeof dropdownValues === "string" ? JSON.parse(dropdownValues) : dropdownValues;
+    } catch (error) {
+      console.error("Error parsing dropdown values:", error);
+      return ApiResponse.error(res, 400, "Invalid dropdown values format");
+    }
+    
+    const contract = await visitService.submitContractPdf({
+      lead_id,
+      contractPdfFile,
+      contract_template_id,
+      parsedMetaData,
+      dropdownValues: parsedDropdownValues,
+      rep_id,
+    });
+    if (contract.status >= 400) {
+      return ApiResponse.error(res, contract.status, contract.message);
+    }
+    return ApiResponse.result(
+      res,
+      contract.data,
+      contract.status,
+      null,
+      contract.message
+    );
+  }
+
   async logVisit(req: any, res: Response): Promise<void> {
     const {
       lead_id,
