@@ -702,12 +702,14 @@ export class VisitService {
         browser = await puppeteer.launch(browserOptions);
       } else {
         try {
-          const chrome = require("chrome-aws-lambda");
+          const chromeModule = await import("chrome-aws-lambda");
+          const chromium = chromeModule.default; // 👈 use default export
+          const { args, executablePath, headless } = chromium;
+
           browser = await puppeteer.launch({
-            args: [...chrome.args, ...browserOptions.args],
-            defaultViewport: chrome.defaultViewport,
-            executablePath: await chrome.executablePath,
-            headless: chrome.headless,
+            args: [...args, ...browserOptions.args],
+            executablePath: await executablePath,
+            headless,
           });
         } catch (e) {
           console.warn(
