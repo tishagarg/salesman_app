@@ -125,7 +125,9 @@ export class VisitService {
         console.error("❌ Invalid URL format:", imageUrl);
         return null;
       }
+      console.log("🔄 Attempting to import node-fetch...");
       const fetch = (await import("node-fetch")).default;
+      console.log("✅ node-fetch imported successfully");
       const response = await fetch(imageUrl, {
         headers: {
           "User-Agent":
