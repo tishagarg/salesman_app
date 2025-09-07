@@ -306,7 +306,7 @@ export class VisitService {
 <div class="signature-image-wrapper">
 <img src="${
           signatureFile.location
-        }" alt="Customer Signature" class="signature-image" crossorigin="anonymous">
+        }" alt="Customer Signature" class="signature-image">
 </div>
 <div class="signature-details">
 <p class="signature-date"><strong>Signed Date:</strong> ${new Date().toLocaleDateString(
@@ -357,67 +357,6 @@ export class VisitService {
       };
     }
   }
-  async testS3Image(imageUrl: string): Promise<void> {
-    console.log("🧪 Testing S3 image directly...");
-
-    try {
-      const fetch = (await import("node-fetch")).default;
-      const response = await fetch(imageUrl);
-      const buffer = await response.buffer();
-
-      console.log("📊 S3 Image Test Results:");
-      console.log("  Status:", response.status);
-      console.log("  Content-Type:", response.headers.get("content-type"));
-      console.log("  Size:", buffer.length, "bytes");
-      console.log("  Magic bytes:", buffer.slice(0, 8).toString("hex"));
-
-      const detection = this.validateAndDetectImageFormat(buffer);
-      console.log("  Format detection:", detection);
-
-      if (detection.isValid) {
-        const base64 = buffer.toString("base64");
-        const dataUri = `data:${detection.mimeType};base64,${base64}`;
-        console.log("  ✅ Successfully converted to base64");
-        console.log("  Data URI length:", dataUri.length);
-        console.log("  Preview:", dataUri.substring(0, 100) + "...");
-        const testHtml = `<img src="${dataUri}" alt="Test Signature" style="max-width: 200px; border: 2px solid green;">`;
-        console.log("  Test HTML:", testHtml);
-      } else {
-        console.log("  ❌ Format detection failed");
-      }
-    } catch (error) {
-      console.error("❌ S3 test failed:", error);
-    }
-  }
-  private validateImageMagicBytes(
-    buffer: Buffer,
-    contentType: string | null
-  ): boolean {
-    const magicBytes = buffer.toString("hex").toUpperCase();
-    const validMagicBytes = {
-      FFD8FF: "image/jpeg", // JPEG
-      "89504E47": "image/png", // PNG
-      "47494638": "image/gif", // GIF
-      "424D": "image/bmp", // BMP
-      "52494646": "image/webp", // WebP (starts with RIFF)
-    };
-
-    for (const [magic, expectedType] of Object.entries(validMagicBytes)) {
-      if (magicBytes.startsWith(magic)) {
-        console.log(`✅ Valid image format detected: ${expectedType}`);
-        return true;
-      }
-    }
-
-    console.warn(
-      `⚠️ Unknown image format. Magic bytes: ${magicBytes.substring(0, 16)}...`
-    );
-    console.warn(`⚠️ Content-Type: ${contentType}`);
-
-    // Still allow if content-type suggests it's an image
-    return contentType?.startsWith("image/") || false;
-  }
-
   async submitVisitWithContract(payload: {
     lead_id: number;
     signatureFile: any;
@@ -482,20 +421,13 @@ export class VisitService {
         }
       }
 
-      // Process signature with enhanced method
-      console.log("🔄 Processing signature image...");
+      // Process signature (returns HTML block)
       const signatureResult = await this.processSignatureImage(
         payload.signatureFile
       );
 
-      console.log("✅ Signature processing result:", {
-        success: signatureResult.success,
-        hasBase64: !!signatureResult.base64,
-        base64Preview: signatureResult.base64?.substring(0, 50) + "...",
-      });
-
-      // CORE FIX: Prepare metadata with the correct signature value
-      const baseMetadata = {
+      // Prepare metadata
+      const updatedMetaData = {
         ...payload.parsedMetaData,
         date_signed: new Date().toLocaleDateString("en-US"),
         signed_date: new Date().toLocaleDateString("en-US"),
@@ -503,45 +435,12 @@ export class VisitService {
         contract_date: new Date().toLocaleDateString("en-US"),
         current_date: new Date().toLocaleDateString("en-US"),
         timestamp: new Date().toISOString(),
-        signature: "",
-      };
-
-      // CRITICAL: Set signature to ONLY the base64 data URI for your template
-      if (signatureResult.success && signatureResult.base64) {
-        baseMetadata.signature = signatureResult.base64;
-        console.log("✅ Set signature to base64 data URI");
-        console.log("📏 Data URI length:", signatureResult.base64.length);
-      } else {
-        // Fallback to S3 URL if base64 failed
-        baseMetadata.signature = payload.signatureFile?.location || "";
-        console.log("⚠️ Using S3 URL fallback for signature");
-      }
-
-      // Add other signature fields for different template formats
-      const updatedMetaData = {
-        ...baseMetadata,
-        signature: signatureResult.html,
         signature_html: signatureResult.html,
-        customer_signature: signatureResult.html,
-        digital_signature: signatureResult.html,
-        buyer_signature: signatureResult.html,
-        client_signature: signatureResult.html,
-        signature_base64: signatureResult.base64 || "",
         signature_status: signatureResult.success ? "completed" : "error",
         has_signature: signatureResult.success ? "yes" : "no",
       };
 
-      console.log("🔧 Final metadata check:");
-      console.log(
-        "- signature starts with 'data:image/':",
-        updatedMetaData.signature?.startsWith("data:image/")
-      );
-      console.log(
-        "- signature length:",
-        updatedMetaData.signature?.length || 0
-      );
-
-      // Render contract HTML
+      // Render Contract HTML only
       let renderedHtml: string;
       if (
         template.dropdown_fields &&
@@ -556,57 +455,7 @@ export class VisitService {
         renderedHtml = renderContract(template.content, updatedMetaData);
       }
 
-      // VERIFICATION: Check if signature was properly rendered
-      const hasSignatureImg =
-        renderedHtml.includes("<img") && renderedHtml.includes("signature");
-      const hasDataUri = renderedHtml.includes("data:image/");
-      const hasBrokenImg = renderedHtml.includes('<img src="<img');
-
-      console.log("🔍 Rendered HTML verification:");
-      console.log("- Contains signature img tag:", hasSignatureImg);
-      console.log("- Contains data URI:", hasDataUri);
-      console.log("- Has broken nested img:", hasBrokenImg);
-
-      if (hasBrokenImg) {
-        console.error("❌ DETECTED BROKEN NESTED IMG TAG!");
-        // Try to fix broken nested img tags
-        renderedHtml = renderedHtml.replace(
-          /<img src="<img src="([^"]+)"[^>]*>/gi,
-          '<img src="$1"'
-        );
-        console.log("🔧 Attempted to fix broken img tags");
-      }
-
-      // Final check: If still no signature image in HTML, inject it manually
-      if (!hasDataUri && signatureResult.base64) {
-        console.log("🚨 Manually injecting signature image");
-        const manualSignature = `
-        <div style="margin-top: 20px; text-align: center;">
-          <p><strong>Customer Signature:</strong></p>
-          <img src="${signatureResult.base64}" alt="Customer Signature" style="max-width: 200px; height: auto; border: 1px solid #ccc; padding: 5px;">
-        </div>
-      `;
-        renderedHtml = renderedHtml.replace(
-          /<\/body>/i,
-          manualSignature + "</body>"
-        );
-      }
-
-      // Generate PDF
-      const pdfBuffer = await this.generatePdfFromHtml(
-        renderedHtml,
-        signatureResult.base64 ?? ""
-      );
-      const finalPdfBuffer = Buffer.isBuffer(pdfBuffer)
-        ? pdfBuffer
-        : Buffer.from(pdfBuffer);
-
-      console.log("📄 PDF Generation Result:", {
-        bufferSize: finalPdfBuffer.length,
-        isValidPDF: finalPdfBuffer.slice(0, 4).toString() === "%PDF",
-        signatureIncluded: signatureResult.success,
-      });
-
+      // Save Contract (HTML only, no PDF)
       const contract = contractRepo.create({
         contract_template_id: template.id,
         visit_id: savedVisit.visit_id,
@@ -617,21 +466,14 @@ export class VisitService {
 
       const savedContract = await contractRepo.save(contract);
 
-      // Save the contract image
-      await dataSource.getRepository(ContractImage).save({
-        contract_id: savedContract.id,
-        image_url: payload.signatureFile?.location,
-        metadata: payload.signatureFile,
-      });
-
-      // Save the contract PDF
-      const contractPDF = dataSource.getRepository(ContractPDF).create({
-        contract_id: savedContract.id,
-        pdf_data: pdfBuffer,
-        created_at: getFinnishTime(),
-      } as DeepPartial<ContractPDF>);
-
-      await dataSource.getRepository(ContractPDF).save(contractPDF);
+      // Save contract image (optional)
+      if (payload.signatureFile?.location) {
+        await dataSource.getRepository(ContractImage).save({
+          contract_id: savedContract.id,
+          image_url: payload.signatureFile.location,
+          metadata: payload.signatureFile,
+        });
+      }
 
       savedVisit.contract = savedContract;
       await visitRepo.save(savedVisit);
@@ -649,30 +491,22 @@ export class VisitService {
         await leadRepo.save(lead);
       }
 
-      const newContract = await dataSource.getRepository(Contract).findOne({
+      const newContract = await contractRepo.findOne({
         where: { id: savedContract.id },
-        relations: { images: true, pdf: true },
+        relations: { images: true }, // 👈 only images, no pdfs
       });
 
       await queryRunner.commitTransaction();
 
       return {
         data: newContract,
-        message: `Contract signed successfully${
-          signatureResult.success
-            ? " with signature"
-            : " (signature processing failed)"
-        }`,
+        message: `Contract signed successfully (HTML saved only)`,
         status: 200,
       };
     } catch (error) {
       console.error("❌ Error signing the contract:", error);
       await queryRunner.rollbackTransaction();
-      return {
-        data: null,
-        message: "Error signing the contract",
-        status: 500,
-      };
+      return { data: null, message: "Error signing the contract", status: 500 };
     } finally {
       await queryRunner.release();
     }

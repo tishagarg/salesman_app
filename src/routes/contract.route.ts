@@ -3,7 +3,7 @@ import { AuthController } from "../controllers/auth.controller";
 import { verifyToken } from "../middleware/auth.middleware";
 import { ContractTemplateController } from "../controllers/contract.controller";
 import { VisitController } from "../controllers/visits.controller";
-import {  uploadContractImage, uploadContractPdf } from "../aws/aws.service";
+import { uploadContractImage, uploadContractPdf } from "../aws/aws.service";
 
 const router = express.Router();
 
@@ -29,18 +29,30 @@ router.post(
   uploadContractPdf.single("contract_pdf"),
   visitController.submitContractPdf
 );
-router.get('/:contractId/pdf', authController.getContractPDF);
+router.get("/:contractId/pdf", authController.getContractHTML);
 
 // Reassign contract template to other managers
-router.put('/templates/:templateId', verifyToken, authController.reassignContractTemplate);
+router.put(
+  "/templates/:templateId",
+  verifyToken,
+  authController.reassignContractTemplate
+);
 
 // Update/Edit contract template
-router.patch('/templates/:templateId', verifyToken, authController.updateContractTemplate);
+router.patch(
+  "/templates/:templateId",
+  verifyToken,
+  authController.updateContractTemplate
+);
 
 // Get contract template by ID (including dropdown fields)
-router.get('/templates/:templateId', verifyToken, authController.getTemplateById);
+router.get(
+  "/templates/:templateId",
+  verifyToken,
+  authController.getTemplateById
+);
 
 // Delete contract
-router.delete('/:contractId', verifyToken, authController.deleteContract);
+router.delete("/:contractId", verifyToken, authController.deleteContract);
 
 export default router;
