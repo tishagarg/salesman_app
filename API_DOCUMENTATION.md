@@ -1,6 +1,7 @@
 # Field Sales Management API Documentation
 
 ## Table of Contents
+
 - [Overview](#overview)
 - [Authentication](#authentication)
 - [Base URL](#base-url)
@@ -27,11 +28,13 @@ The Field Sales Management API is a RESTful API built with Node.js, TypeScript, 
 The API uses JWT (JSON Web Token) based authentication. Most endpoints require a valid JWT token in the Authorization header.
 
 ### Authorization Header Format
+
 ```
 Authorization: Bearer <your-jwt-token>
 ```
 
 ### Token Types
+
 - **Access Token**: Used for API authentication (expires in 2 days)
 - **Refresh Token**: Used to obtain new access tokens (expires in 7 days)
 
@@ -39,7 +42,7 @@ Authorization: Bearer <your-jwt-token>
 
 ```
 Production: https://your-domain.com/api
-Development: http://localhost:3000/api
+Development: http://localhost:3002/api
 ```
 
 ## Response Format
@@ -47,6 +50,7 @@ Development: http://localhost:3000/api
 All API responses follow a consistent JSON structure:
 
 ### Success Response
+
 ```json
 {
   "success": true,
@@ -62,6 +66,7 @@ All API responses follow a consistent JSON structure:
 ```
 
 ### Error Response
+
 ```json
 {
   "success": false,
@@ -77,6 +82,7 @@ All API responses follow a consistent JSON structure:
 ## Error Handling
 
 ### HTTP Status Codes
+
 - `200` - Success
 - `201` - Created
 - `400` - Bad Request
@@ -93,11 +99,13 @@ All API responses follow a consistent JSON structure:
 Base path: `/api/auth`
 
 ## Register User
+
 Register a new user account.
 
 **Endpoint:** `POST /api/auth/register`
 
 **Request Body:**
+
 ```json
 {
   "email": "user@example.com",
@@ -110,6 +118,7 @@ Register a new user account.
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -134,11 +143,13 @@ Register a new user account.
 ```
 
 ## Login
+
 Authenticate user and get access token.
 
 **Endpoint:** `POST /api/auth/login`
 
 **Request Body:**
+
 ```json
 {
   "email": "user@example.com",
@@ -147,6 +158,7 @@ Authenticate user and get access token.
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -171,11 +183,13 @@ Authenticate user and get access token.
 ```
 
 ## Google OAuth Login
+
 Authenticate using Google OAuth.
 
 **Endpoint:** `POST /api/auth/google`
 
 **Request Body:**
+
 ```json
 {
   "idToken": "google_id_token"
@@ -183,12 +197,14 @@ Authenticate using Google OAuth.
 ```
 
 ## Verify OTP
+
 Verify email verification OTP.
 
 **Endpoint:** `POST /api/auth/verify-otp`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "otp": "123456"
@@ -196,17 +212,20 @@ Verify email verification OTP.
 ```
 
 ## Resend OTP
+
 Resend email verification OTP.
 
 **Endpoint:** `POST /api/auth/resend-otp`
 **Authorization:** Required
 
 ## Forgot Password
+
 Request password reset link.
 
 **Endpoint:** `POST /api/auth/forget-password`
 
 **Request Body:**
+
 ```json
 {
   "email": "user@example.com"
@@ -214,11 +233,13 @@ Request password reset link.
 ```
 
 ## Reset Password
+
 Reset password using token or old password.
 
 **Endpoint:** `POST /api/auth/reset-password`
 
 **Request Body (with token):**
+
 ```json
 {
   "token": "reset_token",
@@ -227,6 +248,7 @@ Reset password using token or old password.
 ```
 
 **Request Body (change password):**
+
 ```json
 {
   "oldPassword": "currentPassword",
@@ -235,12 +257,14 @@ Reset password using token or old password.
 ```
 
 ## Change Password
+
 Change password for authenticated user.
 
 **Endpoint:** `POST /api/auth/change-password`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "oldPassword": "currentPassword",
@@ -249,6 +273,7 @@ Change password for authenticated user.
 ```
 
 ## Logout
+
 Logout and invalidate tokens.
 
 **Endpoint:** `POST /api/auth/logout`
@@ -261,37 +286,52 @@ Logout and invalidate tokens.
 Base path: `/api/user`
 
 ## Get Lead Status Options
+
 Get available lead status options.
 
 **Endpoint:** `GET /api/user/lead-status`
 
 **Response:**
+
 ```json
 {
   "success": true,
-  "data": ["Prospect", "Hot_Lead", "Meeting", "Get_Back", "Start_Signing", "Signed", "Not_Interested", "Not_Available"]
+  "data": [
+    "Prospect",
+    "Hot_Lead",
+    "Meeting",
+    "Get_Back",
+    "Start_Signing",
+    "Signed",
+    "Not_Interested",
+    "Not_Available"
+  ]
 }
 ```
 
 ## Get Sales Representatives
+
 Get list of sales representatives.
 
 **Endpoint:** `GET /api/user/sales-rep`
 **Authorization:** Required
 
 ## Get Unassigned Sales Reps
+
 Get sales reps not assigned to any manager.
 
 **Endpoint:** `GET /api/user/unassigned-sales-rep`
 **Authorization:** Required
 
 ## Add Team Member
+
 Add a new team member.
 
 **Endpoint:** `POST /api/user`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "email": "member@example.com",
@@ -303,35 +343,41 @@ Add a new team member.
 ```
 
 ## Get All Team Members
+
 Get list of team members.
 
 **Endpoint:** `GET /api/user`
 **Authorization:** Required
 
 **Query Parameters:**
+
 - `page` (optional): Page number for pagination
 - `limit` (optional): Number of items per page
 - `search` (optional): Search term
 
 ## Get All Managers
+
 Get list of managers.
 
 **Endpoint:** `GET /api/user/manager`
 **Authorization:** Required
 
 ## Get Team Member by ID
+
 Get specific team member details.
 
 **Endpoint:** `GET /api/user/:id`
 **Authorization:** Required
 
 ## Assign Manager to Sales Rep
+
 Assign a manager to sales representatives.
 
 **Endpoint:** `POST /api/user/assign-manager`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "managerId": 123,
@@ -340,12 +386,14 @@ Assign a manager to sales representatives.
 ```
 
 ## Edit Team Member
+
 Update team member information.
 
 **Endpoint:** `PATCH /api/user/:id`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "first_name": "Updated Name",
@@ -356,12 +404,14 @@ Update team member information.
 ```
 
 ## Activate/Deactivate User
+
 Change user active status.
 
 **Endpoint:** `POST /api/user/status`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "user_id": 123,
@@ -370,12 +420,14 @@ Change user active status.
 ```
 
 ## Update Profile
+
 Update user profile information.
 
 **Endpoint:** `POST /api/user/update-profile`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "first_name": "Updated Name",
@@ -391,6 +443,7 @@ Update user profile information.
 Base path: `/api/leads`
 
 ## Import Leads
+
 Bulk import leads from file.
 
 **Endpoint:** `POST /api/leads/import`
@@ -399,12 +452,14 @@ Bulk import leads from file.
 **Request Body:** Multipart form data with CSV file
 
 ## Assign Lead
+
 Assign lead to a sales representative.
 
 **Endpoint:** `POST /api/leads/:id/assign`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "sales_rep_id": 123
@@ -412,12 +467,14 @@ Assign lead to a sales representative.
 ```
 
 ## Create Lead
+
 Create a new lead.
 
 **Endpoint:** `POST /api/leads`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "name": "John Customer",
@@ -436,12 +493,14 @@ Create a new lead.
 ```
 
 ## Update Lead
+
 Update existing lead information.
 
 **Endpoint:** `PATCH /api/leads/:id`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "name": "Updated Name",
@@ -453,12 +512,14 @@ Update existing lead information.
 ```
 
 ## Update Lead Status
+
 Update lead status.
 
 **Endpoint:** `POST /api/leads/:id/status`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "status": "Hot_Lead"
@@ -466,18 +527,21 @@ Update lead status.
 ```
 
 ## Delete Lead
+
 Delete a lead.
 
 **Endpoint:** `DELETE /api/leads/:id`
 **Authorization:** Required
 
 ## Bulk Delete Leads
+
 Delete multiple leads.
 
 **Endpoint:** `POST /api/leads/bulk-delete`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "lead_ids": [123, 456, 789]
@@ -485,12 +549,14 @@ Delete multiple leads.
 ```
 
 ## Get Lead by ID
+
 Get specific lead details.
 
 **Endpoint:** `GET /api/leads/:id`
 **Authorization:** Required
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -508,7 +574,7 @@ Get specific lead details.
       "postal_code": "10001",
       "country": "USA",
       "latitude": 40.7128,
-      "longitude": -74.0060
+      "longitude": -74.006
     },
     "assigned_to": {
       "user_id": 456,
@@ -520,12 +586,14 @@ Get specific lead details.
 ```
 
 ## Get All Leads
+
 Get list of leads with filtering and pagination.
 
 **Endpoint:** `GET /api/leads`
 **Authorization:** Required
 
 **Query Parameters:**
+
 - `page` (optional): Page number
 - `limit` (optional): Items per page
 - `status` (optional): Filter by status
@@ -534,6 +602,7 @@ Get list of leads with filtering and pagination.
 - `territory` (optional): Filter by territory
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -562,12 +631,14 @@ Get list of leads with filtering and pagination.
 ```
 
 ## Bulk Assign Leads
+
 Assign multiple leads to sales representatives.
 
 **Endpoint:** `POST /api/leads/bulk-assign`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "assignments": [
@@ -590,42 +661,88 @@ Assign multiple leads to sales representatives.
 Base path: `/api/visit`
 
 ## Plan Visit
+
 Plan visits for specific leads.
 
 **Endpoint:** `POST /api/visit/plan`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
-  "latitude": 60.1699,
-  "longitude": 24.9384,
-  "lead_ids": [123, 456, 789]
+  "lead_ids": [1403],
+  "latitude": 61.9298612,
+  "longitude": 23.0588836
 }
 ```
 
 **Response:**
+
 ```json
 {
-  "success": true,
-  "message": "Visits planned successfully",
-  "data": {
-    "planned_visits": 3,
-    "route_optimized": true
-  }
+    "success": true,
+    "data": {
+        "visits": [
+            {
+                "lead_id": 1403,
+                "rep_id": 127,
+                "check_in_time": "2025-09-07T04:43:35.000Z",
+                "latitude": 61.44975539999999,
+                "longitude": 23.8697993,
+                "created_by": "system",
+                "is_active": true,
+                "check_out_time": null,
+                "notes": null,
+                "photo_urls": null,
+                "next_visit_date": null,
+                "action_required": null,
+                "updated_by": null,
+                "status": null,
+                "visit_id": 544,
+                "created_at": "2025-09-07T00:15:11.890Z",
+                "updated_at": "2025-09-07T00:15:11.890Z"
+            }
+        ],
+        "route": {
+            "rep_id": 127,
+            "route_date": "2025-09-06T18:30:00.000Z",
+            "route_order": [
+                {
+                    "lead_id": 1403,
+                    "visit_id": 544,
+                    "latitude": 61.44975539999999,
+                    "longitude": 23.8697993,
+                    "lead_status": "Start Signing",
+                    "distance": 93.52,
+                    "eta": "10:13 AM"
+                }
+            ],
+            "created_by": "system",
+            "updated_by": null,
+            "route_id": 295,
+            "is_active": true,
+            "created_at": "2025-09-07T05:45:11.890Z",
+            "updated_at": "2025-09-07T05:45:11.890Z"
+        }
+    },
+    "message": "Visits planned successfully"
 }
 ```
 
 ## Get Planned Visits
+
 Get planned visits for a specific date (efficient endpoint without route optimization).
 
 **Endpoint:** `GET /api/visit/planned`
 **Authorization:** Required
 
 **Query Parameters:**
+
 - `date` (optional): Date in YYYY-MM-DD format (defaults to today)
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -660,12 +777,14 @@ Get planned visits for a specific date (efficient endpoint without route optimiz
 ```
 
 ## Log Visit
+
 Log a completed visit.
 
 **Endpoint:** `POST /api/visit/log`
 **Authorization:** Required
 
 **Request Body:** Multipart form data
+
 - `lead_id`: Lead ID
 - `latitude`: Visit location latitude
 - `longitude`: Visit location longitude
@@ -677,6 +796,7 @@ Log a completed visit.
 - `photos`: Array of photo files (optional)
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -698,12 +818,14 @@ Log a completed visit.
 ```
 
 ## Get Past Visits
+
 Get historical visits.
 
 **Endpoint:** `GET /api/visit/past-vists`
 **Authorization:** Required
 
 **Query Parameters:**
+
 - `from` (optional): Start date (YYYY-MM-DD)
 - `to` (optional): End date (YYYY-MM-DD)
 - `page` (optional): Page number
@@ -713,6 +835,7 @@ Get historical visits.
 - `view` (optional): "history" or "past_visits"
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -743,12 +866,14 @@ Get historical visits.
 ```
 
 ## Get Daily Route
+
 Get optimized daily route for sales rep.
 
 **Endpoint:** `GET /api/visit/route/daily`
 **Authorization:** Required
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -772,16 +897,19 @@ Get optimized daily route for sales rep.
 ```
 
 ## Refresh Daily Route
+
 Refresh and optimize daily route.
 
 **Endpoint:** `GET /api/visit/route/refresh`
 **Authorization:** Required
 
 **Query Parameters:**
+
 - `latitude`: Current latitude
 - `longitude`: Current longitude
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -799,12 +927,14 @@ Refresh and optimize daily route.
 ```
 
 ## Update Route with Current Location
+
 Update route calculations based on current location.
 
 **Endpoint:** `POST /api/visit/route/update-location`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "latitude": 60.1699,
@@ -813,6 +943,7 @@ Update route calculations based on current location.
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -836,12 +967,14 @@ Update route calculations based on current location.
 Base path: `/api/contract`
 
 ## Get Templates for Sales Rep
+
 Get contract templates available to sales rep.
 
 **Endpoint:** `GET /api/contract/templates/sale-rep`
 **Authorization:** Required
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -854,8 +987,8 @@ Get contract templates available to sales rep.
         "service_type": {
           "label": "Service Type",
           "options": [
-            {"label": "Basic", "value": "basic"},
-            {"label": "Premium", "value": "premium"}
+            { "label": "Basic", "value": "basic" },
+            { "label": "Premium", "value": "premium" }
           ],
           "required": true
         }
@@ -866,12 +999,14 @@ Get contract templates available to sales rep.
 ```
 
 ## Create Contract Template
+
 Create a new contract template.
 
 **Endpoint:** `POST /api/contract/templates`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "title": "Service Agreement",
@@ -882,8 +1017,8 @@ Create a new contract template.
     "service_type": {
       "label": "Service Type",
       "options": [
-        {"label": "Basic Service", "value": "basic"},
-        {"label": "Premium Service", "value": "premium"}
+        { "label": "Basic Service", "value": "basic" },
+        { "label": "Premium Service", "value": "premium" }
       ],
       "required": true,
       "placeholder": "Select service type"
@@ -893,6 +1028,7 @@ Create a new contract template.
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -914,18 +1050,21 @@ Create a new contract template.
 ```
 
 ## Get All Contract Templates
+
 Get list of contract templates.
 
 **Endpoint:** `GET /api/contract/templates`
 **Authorization:** Required
 
 ## Get All Contracts
+
 Get list of signed contracts.
 
 **Endpoint:** `GET /api/contract`
 **Authorization:** Required
 
 **Query Parameters:**
+
 - `managerId` (optional): Filter by manager
 - `status` (optional): Filter by contract status
 - `search` (optional): Search term
@@ -934,6 +1073,7 @@ Get list of signed contracts.
 - `limit` (optional): Items per page
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -963,12 +1103,14 @@ Get list of signed contracts.
 ```
 
 ## Submit Contract with Visit
+
 Submit a signed contract during visit.
 
 **Endpoint:** `POST /api/contract/submit`
 **Authorization:** Required
 
 **Request Body:** Multipart form data
+
 - `lead_id`: Lead ID
 - `contract_template_id`: Template ID
 - `metadata`: JSON string with contract data
@@ -976,6 +1118,7 @@ Submit a signed contract during visit.
 - `signature`: Signature image file
 
 **Example metadata:**
+
 ```json
 {
   "customer_name": "John Doe",
@@ -985,6 +1128,7 @@ Submit a signed contract during visit.
 ```
 
 **Example dropdownValues:**
+
 ```json
 {
   "service_type": "premium"
@@ -992,6 +1136,7 @@ Submit a signed contract during visit.
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -1006,6 +1151,7 @@ Submit a signed contract during visit.
 ```
 
 ## Get Contract PDF
+
 Get PDF of signed contract.
 
 **Endpoint:** `GET /api/contract/:contractId/pdf`
@@ -1013,12 +1159,14 @@ Get PDF of signed contract.
 **Response:** PDF file download
 
 ## Reassign Contract Template
+
 Reassign template to different managers.
 
 **Endpoint:** `PUT /api/contract/templates/:templateId`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "assigned_manager_ids": [106, 111]
@@ -1026,12 +1174,14 @@ Reassign template to different managers.
 ```
 
 ## Update Contract Template
+
 Update contract template content and settings.
 
 **Endpoint:** `PATCH /api/contract/templates/:templateId`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "title": "Updated Title",
@@ -1042,8 +1192,8 @@ Update contract template content and settings.
     "service_type": {
       "label": "Service Type",
       "options": [
-        {"label": "Basic", "value": "basic"},
-        {"label": "Premium", "value": "premium"}
+        { "label": "Basic", "value": "basic" },
+        { "label": "Premium", "value": "premium" }
       ]
     }
   }
@@ -1051,12 +1201,14 @@ Update contract template content and settings.
 ```
 
 ## Get Contract Template by ID
+
 Get specific contract template with dropdown fields.
 
 **Endpoint:** `GET /api/contract/templates/:templateId`
 **Authorization:** Required
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -1069,8 +1221,8 @@ Get specific contract template with dropdown fields.
       "service_type": {
         "label": "Service Type",
         "options": [
-          {"label": "Basic", "value": "basic"},
-          {"label": "Premium", "value": "premium"}
+          { "label": "Basic", "value": "basic" },
+          { "label": "Premium", "value": "premium" }
         ],
         "required": true
       }
@@ -1086,15 +1238,18 @@ Get specific contract template with dropdown fields.
 ```
 
 ## Delete Contract
+
 Delete a signed contract and all associated data.
 
 **Endpoint:** `DELETE /api/contract/:contractId`
 **Authorization:** Required
 
 **URL Parameters:**
+
 - `contractId`: ID of the contract to delete
 
 **Response (Success):**
+
 ```json
 {
   "success": true,
@@ -1106,6 +1261,7 @@ Delete a signed contract and all associated data.
 ```
 
 **Response (Contract Not Found):**
+
 ```json
 {
   "success": false,
@@ -1116,6 +1272,7 @@ Delete a signed contract and all associated data.
 
 **Description:**
 This endpoint permanently deletes a contract and all its associated data including:
+
 - Contract images (signature images)
 - Contract PDF files
 - Updates the associated visit to remove the contract reference
@@ -1129,12 +1286,14 @@ This endpoint permanently deletes a contract and all its associated data includi
 Base path: `/api/territory`
 
 ## Assign Manager to Territory
+
 Assign a manager to territories.
 
 **Endpoint:** `POST /api/territory/assign-manager`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "managerId": 123,
@@ -1143,12 +1302,14 @@ Assign a manager to territories.
 ```
 
 ## Unassign Salesman from Territory
+
 Remove salesman from territory assignment.
 
 **Endpoint:** `POST /api/territory/unassign-salesman`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "salesmanId": 123,
@@ -1157,32 +1318,36 @@ Remove salesman from territory assignment.
 ```
 
 ## Add Territory
+
 Create a new territory.
 
 **Endpoint:** `POST /api/territory`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "name": "Downtown Helsinki",
   "description": "Central business district",
   "polygon": [
-    {"latitude": 60.1699, "longitude": 24.9384},
-    {"latitude": 60.1720, "longitude": 24.9400},
-    {"latitude": 60.1680, "longitude": 24.9420}
+    { "latitude": 60.1699, "longitude": 24.9384 },
+    { "latitude": 60.172, "longitude": 24.94 },
+    { "latitude": 60.168, "longitude": 24.942 }
   ],
   "color": "#FF5733"
 }
 ```
 
 ## Update Territory
+
 Update territory information.
 
 **Endpoint:** `PUT /api/territory/:id`
 **Authorization:** Required
 
 **Request Body:**
+
 ```json
 {
   "name": "Updated Territory Name",
@@ -1193,18 +1358,21 @@ Update territory information.
 ```
 
 ## Delete Territory
+
 Delete a territory.
 
 **Endpoint:** `DELETE /api/territory/:id`
 **Authorization:** Required
 
 ## Get Territory by ID
+
 Get specific territory details.
 
 **Endpoint:** `GET /api/territory/:id`
 **Authorization:** Required
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -1213,8 +1381,8 @@ Get specific territory details.
     "name": "Downtown Helsinki",
     "description": "Central business district",
     "polygon": [
-      {"latitude": 60.1699, "longitude": 24.9384},
-      {"latitude": 60.1720, "longitude": 24.9400}
+      { "latitude": 60.1699, "longitude": 24.9384 },
+      { "latitude": 60.172, "longitude": 24.94 }
     ],
     "color": "#FF5733",
     "assigned_manager": {
@@ -1232,16 +1400,19 @@ Get specific territory details.
 ```
 
 ## Get All Territories
+
 Get list of all territories.
 
 **Endpoint:** `GET /api/territory`
 **Authorization:** Required
 
 **Query Parameters:**
+
 - `managerId` (optional): Filter by manager
 - `active` (optional): Filter by active status
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -1266,12 +1437,14 @@ Get list of all territories.
 Base path: `/api/dashboard`
 
 ## Get Dashboard Data
+
 Get dashboard metrics and data.
 
 **Endpoint:** `GET /api/dashboard`
 **Authorization:** Required (with customer_import permission)
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -1290,8 +1463,8 @@ Get dashboard metrics and data.
         "Signed": 100
       },
       "monthly_performance": [
-        {"month": "Jan", "visits": 120, "contracts": 15},
-        {"month": "Feb", "visits": 140, "contracts": 22}
+        { "month": "Jan", "visits": 120, "contracts": 15 },
+        { "month": "Feb", "visits": 140, "contracts": 22 }
       ]
     }
   }
@@ -1307,12 +1480,14 @@ Base path: `/api/admin`
 All admin routes require authentication token.
 
 ## Get All Roles
+
 Get list of user roles.
 
 **Endpoint:** `GET /api/admin/roles`
 **Authorization:** Required
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -1332,12 +1507,14 @@ Get list of user roles.
 ```
 
 ## Get Daily Routes (Admin)
+
 Get all sales rep routes for today.
 
 **Endpoint:** `GET /api/admin/daily-routes`
 **Authorization:** Required
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -1372,12 +1549,14 @@ Get all sales rep routes for today.
 ```
 
 ## Get Visit History (Admin)
+
 Get all visits history with filtering.
 
 **Endpoint:** `GET /api/admin/visit/history`
 **Authorization:** Required
 
 **Query Parameters:**
+
 - `salesRepId` (optional): Filter by sales rep
 - `managerId` (optional): Filter by manager
 - `visitDate` (optional): Filter by specific date
@@ -1387,6 +1566,7 @@ Get all visits history with filtering.
 - `limit` (optional): Items per page
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -1414,18 +1594,21 @@ Get all visits history with filtering.
 ```
 
 ## Get Rep-Manager List
+
 Get sales rep and manager relationships.
 
 **Endpoint:** `GET /api/admin/rep-manager`
 **Authorization:** Required
 
 ## Get Dashboard (Admin)
+
 Get admin dashboard data.
 
 **Endpoint:** `GET /api/admin/dashboard`
 **Authorization:** Required
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -1456,12 +1639,14 @@ Get admin dashboard data.
 Base path: `/api/map`
 
 ## Get Customer Map
+
 Get customers plotted on map.
 
 **Endpoint:** `POST /api/map/customers`
 **Authorization:** Required (with empty permission)
 
 **Request Body:**
+
 ```json
 {
   "bounds": {
@@ -1478,6 +1663,7 @@ Get customers plotted on map.
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -1504,12 +1690,14 @@ Get customers plotted on map.
 Base path: `/api/message`
 
 ## Send Message
+
 Send message to users.
 
 **Endpoint:** `POST /api/message`
 **Authorization:** Required (with empty permission)
 
 **Request Body:**
+
 ```json
 {
   "recipients": [123, 456],
@@ -1520,6 +1708,7 @@ Send message to users.
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -1539,11 +1728,13 @@ Send message to users.
 Base path: `/api/regions`
 
 ## Get All Regions
+
 Get list of all regions.
 
 **Endpoint:** `GET /api/regions`
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -1553,7 +1744,7 @@ Get list of all regions.
       "name": "Uusimaa"
     },
     {
-      "id": 2, 
+      "id": 2,
       "name": "Pirkanmaa"
     }
   ]
@@ -1561,11 +1752,13 @@ Get list of all regions.
 ```
 
 ## Get Region by ID
+
 Get specific region with subregions.
 
 **Endpoint:** `GET /api/regions/:id`
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -1591,6 +1784,7 @@ Get specific region with subregions.
 ## Rate Limiting
 
 The API implements rate limiting to prevent abuse:
+
 - **General endpoints**: 100 requests per 15 minutes
 - **Authentication endpoints**: 5 requests per 15 minutes per IP
 - **File upload endpoints**: 10 requests per hour
@@ -1598,10 +1792,12 @@ The API implements rate limiting to prevent abuse:
 ## Pagination
 
 Most list endpoints support pagination with these query parameters:
+
 - `page`: Page number (default: 1)
 - `limit`: Items per page (default: 10, max: 100)
 
 Paginated responses include metadata:
+
 ```json
 {
   "meta": {
@@ -1618,6 +1814,7 @@ Paginated responses include metadata:
 ## File Uploads
 
 File upload endpoints accept multipart/form-data:
+
 - **Supported formats**: JPG, PNG, PDF, CSV
 - **Max file size**: 10MB per file
 - **Max files per request**: 10 files
@@ -1625,6 +1822,7 @@ File upload endpoints accept multipart/form-data:
 ## WebSocket Events
 
 The API supports real-time updates via WebSocket for:
+
 - Visit status updates
 - New message notifications
 - Route optimization completion
@@ -1634,6 +1832,7 @@ The API supports real-time updates via WebSocket for:
 Current API version: `v1`
 
 Future versions will be accessible via:
+
 ```
 /api/v2/endpoint
 ```
@@ -1641,6 +1840,7 @@ Future versions will be accessible via:
 ## Support
 
 For API support and questions:
+
 - Email: api-support@company.com
 - Documentation: https://docs.company.com/api
 - Status Page: https://status.company.com
