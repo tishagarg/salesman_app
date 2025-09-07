@@ -846,39 +846,8 @@ export class VisitService {
 
     try {
       console.log("Starting PDF generation...");
-      const isDev = process.env.NODE_ENV !== "production";
 
-      const browserOptions = {
-        headless: true,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-web-security",
-          "--allow-running-insecure-content",
-        ],
-      };
-
-      if (isDev) {
-        browser = await getBrowser();
-      } else {
-        try {
-          const chromeModule = await import("chrome-aws-lambda");
-          const chromium = chromeModule.default; // 👈 use default export
-          const { args, executablePath, headless } = chromium;
-
-          browser = await puppeteer.launch({
-            args: [...args, ...browserOptions.args],
-            executablePath: await executablePath,
-            headless,
-          });
-        } catch (e) {
-          console.warn(
-            "chrome-aws-lambda not available, using regular puppeteer"
-          );
-          browser = await puppeteer.launch(browserOptions);
-        }
-      }
+      browser = await getBrowser();
 
       const page = await browser.newPage();
       console.log("page ", page);
