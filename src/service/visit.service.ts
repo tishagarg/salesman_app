@@ -119,132 +119,9 @@ export class VisitService {
   private async logQuery(queryBuilder: any): Promise<void> {
     const sql = await queryBuilder.getSql();
   }
-  async convertImageUrlToBase64(imageUrl: string): Promise<string | null> {
-    try {
-      console.log("🔄 Converting image to base64:", imageUrl);
-      if (!imageUrl.startsWith("http")) {
-        console.error("❌ Invalid URL format:", imageUrl);
-        return null;
-      }
-      console.log("🔄 Attempting to import node-fetch...");
-      const fetch = (await import("node-fetch")).default;
-      console.log("✅ node-fetch imported successfully");
-      const response = await fetch(imageUrl, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-          Accept: "image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
-          "Accept-Encoding": "gzip, deflate, br",
-          Connection: "keep-alive",
-        },
-      });
-      console.log(
-        `📡 Response status: ${response.status} ${response.statusText}`
-      );
-      console.log(`📡 Content-Type: ${response.headers.get("content-type")}`);
-      console.log(
-        `📡 Content-Length: ${response.headers.get("content-length")}`
-      );
-      if (!response.ok) {
-        console.error(
-          `❌ HTTP Error: ${response.status} ${response.statusText}`
-        );
-        return null;
-      }
-      const contentType = response.headers.get("content-type");
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-      console.log(`📥 Downloaded buffer: ${buffer.length} bytes`);
-      if (buffer.length === 0) {
-        console.error("❌ Empty image buffer");
-        return null;
-      }
-      const magicBytesResult = this.validateAndDetectImageFormat(buffer);
-      if (!magicBytesResult.isValid) {
-        console.error("❌ Invalid image format - magic bytes check failed");
-        console.error(`❌ Magic bytes: ${buffer.slice(0, 8).toString("hex")}`);
-        return null;
-      }
-
-      console.log(`✅ Image format detected: ${magicBytesResult.format}`);
-      const finalContentType =
-        magicBytesResult.mimeType || contentType || "image/png";
-
-      const base64 = buffer.toString("base64");
-      const dataUri = `data:${finalContentType};base64,${base64}`;
-      console.log(`✅ Base64 conversion successful:`);
-      console.log(`   - Format: ${magicBytesResult.format}`);
-      console.log(`   - MIME Type: ${finalContentType}`);
-      console.log(`   - Base64 length: ${base64.length} characters`);
-      console.log(`   - Data URI preview: ${dataUri.substring(0, 60)}...`);
-
-      return dataUri;
-    } catch (error) {
-      console.error("❌ Error in convertImageUrlToBase64:", error);
-      if (error instanceof Error) {
-        console.error("❌ Error details:", {
-          name: error.name,
-          message: error.message,
-          stack: error.stack?.split("\n")[0],
-        });
-      }
-      return null;
-    }
-  }
-  private validateAndDetectImageFormat(buffer: Buffer): {
-    isValid: boolean;
-    format: string;
-    mimeType: string | null;
-  } {
-    if (buffer.length < 4) {
-      return { isValid: false, format: "unknown", mimeType: null };
-    }
-
-    const magicBytes = buffer.slice(0, 12).toString("hex").toUpperCase();
-    console.log(`🔍 Checking magic bytes: ${magicBytes}`);
-    if (magicBytes.startsWith("FFD8FF")) {
-      console.log("✅ JPEG format detected");
-      return { isValid: true, format: "JPEG", mimeType: "image/jpeg" };
-    }
-    if (magicBytes.startsWith("89504E470D0A1A0A")) {
-      console.log("✅ PNG format detected");
-      return { isValid: true, format: "PNG", mimeType: "image/png" };
-    }
-    if (
-      magicBytes.startsWith("474946383761") ||
-      magicBytes.startsWith("474946383961")
-    ) {
-      console.log("✅ GIF format detected");
-      return { isValid: true, format: "GIF", mimeType: "image/gif" };
-    }
-    if (magicBytes.startsWith("424D")) {
-      console.log("✅ BMP format detected");
-      return { isValid: true, format: "BMP", mimeType: "image/bmp" };
-    }
-    if (magicBytes.startsWith("52494646") && magicBytes.includes("57454250")) {
-      console.log("✅ WebP format detected");
-      return { isValid: true, format: "WebP", mimeType: "image/webp" };
-    }
-    if (magicBytes.startsWith("89504E47")) {
-      console.log("✅ PNG format detected (partial header)");
-      return { isValid: true, format: "PNG", mimeType: "image/png" };
-    }
-    console.warn(
-      `⚠️ Unknown format, but attempting anyway. Magic bytes: ${magicBytes}`
-    );
-    if (buffer.length > 100 && buffer.length < 10000000) {
-      console.log("🤔 Unknown format but reasonable file size - assuming PNG");
-      return {
-        isValid: true,
-        format: "Unknown (assumed PNG)",
-        mimeType: "image/png",
-      };
-    }
-    return { isValid: false, format: "unknown", mimeType: null };
-  }
   async processSignatureImage(signatureFile: any): Promise<{
     html: string;
-    base64: string | null;
+    imageUrl: string | null;
     success: boolean;
   }> {
     if (!signatureFile?.location) {
@@ -253,29 +130,25 @@ export class VisitService {
         html: `<div class="signature-placeholder">
         <p><strong>Customer Signature:</strong> <em>Not provided</em></p>
       </div>`,
-        base64: null,
+        imageUrl: null,
         success: false,
       };
     }
     console.log("Processing signature:", signatureFile.location);
-    try {
-      const signatureBase64 = await this.convertImageUrlToBase64(
-        signatureFile.location
-      );
 
-      if (signatureBase64) {
-        console.log("✅ Signature converted to base64 successfully");
-        const signatureHtml = `<div class="signature-container">
-<div class="signature-header">
-<h3>Digital Signature</h3>
-</div>
-<div class="signature-content">
-<p class="signature-label"><strong>Customer Signature:</strong></p>
-<div class="signature-image-wrapper">
-<img src="${signatureBase64}" alt="Customer Signature" class="signature-image">
-</div>
-<div class="signature-details">
-<p class="signature-date"><strong>Signed Date:</strong> ${new Date().toLocaleDateString(
+    const signatureHtml = `<div class="signature-container">
+    <div class="signature-header">
+      <h3>Digital Signature</h3>
+    </div>
+    <div class="signature-content">
+      <p class="signature-label"><strong>Customer Signature:</strong></p>
+      <div class="signature-image-wrapper">
+        <img src="${
+          signatureFile.location
+        }" alt="Customer Signature" class="signature-image" >
+      </div>
+      <div class="signature-details">
+        <p class="signature-date"><strong>Signed Date:</strong> ${new Date().toLocaleDateString(
           "en-US",
           {
             year: "numeric",
@@ -283,79 +156,19 @@ export class VisitService {
             day: "numeric",
           }
         )}</p>
-<p class="signature-time"><strong>Signed Time:</strong> ${new Date().toLocaleTimeString(
+        <p class="signature-time"><strong>Signed Time:</strong> ${new Date().toLocaleTimeString(
           "en-US"
         )}</p>
-</div>
-</div>
-</div>`;
+        <p class="signature-source"><strong>Source:</strong> Digital Signature</p>
+      </div>
+    </div>
+  </div>`;
 
-        return {
-          html: signatureHtml,
-          base64: signatureBase64,
-          success: true,
-        };
-      } else {
-        console.warn("❌ Base64 conversion failed, trying direct URL");
-        const fallbackHtml = `<div class="signature-container">
-<div class="signature-header">
-<h3>Digital Signature</h3>
-</div>
-<div class="signature-content">
-<p class="signature-label"><strong>Customer Signature:</strong></p>
-<div class="signature-image-wrapper">
-<img src="${
-          signatureFile.location
-        }" alt="Customer Signature" class="signature-image">
-</div>
-<div class="signature-details">
-<p class="signature-date"><strong>Signed Date:</strong> ${new Date().toLocaleDateString(
-          "en-US"
-        )}</p>
-<p class="signature-time"><strong>Signed Time:</strong> ${new Date().toLocaleTimeString(
-          "en-US"
-        )}</p>
-<p class="signature-url"><strong>Source:</strong> S3 Image</p>
-</div>
-</div>
-</div>`;
-
-        return {
-          html: fallbackHtml,
-          base64: null,
-          success: false,
-        };
-      }
-    } catch (error) {
-      console.error("❌ Error processing signature:", error);
-      const errorHtml = `<div class="signature-container signature-error">
-<div class="signature-header">
-<h3>Digital Signature</h3>
-</div>
-<div class="signature-content">
-<p class="signature-label"><strong>Customer Signature:</strong></p>
-<div class="signature-fallback">
-<p>⚠️ Signature image processing failed</p>
-<p><strong>Error:</strong> ${
-        error instanceof Error ? error.message : "Unknown error"
-      }</p>
-<p><strong>URL:</strong> ${signatureFile.location}</p>
-<p><a href="${signatureFile.location}" target="_blank">📎 View Original</a></p>
-</div>
-<div class="signature-details">
-<p class="signature-date"><strong>Attempt Date:</strong> ${new Date().toLocaleDateString(
-        "en-US"
-      )}</p>
-</div>
-</div>
-</div>`;
-
-      return {
-        html: errorHtml,
-        base64: null,
-        success: false,
-      };
-    }
+    return {
+      html: signatureHtml,
+      imageUrl: signatureFile.location,
+      success: true,
+    };
   }
   async submitVisitWithContract(payload: {
     lead_id: number;
@@ -436,6 +249,7 @@ export class VisitService {
         current_date: new Date().toLocaleDateString("en-US"),
         timestamp: new Date().toISOString(),
         signature_html: signatureResult.html,
+        signature_image: signatureResult.imageUrl ?? "",
         signature_status: signatureResult.success ? "completed" : "error",
         has_signature: signatureResult.success ? "yes" : "no",
       };
@@ -493,18 +307,18 @@ export class VisitService {
 
       const newContract = await contractRepo.findOne({
         where: { id: savedContract.id },
-        relations: { images: true }, // 👈 only images, no pdfs
+        relations: { images: true },
       });
 
       await queryRunner.commitTransaction();
 
       return {
         data: newContract,
-        message: `Contract signed successfully (HTML saved only)`,
+        message: `Contract signed successfully`,
         status: 200,
       };
     } catch (error) {
-      console.error("❌ Error signing the contract:", error);
+      console.error("Error signing the contract:", error);
       await queryRunner.rollbackTransaction();
       return { data: null, message: "Error signing the contract", status: 500 };
     } finally {
@@ -670,457 +484,6 @@ export class VisitService {
     } finally {
       await queryRunner.release();
     }
-  }
-
-  // Enhanced PDF generation with better buffer handling
-  async generatePdfFromHtml(
-    html: string,
-    signatureBase64?: string
-  ): Promise<Buffer> {
-    let browser = null;
-
-    try {
-      console.log("Starting PDF generation...");
-
-      browser = await getBrowser();
-
-      const page = await browser.newPage();
-      console.log("page ", page);
-      // Set viewport for consistent rendering
-      await page.setViewport({
-        width: 1024,
-        height: 768,
-        deviceScaleFactor: 2,
-      });
-
-      // Company logo (replace with your actual logo)
-      const companyLogo = `data:image/svg+xml;base64,${Buffer.from(
-        `
-      <svg width="150" height="60" viewBox="0 0 150 60" xmlns="http://www.w3.org/2000/svg">
-        <rect width="150" height="60" fill="#2c3e50" rx="5"/>
-        <text x="75" y="35" text-anchor="middle" fill="white" font-family="Arial, sans-serif" font-size="18" font-weight="bold">
-TRACK        </text>
-    
-      </svg>
-    `
-      ).toString("base64")}`;
-
-      // Create comprehensive styled HTML
-      const styledHtml = `
-      <!DOCTYPE html>
-      <html lang="en">
-      <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>Contract Agreement</title>
-        <style>
-          * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-          }
-          body {
-            font-family: 'Arial', 'Helvetica', sans-serif;
-            font-size: 12px;
-            line-height: 1.6;
-            color: #333;
-            background: #fff;
-            padding: 0;
-          }
-          .document-container {
-            max-width: 210mm;
-            margin: 0 auto;
-            background: white;
-            min-height: 297mm;
-            position: relative;
-          }
-          
-          .header {
-            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
-            color: white;
-            padding: 25px;
-            margin-bottom: 30px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            min-height: 80px;
-          }
-          
-          .logo {
-            max-height: 60px;
-            width: auto;
-          }
-          
-          .header-info {
-            text-align: right;
-            flex: 1;
-            margin-left: 20px;
-          }
-          
-          .header-info h1 {
-            margin: 0 0 5px 0;
-            font-size: 28px;
-            font-weight: 300;
-            letter-spacing: 1px;
-            color:#ffffff;
-          }
-          
-          .header-info p {
-            margin: 0;
-            opacity: 0.9;
-            font-size: 12px;
-          }
-          
-          .content {
-            padding: 0 25px;
-            min-height: calc(100% - 200px);
-          }
-          
-          .contract-body {
-            margin-bottom: 40px;
-          }
-          
-          .signature-container {
-            margin: 40px 0;
-            padding: 25px;
-            border: 3px solid #e74c3c;
-            border-radius: 10px;
-            background: linear-gradient(135deg, #fff 0%, #f8f9fa 100%);
-            page-break-inside: avoid;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-          }
-          
-          .signature-header {
-            text-align: center;
-            margin-bottom: 20px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #e74c3c;
-          }
-          
-          .signature-header h3 {
-            color: #e74c3c;
-            font-size: 18px;
-            font-weight: 600;
-            margin: 0;
-            text-transform: uppercase;
-            letter-spacing: 1px;
-          }
-          
-          .signature-content {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-          }
-          
-          .signature-label {
-            font-weight: 700;
-            color: #2c3e50;
-            margin-bottom: 15px !important;
-            font-size: 14px;
-            text-align: center;
-          }
-          
-          .signature-image-wrapper {
-            background: white;
-            padding: 15px;
-            border: 3px solid #34495e;
-            border-radius: 8px;
-            margin: 15px 0;
-            box-shadow: inset 0 2px 4px rgba(0,0,0,0.1);
-            min-height: 120px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-          }
-          
-          .signature-image {
-            max-width: 300px !important;
-            max-height: 150px !important;
-            border: none !important;
-            padding: 0 !important;
-            background: transparent !important;
-            display: block !important;
-            margin: 0 !important;
-            object-fit: contain;
-            -webkit-print-color-adjust: exact;
-            print-color-adjust: exact;
-          }
-          
-          .signature-details {
-            margin-top: 20px;
-            text-align: center;
-            padding: 15px;
-            background: #ecf0f1;
-            border-radius: 6px;
-            width: 100%;
-          }
-          
-          .signature-details p {
-            margin: 5px 0;
-            font-size: 12px;
-            color: #2c3e50;
-          }
-          
-          .signature-fallback {
-            background: #fff3cd;
-            border: 2px dashed #856404;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
-            margin: 15px 0;
-          }
-          
-          .signature-error {
-            border-color: #dc3545;
-            background: linear-gradient(135deg, #fff5f5 0%, #fee);
-          }
-          
-          .footer {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            right: 0;
-            background: linear-gradient(135deg, #34495e 0%, #2c3e50 100%);
-            color: white;
-            padding: 20px 25px;
-            text-align: center;
-            font-size: 10px;
-            p{
-            color:#ffffff;}
-          }
-          
-          h1, h2, h3, h4, h5, h6 {
-            color: #2c3e50;
-            margin: 25px 0 15px 0;
-            page-break-after: avoid;
-          }
-          
-          h1 { 
-            font-size: 24px; 
-            border-bottom: 3px solid #3498db; 
-            padding-bottom: 8px;
-            margin-bottom: 20px;
-          }
-          h2 { 
-            font-size: 18px; 
-            color: #34495e;
-            margin-top: 30px;
-          }
-          h3 { 
-            font-size: 16px;
-            margin-top: 25px;
-          }
-          
-          p {
-            margin-bottom: 12px;
-            text-align: justify;
-            line-height: 1.8;
-          }
-          
-          strong {
-            color: #2c3e50;
-            font-weight: 600;
-          }
-          
-          @media print {
-            body { margin: 0; }
-            .signature-image { 
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-              color-adjust: exact !important;
-            }
-            .header, .footer {
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-              color-adjust: exact !important;
-            }
-            .signature-container {
-              page-break-inside: avoid !important;
-              break-inside: avoid !important;
-            }
-          }
-          
-          @page {
-            margin: 0;
-            size: A4;
-          }
-        </style>
-      </head>
-      <body>
-        <div class="document-container">
-          <div class="header">
-            <img src="${companyLogo}" alt="Company Logo" class="logo">
-            <div class="header-info">
-              <h1>Sales Agreement</h1>
-              <p>Document Generated: ${new Date().toLocaleDateString("en-US", {
-                weekday: "long",
-                year: "numeric",
-                month: "long",
-                day: "numeric",
-              })}</p>
-              <p>Time: ${new Date().toLocaleTimeString("en-US")}</p>
-            </div>
-          </div>
-          
-          <div class="content">
-            <div class="contract-body">
-              ${html}
-            </div>
-          </div>
-          
-          <div class="footer">
-            <p><strong>This document was electronically generated and digitally signed.</strong></p>
-            <p>All signatures and agreements contained herein are legally binding and enforceable.</p>
-            <p>For questions or support regarding this contract, please contact our customer service team.</p>
-          </div>
-        </div>
-      </body>
-      </html>
-    `;
-
-      console.log("Setting page content...");
-
-      // Set content and wait for everything to load
-      await page.setContent(styledHtml, {
-        waitUntil: ["networkidle0", "domcontentloaded"],
-        timeout: 60000,
-      });
-
-      console.log("Waiting for images to load...");
-
-      // Additional wait for rendering
-      await new Promise((resolve) => setTimeout(resolve, 3000));
-
-      console.log("Generating PDF...");
-
-      // Generate PDF with proper settings
-      const pdfBuffer = await page.pdf({
-        format: "a4",
-        margin: {
-          top: "0mm",
-          right: "0mm",
-          bottom: "0mm",
-          left: "0mm",
-        },
-        printBackground: true,
-        displayHeaderFooter: false,
-        preferCSSPageSize: true,
-      });
-
-      console.log("PDF generated successfully, size:", pdfBuffer.length);
-
-      // Ensure we return a proper Buffer
-      return Buffer.from(pdfBuffer);
-    } catch (error) {
-      console.error("Error generating PDF from HTML:", error);
-
-      // Enhanced fallback
-      console.log("Attempting fallback PDF generation...");
-      return this.generatePdfFromHtmlFallback(html, signatureBase64);
-    } finally {
-      if (browser) {
-        await browser.close();
-      }
-    }
-  }
-
-  // Enhanced fallback method with better formatting
-  private async generatePdfFromHtmlFallback(
-    html: any,
-    signatureBase64: any
-  ): Promise<Buffer> {
-    const plainText = convert(html, {
-      wordwrap: 85,
-      selectors: [
-        { selector: "h1", format: "block", options: { uppercase: true } },
-        { selector: "h2", format: "block", options: { uppercase: true } },
-        { selector: "strong", format: "inline" },
-        { selector: "br", format: "inline", options: { baseElement: "br" } },
-        { selector: "img", format: "skip" },
-      ],
-    });
-
-    return new Promise((resolve, reject) => {
-      const buffers: Buffer[] = [];
-      const doc = new PDFDocument({
-        size: "A4",
-        margin: 50,
-        info: {
-          Title: "Contract Agreement",
-          Author: "Your Company",
-          Subject: "Signed Contract",
-          CreationDate: new Date(),
-        },
-      });
-
-      doc.on("data", buffers.push.bind(buffers));
-      doc.on("end", () => resolve(Buffer.concat(buffers)));
-      doc.on("error", reject);
-
-      // Add header
-      doc
-        .fontSize(18)
-        .fillColor("#2c3e50")
-        .text("CONTRACT AGREEMENT", 50, 50, { align: "center" });
-
-      doc
-        .fontSize(10)
-        .fillColor("#666")
-        .text(
-          `Generated on ${new Date().toLocaleDateString("fi-FI")}`,
-          50,
-          80,
-          { align: "center" }
-        );
-
-      // Add content
-      doc.fontSize(11).fillColor("#333").text(plainText, 50, 120, {
-        align: "left",
-        lineGap: 3,
-        width: 500,
-      });
-
-      // Add signature if available
-      if (signatureBase64) {
-        try {
-          // Extract base64 data
-          const base64Data = signatureBase64.replace(
-            /^data:image\/[a-z]+;base64,/,
-            ""
-          );
-          const signatureBuffer = Buffer.from(base64Data, "base64");
-
-          doc.moveDown(2);
-          doc
-            .fontSize(12)
-            .fillColor("#2c3e50")
-            .text("Customer Signature:", { continued: false });
-
-          doc.image(signatureBuffer, {
-            width: 200,
-            height: 100,
-            align: "center",
-          });
-
-          doc
-            .fontSize(9)
-            .fillColor("#666")
-            .text(`Signed on: ${new Date().toLocaleDateString("fi-FI")}`, {
-              align: "left",
-            });
-        } catch (error) {
-          console.error("Error adding signature to PDF:", error);
-          doc.moveDown(2);
-          doc
-            .fontSize(12)
-            .text(
-              "Customer Signature: [Signature image could not be embedded]"
-            );
-        }
-      }
-
-      doc.end();
-    });
   }
 
   private async getOptimizedRoute(
