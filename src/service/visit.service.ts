@@ -152,7 +152,8 @@ export class VisitService {
         return null;
       }
       const contentType = response.headers.get("content-type");
-      const buffer = await response.buffer();
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
       console.log(`📥 Downloaded buffer: ${buffer.length} bytes`);
       if (buffer.length === 0) {
         console.error("❌ Empty image buffer");
