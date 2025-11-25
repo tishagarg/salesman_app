@@ -1606,7 +1606,7 @@ export class VisitService {
               name: customer.name || "anonymous",
               latitude: customer.address?.latitude,
               visit_id: item.visit_id,
-              lead_status: item.lead_status,
+              lead_status: customer.status, // Use fresh status from database
               longitude: customer.address?.longitude,
               address: customer.address
                 ? `${customer.address.street_address || ""}, ${
