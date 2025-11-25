@@ -104,12 +104,11 @@ export class ContractTemplateController {
       templates.message
     );
   }
-  async getContractHTML(req: any, res: Response) {
+  async getContractHTML(req: any, res: Response): Promise<void> {
     try {
       const { contractId } = req.params;
       const { download } = req.query;
-      const shouldDownload = download === 'true';
-      
+      const shouldDownload = download === "true";
       const dataSource = await getDataSource();
       const contractRepo = dataSource.getRepository(Contract);
 
@@ -120,19 +119,21 @@ export class ContractTemplateController {
       });
 
       if (!contract) {
-        return res.status(404).json({
+        res.status(404).json({
           data: null,
           message: "Contract not found",
           status: 404,
         });
+        return;
       }
 
       if (!contract?.rendered_html) {
-        return res.status(404).json({
+        res.status(404).json({
           data: null,
           message: "HTML content not found for this contract",
           status: 404,
         });
+        return;
       }
 
       // Generate styled HTML
@@ -148,29 +149,41 @@ export class ContractTemplateController {
           // Check if PDF already exists in database
           if (contract.pdf && contract.pdf.pdf_data) {
             const fileName = `contract_${contractId}_${Date.now()}.pdf`;
-            res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-            res.setHeader('Content-Length', contract.pdf.pdf_data.length.toString());
-            return res.send(contract.pdf.pdf_data);
+            res.setHeader("Content-Type", "application/pdf");
+            res.setHeader(
+              "Content-Disposition",
+              `attachment; filename="${fileName}"`
+            );
+            res.setHeader(
+              "Content-Length",
+              contract.pdf.pdf_data.length.toString()
+            );
+            res.send(contract.pdf.pdf_data);
+            return;
           }
 
           // Generate PDF from HTML
           const pdfBuffer = await this.generatePdfFromHtml(styledHtml);
           const fileName = `contract_${contractId}_${Date.now()}.pdf`;
-          
+
           // Set headers for PDF download
-          res.setHeader('Content-Type', 'application/pdf');
-          res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
-          res.setHeader('Content-Length', pdfBuffer.length.toString());
-          
-          return res.send(pdfBuffer);
+          res.setHeader("Content-Type", "application/pdf");
+          res.setHeader(
+            "Content-Disposition",
+            `attachment; filename="${fileName}"`
+          );
+          res.setHeader("Content-Length", pdfBuffer.length.toString());
+
+          res.send(pdfBuffer);
+          return;
         } catch (pdfError) {
           console.error("Error generating PDF:", pdfError);
-          return res.status(500).json({
+          res.status(500).json({
             data: null,
             message: "Error generating PDF",
             status: 500,
           });
+          return;
         }
       }
 
@@ -189,6 +202,7 @@ export class ContractTemplateController {
         message: "Error retrieving the contract",
         status: 500,
       });
+      return;
     }
   }
   generateStyledContractHTML = async (html: string, signatureUrl?: string) => {
@@ -721,11 +735,11 @@ export class ContractTemplateController {
 
   private async generatePdfFromHtml(html: string): Promise<Buffer> {
     let browser = null;
-    
+
     try {
       browser = await getBrowser();
       const page = await browser.newPage();
-      
+
       // Set viewport for consistent rendering
       await page.setViewport({
         width: 1024,
@@ -735,7 +749,7 @@ export class ContractTemplateController {
 
       // Set content and wait for load
       await page.setContent(html, {
-        waitUntil: 'networkidle0',
+        waitUntil: "networkidle0",
         timeout: 30000,
       });
 
@@ -743,21 +757,24 @@ export class ContractTemplateController {
       await page.evaluate(() => {
         return Promise.all(
           Array.from(document.images)
-            .filter(img => !img.complete)
-            .map(img => new Promise(resolve => {
-              img.onload = img.onerror = resolve;
-            }))
+            .filter((img) => !img.complete)
+            .map(
+              (img) =>
+                new Promise((resolve) => {
+                  img.onload = img.onerror = resolve;
+                })
+            )
         );
       });
 
       // Generate PDF
       const pdfBuffer = await page.pdf({
-        format: 'A4',
+        format: "a4",
         margin: {
-          top: '20mm',
-          right: '15mm',
-          bottom: '20mm',
-          left: '15mm',
+          top: "20mm",
+          right: "15mm",
+          bottom: "20mm",
+          left: "15mm",
         },
         printBackground: true,
         preferCSSPageSize: false,
@@ -766,8 +783,8 @@ export class ContractTemplateController {
       await page.close();
       return pdfBuffer;
     } catch (error) {
-      console.error('Error generating PDF:', error);
-      throw new Error('Failed to generate PDF');
+      console.error("Error generating PDF:", error);
+      throw new Error("Failed to generate PDF");
     } finally {
       if (browser) {
         await browser.close();

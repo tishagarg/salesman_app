@@ -29,7 +29,9 @@ router.post(
   uploadContractPdf.single("contract_pdf"),
   visitController.submitContractPdf
 );
-router.get("/:contractId/pdf", authController.getContractHTML.bind(authController));
+router.get("/:contractId/pdf", (req, res) =>
+  authController.getContractHTML(req, res)
+);
 
 // Reassign contract template to other managers
 router.put(
