@@ -574,7 +574,7 @@ export class CustomerService {
         query.andWhere("leads.assigned_rep_id = :salesmanId", {
           salesmanId: filters.salesmanId,
         });
-      }
+      } 
       if (filters.managerId) {
         const managerSalesReps = await dataSource
           .getRepository(ManagerSalesRep)
