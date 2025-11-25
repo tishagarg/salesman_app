@@ -1,14 +1,10 @@
 import { getDataSource } from "../config/data-source";
 import { Leads } from "../models/Leads.entity";
 import { Visit } from "../models/Visits.entity";
-import PDFDocument from "pdfkit";
 import { Route } from "../models/Route.entity";
 import { ManagerSalesRep } from "../models/ManagerSalesRep.entity";
 import { Idempotency } from "../models/Idempotency";
 import httpStatusCodes from "http-status-codes";
-import { convert } from "html-to-text";
-import puppeteer from "puppeteer";
-import chrome from "chrome-aws-lambda";
 import {
   Between,
   DeepPartial,
@@ -28,7 +24,6 @@ import {
   renderContractWithDropdowns,
   validateDropdownValues,
 } from "../utils/renderContracts";
-import { Address } from "../models/Address.entity";
 import { User } from "../models/User.entity";
 import { FollowUp } from "../models/FollowUp.entity";
 import { FollowUpVisit } from "../models/FollowUpVisit.entity";
@@ -36,7 +31,6 @@ import { ContractImage } from "../models/ContractImage.entity";
 import { LeadStatus } from "../enum/leadStatus";
 import { ContractPDF } from "../models/ContractPdf.entity";
 import { getFinnishTime } from "../utils/timezone";
-import { getBrowser } from "../utils/chromium";
 
 require("dotenv").config();
 
@@ -826,6 +820,25 @@ export class VisitService {
 
         const latitude = parseFloat(String(repLatitude));
         const longitude = parseFloat(String(repLongitude));
+        if (
+          !this.isValidCoordinate(latitude, "latitude") ||
+          !this.isValidCoordinate(longitude, "longitude")
+        ) {
+          return {
+            status: httpStatusCodes.BAD_REQUEST,
+            data: null,
+            message:
+              "Invalid coordinates provided. Latitude must be between -90 and 90, longitude must be between -180 and 180.",
+          };
+        }
+        if (!this.isWithinFinland(latitude, longitude)) {
+          return {
+            status: httpStatusCodes.BAD_REQUEST,
+            data: null,
+            message:
+              "Coordinates are outside Finland boundaries. Please ensure your location is within Finland (latitude: 59.5-70.1, longitude: 19.0-31.6).",
+          };
+        }
         const startOfDay = this.getStartOfDay(getFinnishTime());
         const endOfDay = new Date(startOfDay);
         endOfDay.setHours(23, 59, 59, 999);
@@ -928,6 +941,22 @@ export class VisitService {
             message: "Duplicate leads detected in visit planning",
           };
         }
+        // Validate all lead coordinates are within Finland before saving
+        const invalidLeads = leadsToPlan.filter(
+          (lead) =>
+            !lead.address?.latitude ||
+            !lead.address?.longitude ||
+            !this.isWithinFinland(lead.address.latitude, lead.address.longitude)
+        );
+
+        if (invalidLeads.length > 0) {
+          return {
+            status: httpStatusCodes.BAD_REQUEST,
+            data: null,
+            message: `Some leads have coordinates outside Finland boundaries. Please ensure all lead addresses are within Finland.`,
+          };
+        }
+
         leadsToPlan.forEach((lead) => {
           lead.status = LeadStatus.Start_Signing;
           lead.updated_at = getFinnishTime();
@@ -938,15 +967,26 @@ export class VisitService {
         await queryRunner.manager.save(Leads, leadsToPlan).catch((e) => {
           throw new Error(`Failed to update lead statuses: ${e.message}`);
         });
+
         const waypoints = leadsToPlan.map(
           (lead) => `${lead.address.latitude},${lead.address.longitude}`
         );
 
         const origin = `${latitude},${longitude}`;
-        const { route, waypointOrder } = await this.getOptimizedRoute(
-          origin,
-          waypoints
-        );
+        let route, waypointOrder;
+        try {
+          const routeResult = await this.getOptimizedRoute(origin, waypoints);
+          route = routeResult.route;
+          waypointOrder = routeResult.waypointOrder;
+        } catch (error: any) {
+          return {
+            status: httpStatusCodes.BAD_REQUEST,
+            data: null,
+            message:
+              error.message ||
+              "Unable to calculate route. Please check that all coordinates are valid and within Finland.",
+          };
+        }
 
         let currentTime = new Date(getFinnishTime());
         currentTime.setHours(9, 0, 0, 0);
@@ -1026,8 +1066,13 @@ export class VisitService {
           message: "Visits planned successfully",
         };
       } catch (error: any) {
-        console.log(error);
-        throw this.handleError(error, "Failed to plan visits");
+        console.log("Error in planVisit:", error);
+        const errorResponse = this.handleError(error, "Failed to plan visits");
+        return {
+          status: errorResponse.status,
+          data: null,
+          message: errorResponse.message,
+        };
       }
     });
   }
@@ -1168,6 +1213,14 @@ export class VisitService {
     }
     const absValue = Math.abs(value);
     return type === "latitude" ? absValue <= 90 : absValue <= 180;
+  }
+  private isWithinFinland(latitude: number, longitude: number): boolean {
+    return (
+      latitude >= 59.5 &&
+      latitude <= 70.1 &&
+      longitude >= 19.0 &&
+      longitude <= 31.6
+    );
   }
   private getToday(): Date {
     const today = getFinnishTime();

@@ -17,34 +17,54 @@ const visitService = new VisitService();
 
 export class VisitController {
   async planVisit(req: any, res: Response): Promise<void> {
-    const user_id = req.user.user_id;
-    const { latitude, longitude, lead_ids } = req.body;
-    const response = await visitService.planVisit(
-      user_id,
-      latitude,
-      longitude,
-      lead_ids
-    );
-    if (response.status >= 400) {
-      return ApiResponse.error(res, response.status, response.message);
-    }
+    try {
+      const user_id = req.user.user_id;
+      const { latitude, longitude, lead_ids } = req.body;
 
-    return ApiResponse.result(
-      res,
-      response.data,
-      response.status,
-      null,
-      response.message
-    );
+      if (!latitude || !longitude) {
+        return ApiResponse.error(
+          res,
+          400,
+          "Latitude and longitude are required"
+        );
+      }
+
+      const response = await visitService.planVisit(
+        user_id,
+        latitude,
+        longitude,
+        lead_ids
+      );
+
+      if (response.status >= 400) {
+        return ApiResponse.error(res, response.status, response.message);
+      }
+
+      return ApiResponse.result(
+        res,
+        response.data,
+        response.status,
+        null,
+        response.message
+      );
+    } catch (error: any) {
+      console.error("Error in planVisit controller:", error);
+      return ApiResponse.error(
+        res,
+        500,
+        error.message || "An unexpected error occurred while planning visits"
+      );
+    }
   }
 
   async submitVisitWithContract(req: any, res: Response): Promise<void> {
-    const { lead_id, contract_template_id, metadata, dropdownValues } = req.body;
+    const { lead_id, contract_template_id, metadata, dropdownValues } =
+      req.body;
     const rep_id = req.user.user_id;
     const signatureFile = req.file;
     let parsedMetaData;
     let parsedDropdownValues;
-    
+
     try {
       parsedMetaData =
         typeof metadata === "string" ? JSON.parse(metadata) : metadata;
@@ -54,13 +74,15 @@ export class VisitController {
     }
 
     try {
-      parsedDropdownValues = 
-        typeof dropdownValues === "string" ? JSON.parse(dropdownValues) : dropdownValues;
+      parsedDropdownValues =
+        typeof dropdownValues === "string"
+          ? JSON.parse(dropdownValues)
+          : dropdownValues;
     } catch (error) {
       console.error("Error parsing dropdown values:", error);
       return ApiResponse.error(res, 400, "Invalid dropdown values format");
     }
-    
+
     const contract = await visitService.submitVisitWithContract({
       lead_id,
       signatureFile,
@@ -82,12 +104,13 @@ export class VisitController {
   }
 
   async submitContractPdf(req: any, res: Response): Promise<void> {
-    const { lead_id, contract_template_id, metadata, dropdownValues } = req.body;
+    const { lead_id, contract_template_id, metadata, dropdownValues } =
+      req.body;
     const rep_id = req.user.user_id;
     const contractPdfFile = req.file;
     let parsedMetaData;
     let parsedDropdownValues;
-    
+
     try {
       parsedMetaData =
         typeof metadata === "string" ? JSON.parse(metadata) : metadata;
@@ -97,13 +120,15 @@ export class VisitController {
     }
 
     try {
-      parsedDropdownValues = 
-        typeof dropdownValues === "string" ? JSON.parse(dropdownValues) : dropdownValues;
+      parsedDropdownValues =
+        typeof dropdownValues === "string"
+          ? JSON.parse(dropdownValues)
+          : dropdownValues;
     } catch (error) {
       console.error("Error parsing dropdown values:", error);
       return ApiResponse.error(res, 400, "Invalid dropdown values format");
     }
-    
+
     const contract = await visitService.submitContractPdf({
       lead_id,
       contractPdfFile,
@@ -137,7 +162,7 @@ export class VisitController {
     } = req.body;
     const rep_id = req.user.user_id;
     const photos = req.files;
-    if ( !latitude || !longitude) {
+    if (!latitude || !longitude) {
       return ApiResponse.error(
         res,
         400,
@@ -525,9 +550,9 @@ export class VisitController {
   async getPlannedVisits(req: any, res: Response): Promise<void> {
     const rep_id = req.user.user_id;
     const { date } = req.query;
-    
+
     const response = await visitService.getPlannedVisits(rep_id, date);
-    
+
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);
     }
