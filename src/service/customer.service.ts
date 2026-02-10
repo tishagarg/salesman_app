@@ -146,7 +146,7 @@ export class CustomerService {
     data: Partial<UpdateLeadDto>,
     userId: number,
     org_id: number,
-    role: string
+    role_id: number
   ): Promise<{
     status: number;
     data?: Leads | null;
@@ -156,6 +156,16 @@ export class CustomerService {
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
+      const role = await queryRunner.manager.findOne(Role, {
+        where: { role_id },
+      });
+      if (!role) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.NOT_FOUND,
+          message: "Role not found",
+        };
+      }
       const customer = await queryRunner.manager.findOne(Leads, {
         where: { lead_id: customerId, is_active: true, org_id },
         select: [
@@ -170,7 +180,7 @@ export class CustomerService {
           "org_id",
         ],
       });
-
+console.log("data",   data);
       if (!customer) {
         await queryRunner.rollbackTransaction();
         return {
@@ -179,7 +189,7 @@ export class CustomerService {
         };
       }
 
-      if (role === Roles.SALES_REP && customer.assigned_rep_id !== userId) {
+      if (role.role_name === Roles.SALES_REP && customer.assigned_rep_id !== userId) {
         await queryRunner.rollbackTransaction();
         return {
           status: httpStatusCodes.FORBIDDEN,
@@ -192,8 +202,7 @@ export class CustomerService {
         updated_by: userId.toString(),
         updated_at: getFinnishTime(),
       };
-
-      if (role === Roles.SALES_REP) {
+      if (role.role_name === Roles.SALES_REP) {
         if (data.contact_name) updateData.contact_name = data.contact_name;
         if (data.contact_email) updateData.contact_email = data.contact_email;
         if (data.contact_phone) updateData.contact_phone = data.contact_phone;
@@ -215,18 +224,20 @@ export class CustomerService {
         if (data.contact_phone) updateData.contact_phone = data.contact_phone;
         if (data.name) updateData.name = data.name;
         if (data.status) updateData.status = data.status;
-
         const hasAddressUpdate =
-          data.street_address ||
-          data.postal_code ||
-          data.subregion ||
-          data.region ||
-          data.country ||
-          data.area_name ||
-          data.city ||
-          data.state ||
-          data.comments;
-
+          data.address?.street_address !== undefined ||
+          data.address?.postal_code !== undefined ||
+          data.address?.subregion !== undefined ||
+          data.address?.region !== undefined ||
+          data.address?.country !== undefined ||
+          data.address?.area_name !== undefined ||
+          data.address?.city !== undefined ||
+          data.address?.state !== undefined ||
+          data.address?.comments !== undefined ||
+          data.address?.latitude !== undefined ||
+          data.address?.longitude !== undefined ||
+          data.address?.landmark !== undefined;
+console.log("address_id",   customer.address_id, hasAddressUpdate);
         if (hasAddressUpdate) {
           const address = await queryRunner.manager.findOne(Address, {
             where: { address_id: customer.address_id, is_active: true },
@@ -241,6 +252,9 @@ export class CustomerService {
               "city",
               "state",
               "comments",
+              "latitude",
+              "longitude",
+              "landmark",
             ],
           });
 
@@ -253,15 +267,18 @@ export class CustomerService {
           }
 
           const addressUpdate: Partial<Address> = {
-            street_address: data.street_address || address.street_address,
-            postal_code: data.postal_code || address.postal_code,
-            area_name: data.area_name || address.area_name,
-            subregion: data.subregion || data.city || address.subregion,
-            region: data.region || data.state || address.region,
-            country: data.country || address.country,
-            city: data.city || data.subregion || address.city,
-            state: data.state || data.region || address.state,
-            comments: data.comments || address.comments,
+            street_address: data.address?.street_address !== undefined ? data.address.street_address : address.street_address,
+            postal_code: data.address?.postal_code !== undefined ? data.address.postal_code : address.postal_code,
+            area_name: data.address?.area_name !== undefined ? data.address.area_name : address.area_name,
+            subregion: data.address?.subregion !== undefined ? data.address.subregion : (data.address?.city !== undefined ? data.address.city : address.subregion),
+            region: data.address?.region !== undefined ? data.address.region : (data.address?.state !== undefined ? data.address.state : address.region),
+            country: data.address?.country !== undefined ? data.address.country : address.country,
+            city: data.address?.city !== undefined ? data.address.city : (data.address?.subregion !== undefined ? data.address.subregion : address.city),
+            state: data.address?.state !== undefined ? data.address.state : (data.address?.region !== undefined ? data.address.region : address.state),
+            comments: data.address?.comments !== undefined ? data.address.comments : address.comments,
+            latitude: data.address?.latitude !== undefined ? data.address.latitude : address.latitude,
+            longitude: data.address?.longitude !== undefined ? data.address.longitude : address.longitude,
+            landmark: data.address?.landmark !== undefined ? data.address.landmark : address.landmark,
             updated_by: userId.toString(),
             updated_at: getFinnishTime(),
           };
@@ -300,7 +317,7 @@ export class CustomerService {
         }
       }
 
-      if (data.street_address || data.postal_code || data.subregion) {
+      if (data.street_address || data.postal_code || data.address?.subregion) {
         const autoAssignResult = await territoryService.autoAssignTerritory(
           addressId,
           org_id,

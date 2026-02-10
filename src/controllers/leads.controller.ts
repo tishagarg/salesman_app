@@ -36,15 +36,15 @@ export class LeadsController {
     const data: Partial<UpdateLeadDto> = req.body;
     const userId = parseInt(req.user.user_id);
     const org_id = parseInt(req.user.org_id);
-
-    const role = req.user.role;
+console.log("req.user",   req.user);
+    const role_id = req.user.role_id;
 
     const response = await customerService.updateCustomer(
       customerId,
       data,
       userId,
       org_id,
-      role
+      role_id
     );
     if (response.status >= 400) {
       return ApiResponse.error(res, response.status, response.message);

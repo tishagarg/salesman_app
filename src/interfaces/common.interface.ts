@@ -86,13 +86,8 @@ export class UpdateLeadDto {
   comments?: string;
   postal_code?: string;
   name?: string;
-  area_name?: string;
-  subregion?: string;
-  region?: string;
+  address?: AddressDto;
   org_id: number;
-  city?: string;
-  state?: string;
-  country?: string;
   status?: LeadStatus;
 }
 export class Coordinates {

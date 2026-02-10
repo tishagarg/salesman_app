@@ -5,6 +5,7 @@ import { getDataSource } from "../config/data-source";
 import { Contract } from "../models/Contracts.entity";
 import { ContractPDF } from "../models/ContractPdf.entity";
 import { getBrowser } from "../utils/chromium";
+import axios from "axios";
 
 export class ContractTemplateController {
   constructor() {
@@ -747,25 +748,59 @@ export class ContractTemplateController {
         deviceScaleFactor: 2,
       });
 
+      // Convert external images to base64 before setting content
+      const htmlWithBase64Images = await this.convertImagesToBase64(html, page);
+
       // Set content and wait for load
-      await page.setContent(html, {
+      await page.setContent(htmlWithBase64Images, {
         waitUntil: "networkidle0",
-        timeout: 30000,
+        timeout: 60000, // Increased timeout
       });
 
-      // Wait for images to load
+      // Wait for all images to load with better error handling
       await page.evaluate(() => {
         return Promise.all(
-          Array.from(document.images)
-            .filter((img) => !img.complete)
-            .map(
-              (img) =>
-                new Promise((resolve) => {
-                  img.onload = img.onerror = resolve;
-                })
-            )
+          Array.from(document.images).map(
+            (img) =>
+              new Promise<void>((resolve) => {
+                // If image is already loaded, resolve immediately
+                if (img.complete && img.naturalHeight !== 0) {
+                  resolve();
+                  return;
+                }
+
+                // Set timeout to prevent hanging
+                const timeout = setTimeout(() => {
+                  console.warn(`Image load timeout: ${img.src.substring(0, 100)}`);
+                  resolve(); // Resolve anyway to continue PDF generation
+                }, 10000); // 10 second timeout per image
+
+                const cleanup = () => {
+                  clearTimeout(timeout);
+                  img.removeEventListener("load", onLoad);
+                  img.removeEventListener("error", onError);
+                };
+
+                const onLoad = () => {
+                  cleanup();
+                  resolve();
+                };
+
+                const onError = () => {
+                  console.warn(`Image failed to load: ${img.src.substring(0, 100)}`);
+                  cleanup();
+                  resolve(); // Resolve anyway to continue PDF generation
+                };
+
+                img.addEventListener("load", onLoad, { once: true });
+                img.addEventListener("error", onError, { once: true });
+              })
+          )
         );
       });
+
+      // Additional wait to ensure all resources are loaded
+      await page.waitForTimeout(1000);
 
       // Generate PDF
       const pdfBuffer = await page.pdf({
@@ -789,6 +824,82 @@ export class ContractTemplateController {
       if (browser) {
         await browser.close();
       }
+    }
+  }
+
+  private async convertImagesToBase64(
+    html: string,
+    page: any
+  ): Promise<string> {
+    try {
+      // Extract all image URLs from the HTML
+      const imageUrlRegex = /<img[^>]+src=["']([^"']+)["'][^>]*>/gi;
+      const imageUrls: Set<string> = new Set();
+      let match;
+
+      while ((match = imageUrlRegex.exec(html)) !== null) {
+        const url = match[1];
+        // Only convert external URLs (http/https), skip data URLs and relative paths
+        if (
+          (url.startsWith("http://") || url.startsWith("https://")) &&
+          !url.startsWith("data:")
+        ) {
+          imageUrls.add(url);
+        }
+      }
+
+      if (imageUrls.size === 0) {
+        return html; // No external images to convert
+      }
+
+      // Convert each external image to base64 using axios
+      const imageMap = new Map<string, string>();
+      
+      // Fetch images in parallel with timeout
+      const imagePromises = Array.from(imageUrls).map(async (imageUrl) => {
+        try {
+          const response = await axios.get(imageUrl, {
+            responseType: "arraybuffer",
+            timeout: 30000, // 30 second timeout
+            maxRedirects: 5,
+          });
+
+          if (response.data) {
+            const base64 = Buffer.from(response.data).toString("base64");
+            const contentType =
+              response.headers["content-type"] || "image/png";
+            const dataUrl = `data:${contentType};base64,${base64}`;
+            imageMap.set(imageUrl, dataUrl);
+          }
+        } catch (error: any) {
+          console.warn(
+            `Failed to convert image to base64: ${imageUrl}`,
+            error.message
+          );
+          // Continue with other images even if one fails
+        }
+      });
+
+      // Wait for all image conversions to complete
+      await Promise.allSettled(imagePromises);
+
+      // Replace image URLs with base64 data URLs in HTML
+      let processedHtml = html;
+      imageMap.forEach((dataUrl, originalUrl) => {
+        // Escape special regex characters in URL
+        const escapedUrl = originalUrl.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        // Replace all occurrences of the URL
+        processedHtml = processedHtml.replace(
+          new RegExp(escapedUrl, "g"),
+          dataUrl
+        );
+      });
+
+      return processedHtml;
+    } catch (error) {
+      console.error("Error converting images to base64:", error);
+      // Return original HTML if conversion fails
+      return html;
     }
   }
 }
