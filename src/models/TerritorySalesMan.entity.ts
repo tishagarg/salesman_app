@@ -4,11 +4,14 @@ import {
   PrimaryGeneratedColumn,
   ManyToOne,
   JoinColumn,
+  Unique,
 } from "typeorm";
 import { Territory } from "./Territory.entity";
 import { User } from "./User.entity";
 
 @Entity("territory_salesman")
+@Unique(["territory_id"])
+@Unique(["salesman_id"])
 export class TerritorySalesman {
   @PrimaryGeneratedColumn()
   territory_salesman_id: number;

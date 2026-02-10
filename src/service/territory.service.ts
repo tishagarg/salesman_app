@@ -459,57 +459,20 @@ async autoAssignTerritory(
     const queryRunner = dataSource.createQueryRunner();
     await queryRunner.startTransaction();
     try {
+      // Validate one-to-one constraint: only one salesman allowed
+      if (data.salesmanIds && data.salesmanIds.length > 1) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.BAD_REQUEST,
+          message: "Only one salesman can be assigned to a territory. Please provide a single salesman ID.",
+        };
+      }
+
       // Check for existing territory
       const existing = await queryRunner.manager.findOne(Territory, {
         where: { name: data.name, org_id, is_active: true },
         select: ["territory_id"],
       });
-
-      if (existing && data.salesmanIds?.length) {
-        // Fetch all existing relationships in one query
-        const salesmanIds = data.salesmanIds.map((id) => parseInt(id, 10));
-        const existingRelations = await queryRunner.manager
-          .createQueryBuilder(TerritorySalesman, "ts")
-          .where(
-            "ts.territory_id = :territoryId AND ts.salesman_id IN (:...salesmanIds)",
-            {
-              territoryId: existing.territory_id,
-              salesmanIds,
-            }
-          )
-          .getMany();
-
-        // Identify new salesman IDs
-        const existingSalesmanIds = new Set(
-          existingRelations.map((rel) => rel.salesman_id)
-        );
-        const newTerritorySalesmen = salesmanIds
-          .filter((id) => !existingSalesmanIds.has(id))
-          .map((salesmanId) =>
-            queryRunner.manager.create(TerritorySalesman, {
-              territory_id: existing.territory_id,
-              salesman_id: salesmanId,
-            })
-          );
-
-        if (newTerritorySalesmen.length > 0) {
-          await queryRunner.manager.save(
-            TerritorySalesman,
-            newTerritorySalesmen
-          );
-          await queryRunner.commitTransaction();
-          return {
-            status: httpStatusCodes.CREATED,
-            message: `New salesman relationships added for territory ${data.name}`,
-          };
-        }
-
-        await queryRunner.rollbackTransaction();
-        return {
-          status: httpStatusCodes.CONFLICT,
-          message: `All provided salesman IDs are already associated with territory ${data.name}`,
-        };
-      }
 
       if (existing) {
         await queryRunner.rollbackTransaction();
@@ -589,15 +552,48 @@ async autoAssignTerritory(
 
       let savedTerritory = await queryRunner.manager.save(Territory, territory);
 
-      // Handle salesmanIds
+      // Handle salesman assignment with one-to-one enforcement
       if (data.salesmanIds?.length) {
-        const territorySalesmen = data.salesmanIds.map((salesmanId) =>
-          queryRunner.manager.create(TerritorySalesman, {
-            territory_id: savedTerritory.territory_id,
-            salesman_id: parseInt(salesmanId, 10),
-          })
+        const salesmanId = parseInt(data.salesmanIds[0], 10);
+
+        // Check if salesman is already assigned to another territory
+        const existingSalesmanAssignment = await queryRunner.manager.findOne(
+          TerritorySalesman,
+          {
+            where: { salesman_id: salesmanId },
+          }
         );
-        await queryRunner.manager.save(TerritorySalesman, territorySalesmen);
+
+        if (existingSalesmanAssignment) {
+          await queryRunner.rollbackTransaction();
+          return {
+            status: httpStatusCodes.CONFLICT,
+            message: `Salesman with ID ${salesmanId} is already assigned to territory ID ${existingSalesmanAssignment.territory_id}. Please unassign them first before assigning to a new territory.`,
+          };
+        }
+
+        // Check if territory already has a salesman (shouldn't happen for new territory, but safety check)
+        const existingTerritoryAssignment = await queryRunner.manager.findOne(
+          TerritorySalesman,
+          {
+            where: { territory_id: savedTerritory.territory_id },
+          }
+        );
+
+        if (existingTerritoryAssignment) {
+          await queryRunner.rollbackTransaction();
+          return {
+            status: httpStatusCodes.CONFLICT,
+            message: `Territory ${savedTerritory.name} (ID: ${savedTerritory.territory_id}) already has salesman ID ${existingTerritoryAssignment.salesman_id} assigned. Please unassign them first.`,
+          };
+        }
+
+        // Create new one-to-one assignment
+        const territorySalesman = queryRunner.manager.create(TerritorySalesman, {
+          territory_id: savedTerritory.territory_id,
+          salesman_id: salesmanId,
+        });
+        await queryRunner.manager.save(TerritorySalesman, territorySalesman);
       }
       if (data.manager_id) {
         await queryRunner.manager.update(
@@ -690,6 +686,76 @@ async autoAssignTerritory(
             status: httpStatusCodes.CONFLICT,
             message: `Territory with name ${data.name} already exists`,
           };
+        }
+      }
+
+      // Validate one-to-one constraint for salesman assignment
+      if (data.salesmanIds && data.salesmanIds.length > 1) {
+        await queryRunner.rollbackTransaction();
+        return {
+          status: httpStatusCodes.BAD_REQUEST,
+          message: "Only one salesman can be assigned to a territory. Please provide a single salesman ID.",
+        };
+      }
+
+      // Handle salesman assignment update with one-to-one enforcement
+      if (data.salesmanIds !== undefined) {
+        if (data.salesmanIds.length === 0) {
+          // Remove salesman assignment if empty array provided
+          await queryRunner.manager.delete(TerritorySalesman, {
+            territory_id: territoryId,
+          });
+        } else {
+          const salesmanId = parseInt(data.salesmanIds[0], 10);
+
+          // Check if salesman is already assigned to another territory
+          const existingSalesmanAssignment = await queryRunner.manager.findOne(
+            TerritorySalesman,
+            {
+              where: { salesman_id: salesmanId },
+            }
+          );
+
+          if (
+            existingSalesmanAssignment &&
+            existingSalesmanAssignment.territory_id !== territoryId
+          ) {
+            await queryRunner.rollbackTransaction();
+            return {
+              status: httpStatusCodes.CONFLICT,
+              message: `Salesman with ID ${salesmanId} is already assigned to territory ID ${existingSalesmanAssignment.territory_id}. Please unassign them first before assigning to a new territory.`,
+            };
+          }
+
+          // Check if territory already has a salesman
+          const existingTerritoryAssignment = await queryRunner.manager.findOne(
+            TerritorySalesman,
+            {
+              where: { territory_id: territoryId },
+            }
+          );
+
+          if (existingTerritoryAssignment) {
+            // If trying to assign a different salesman, throw error
+            if (existingTerritoryAssignment.salesman_id !== salesmanId) {
+              await queryRunner.rollbackTransaction();
+              return {
+                status: httpStatusCodes.CONFLICT,
+                message: `Territory ${territory.name} (ID: ${territoryId}) already has salesman ID ${existingTerritoryAssignment.salesman_id} assigned. Please unassign them first before assigning a new salesman.`,
+              };
+            }
+            // If same salesman, no action needed
+          } else {
+            // Create new assignment
+            const territorySalesman = queryRunner.manager.create(
+              TerritorySalesman,
+              {
+                territory_id: territoryId,
+                salesman_id: salesmanId,
+              }
+            );
+            await queryRunner.manager.save(TerritorySalesman, territorySalesman);
+          }
         }
       }
 

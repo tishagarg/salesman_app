@@ -36,27 +36,53 @@ export class TerritoryController {
       return;
     }
 
+    // Enforce one-to-one: only process the first salesman ID
+    if (salesRepIds.length > 1) {
+      res.status(400).json({
+        message:
+          "Only one salesman can be assigned to a territory. Please provide a single salesman ID.",
+      });
+      return;
+    }
+
     const territorySalesmanRepo = dataSource.getRepository(TerritorySalesman);
     const territoryRepo = dataSource.getRepository(Territory);
 
     try {
-      for (const salesman_id of salesRepIds) {
-        await territorySalesmanRepo.delete({ territory_id, salesman_id });
+      const salesman_id = salesRepIds[0];
+      
+      // Delete the one-to-one relationship
+      const deleteResult = await territorySalesmanRepo.delete({ 
+        territory_id, 
+        salesman_id 
+      });
+
+      if (deleteResult.affected === 0) {
+        res.status(404).json({
+          message: `No assignment found for salesman ${salesman_id} in territory ${territory_id}.`,
+        });
+        return;
       }
 
-      // Check if any salesman is left in this territory
+      // With one-to-one constraint, after unassigning, the territory will have no salesman
+      // Optionally delete the territory if no salesman is assigned
       const remainingSalesmen = await territorySalesmanRepo.find({
         where: { territory_id },
       });
 
       if (remainingSalesmen.length === 0) {
-        await territoryRepo.delete({ territory_id });
+        // Optionally delete territory if no salesman is assigned
+        // Uncomment the following lines if you want to auto-delete territories without salesmen
+        // await territoryRepo.update(
+        //   { territory_id },
+        //   { is_active: false }
+        // );
         res.status(200).json({
-          message: `Salesmen unassigned and territory (ID: ${territory_id}) deleted as no salesman is left.`,
+          message: `Salesman unassigned from territory (ID: ${territory_id}). Territory now has no assigned salesman.`,
         });
       } else {
         res.status(200).json({
-          message: `Salesmen unassigned from territory (ID: ${territory_id}).`,
+          message: `Salesman unassigned from territory (ID: ${territory_id}).`,
         });
       }
     } catch (error) {
