@@ -1,0 +1,32 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+const auth_route_1 = __importDefault(require("./auth.route"));
+const user_route_1 = __importDefault(require("./user.route"));
+const customer_route_1 = __importDefault(require("./customer.route"));
+const visits_route_1 = __importDefault(require("./visits.route"));
+const dashboard_route_1 = __importDefault(require("./dashboard.route"));
+const message_route_1 = __importDefault(require("./message.route"));
+const mapNRoute_route_1 = __importDefault(require("./mapNRoute.route"));
+const territory_route_1 = __importDefault(require("./territory.route"));
+const adminManager_routes_1 = __importDefault(require("./adminManager.routes"));
+const contract_route_1 = __importDefault(require("./contract.route"));
+const data_route_1 = __importDefault(require("./data.route"));
+// import healthRouter from "./health.route";
+const express_1 = __importDefault(require("express"));
+const router = express_1.default.Router();
+router.use("/auth", auth_route_1.default);
+router.use("/user", user_route_1.default);
+router.use("/leads", customer_route_1.default);
+router.use("/visit", visits_route_1.default);
+router.use("/map", mapNRoute_route_1.default);
+router.use("/dashboard", dashboard_route_1.default);
+router.use("/message", message_route_1.default);
+router.use("/territory", territory_route_1.default);
+router.use("/admin", adminManager_routes_1.default);
+router.use("/contract", contract_route_1.default);
+router.use("/regions", data_route_1.default);
+// router.use("/health", healthRouter)
+exports.default = router;
