@@ -1,13 +1,13 @@
 import express, { Response } from "express";
 import "reflect-metadata";
-import { getDataSource } from "./src/config/data-source";
+import { getDataSource } from "./config/data-source";
 import expressSession from "express-session";
-import router from "./src/routes/index.route";
+import router from "./routes/index.route";
 import cors from "cors";
-import { verifyToken } from "./src/middleware/auth.middleware";
-import { UserTeamController } from "./src/controllers/user.controller";
-import { runDailyVisitPlanning } from "./src/service/nodeCron.service";
-import { regionsData } from "./src/data/regions";
+import { verifyToken } from "./middleware/auth.middleware";
+import { UserTeamController } from "./controllers/user.controller";
+import { runDailyVisitPlanning } from "./service/nodeCron.service";
+import { regionsData } from "./data/regions";
 
 const PORT = process.env.PORT || 3002;
 
